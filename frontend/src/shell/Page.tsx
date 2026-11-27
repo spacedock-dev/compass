@@ -57,8 +57,12 @@ export function Page() {
   /* A Select popup closing is the reader's own moment: the newest deferred poll shows once. */
   useEffect(() => installChoiceRelease(document, display), [display]);
 
-  const route = useRoute();
+  const requested = useRoute();
   const snapshot = useDisplayed((current) => current);
+  const route =
+    requested.view === 'plan' && snapshot.plan === null
+      ? { ...requested, view: 'sessions' as const }
+      : requested;
   const model = useDisplayed(selectObserved);
   /* Resolved as the page resolves it, so a released id-only link (no harness) still finds its one session. */
   const shown =

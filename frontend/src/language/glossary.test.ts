@@ -102,15 +102,17 @@ describe('the first-layer glossary', () => {
   });
 });
 
+const alwaysShownViews = TOP_LEVEL_VIEWS.filter((view) => view !== 'plan');
+
 describe('the labels the shell shows today', () => {
   it('uses the same view labels in the primary navigation, titles, and session breadcrumbs', async () => {
     const page = mountShell({ data: BOARD });
     await page.settle();
     expect(screen.getByText(GLOSSARY.compass.shown, { exact: true })).toBeVisible();
     const navigation = within(screen.getByRole('navigation', { name: GLOSSARY.primary.shown }));
-    expect(navigation.getAllByRole('link')).toHaveLength(TOP_LEVEL_VIEWS.length);
+    expect(navigation.getAllByRole('link')).toHaveLength(alwaysShownViews.length);
 
-    for (const view of TOP_LEVEL_VIEWS) {
+    for (const view of alwaysShownViews) {
       const label = GLOSSARY[view].shown;
       await page.go('#n=' + view);
       expect(
@@ -182,7 +184,7 @@ describe('the labels the shell shows today', () => {
     await page.settle();
     expect(screen.getByText(labels.compass, { exact: true })).toBeVisible();
     const navigation = within(screen.getByRole('navigation', { name: labels.primary }));
-    for (const view of TOP_LEVEL_VIEWS) {
+    for (const view of alwaysShownViews) {
       await page.go('#n=' + view);
       expect(
         navigation.getByRole('link', {

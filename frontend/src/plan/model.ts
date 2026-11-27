@@ -1,6 +1,10 @@
+import type { PlanGroup, PlanLaneStatus, PublishedPlanDate, ReadyPlan } from '../api/plan';
+import type { PayloadData } from '../api/types';
+import { sessionKey, sessionState, sessionTile, type Row } from '../observed';
+import { observedFor } from '../observed/select';
+import { harnessLabels } from '../sessions/rows';
 import type { SessionRoute } from '../router/grammar';
 
-// Storybook mock-up of the published Plan data. The API contract is still to be decided.
 export interface PlanModel {
   readonly asks: readonly PlanAsk[];
   readonly waitingSessions: readonly PlanWaitingSession[];
@@ -9,40 +13,38 @@ export interface PlanModel {
   readonly tracker: readonly PlanTrackerItem[];
   readonly diagrams: readonly PlanNote[];
   readonly sources: readonly PlanSource[];
-  readonly limits: readonly ['health-information', 'confidential-text'];
+  readonly limits: string;
 }
 
-export type PlanLaneState = 'done' | 'in-progress' | 'blocked' | 'planned';
+export type PlanLaneState = PlanLaneStatus | 'unpublished';
 
 export interface PlanSessionReference {
   readonly key: SessionRoute;
   readonly name: string;
-  // Synthetic here. The server will supply the matched session's state.
   readonly state: 'working' | 'waiting' | 'quiet' | 'ended' | 'unknown';
 }
 
 export interface PlanGoal {
   readonly id: string;
   readonly title: string;
-  readonly doneWhen: string;
+  readonly doneWhen: string | null;
+  readonly proposal?: 'Proposed, not merged';
   readonly lanes: readonly {
     readonly id: string;
     readonly title: string;
     readonly state: PlanLaneState;
-    // Mock-up of matches the server will resolve from explicit lane settings or working folders.
-    readonly sessions: readonly PlanSessionReference[];
+    readonly sessions: readonly PlanSessionReference[] | null;
   }[];
 }
 
 export interface PlanAsk {
   readonly id: string;
-  readonly verb: 'ask';
   readonly text: string;
-  readonly at: string;
+  readonly at: string | null;
+  readonly timeLabel: 'from the log' | null;
   readonly source: string;
   readonly lane?: { readonly id: string; readonly title: string };
-  // The plan payload resolves these against the lane id and published session keys.
-  readonly sessions: readonly PlanSessionReference[];
+  readonly sessions: readonly PlanSessionReference[] | null;
 }
 
 interface PlanWaitingSession {
@@ -54,28 +56,29 @@ interface PlanWaitingSession {
 
 export type PlanRepoDate = {
   readonly kind: 'changed' | 'proposed';
-  readonly at: string;
+  readonly at: string | null;
 };
 
 export interface PlanNote {
   readonly id: string;
   readonly title: string;
-  readonly summary: string;
+  readonly summary: string | null;
   readonly source: string;
-  readonly date?: PlanRepoDate;
-  readonly linkHost?: string;
+  readonly date?: PlanRepoDate | undefined;
+  readonly linkHosts?: readonly string[];
 }
 
 interface PlanTrackerItem {
   readonly id: string;
   readonly title: string;
-  readonly status: PlanLaneState | 'unrecognised';
+  readonly status: PlanLaneStatus | 'waiting' | 'dropped' | 'unrecognised';
   readonly source: string;
-  readonly date?: PlanRepoDate;
-  readonly linkHost?: string;
+  readonly date?: PlanRepoDate | undefined;
 }
 
 export type PlanRefusalReason =
+  | 'unknown'
+  | 'git reads are off'
   | 'unreadable'
   | 'malformed'
   | 'symlink'
@@ -90,3 +93,137 @@ export type PlanSource = {
   | { readonly status: 'ok' }
   | { readonly status: 'refused'; readonly reason: PlanRefusalReason }
 );
+
+const trackerStatuses = {
+  not_started: 'planned',
+  running: 'in-progress',
+  waiting: 'waiting',
+  blocked: 'blocked',
+  done: 'done',
+  dropped: 'dropped',
+  'Status not recognised': 'unrecognised',
+} as const satisfies Record<PlanGroup | 'Status not recognised', PlanTrackerItem['status']>;
+
+const sessionStates = {
+  Working: 'working',
+  'Waiting on you': 'waiting',
+  Quiet: 'quiet',
+  Ended: 'ended',
+  'State not known': 'unknown',
+} as const;
+
+function repoDate(date: PublishedPlanDate | null): PlanRepoDate | undefined {
+  if (date?.label === 'Changed') return { kind: 'changed', at: date.at };
+  if (date?.label === 'Proposed, not merged') return { kind: 'proposed', at: date.at };
+  return undefined;
+}
+
+function sourceRefusal(reason: string | null): PlanRefusalReason {
+  switch (reason) {
+    case 'symbolic link':
+      return 'symlink';
+    case 'hard link':
+      return 'hard-link';
+    case 'unreadable':
+    case 'malformed':
+    case 'private':
+    case 'unknown-structural-status':
+    case 'git reads are off':
+      return reason;
+    default:
+      return 'unknown';
+  }
+}
+
+export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel {
+  const labels = harnessLabels((board ?? {}) as Row);
+  const bySession = new Map<string, PlanSessionReference>();
+  const waitingSessions: PlanWaitingSession[] = [];
+  for (const row of observedFor(board).sessions) {
+    if (!row.harness.trim() || !row.sid.trim()) continue;
+    const key: SessionRoute = {
+      view: 'session',
+      harness: row.harness,
+      session: row.sid,
+      project: row.project,
+    };
+    const state = sessionState(row);
+    const identity = sessionKey(row);
+    if (bySession.has(identity)) continue;
+    bySession.set(identity, {
+      key,
+      name: row.titleText,
+      state: sessionStates[sessionTile(row, state)],
+    });
+    if (state === 'Waiting on you') {
+      waitingSessions.push({
+        key,
+        title: row.titleText,
+        harnessLabel: labels.get(row.harness) ?? row.harness,
+        request: row.askText,
+      });
+    }
+  }
+
+  const lanes = new Map<string, PlanGoal['lanes'][number]>();
+  for (const lane of plan.lanes) {
+    const sessions =
+      lane.sessions === null
+        ? null
+        : [...new Set(lane.sessions)].flatMap((key) => bySession.get(key) ?? []);
+    lanes.set(lane.id, {
+      id: lane.id,
+      title: lane.title,
+      state: lane.state ?? 'unpublished',
+      sessions,
+    });
+  }
+
+  const sourceLabels = new Map<string, number>();
+  for (const { label } of plan.sources) sourceLabels.set(label, (sourceLabels.get(label) ?? 0) + 1);
+
+  return {
+    waitingSessions,
+    goals: plan.goals.map((goal) => ({
+      id: goal.id,
+      title: goal.title,
+      doneWhen: goal.doneWhen,
+      ...(goal.proposal ? { proposal: goal.proposal } : {}),
+      lanes: [...new Set(goal.lanes)].flatMap((id) => lanes.get(id) ?? []),
+    })),
+    asks: plan.asks.map(({ lane, ...ask }) => ({
+      ...ask,
+      ...(lane ? { lane } : {}),
+      sessions: lane ? (lanes.get(lane.id)?.sessions ?? null) : null,
+    })),
+    design: plan.design.map((item, index) => ({
+      id: String(index),
+      title: item.title,
+      summary: item.summary,
+      source: item.source,
+      date: repoDate(item.date),
+    })),
+    tracker: plan.tracker.map((item, index) => ({
+      id: String(index),
+      title: item.title,
+      status: trackerStatuses[item.group] ?? 'unrecognised',
+      source: item.source,
+      date: repoDate(item.date),
+    })),
+    diagrams: plan.diagrams.map(({ title, caption, source, date, linkHosts }, index) => ({
+      id: String(index),
+      title,
+      summary: caption === title ? null : caption,
+      source,
+      date: repoDate(date),
+      linkHosts,
+    })),
+    sources: plan.sources.map(({ label, kind, state, reason }, index) => ({
+      id: String(index),
+      name:
+        label && sourceLabels.get(label) === 1 ? label : [label, kind].filter(Boolean).join(' · '),
+      ...(state === 'ok' ? { status: 'ok' } : { status: 'refused', reason: sourceRefusal(reason) }),
+    })),
+    limits: plan.limits,
+  };
+}

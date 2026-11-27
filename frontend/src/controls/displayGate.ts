@@ -116,6 +116,7 @@ export function createDisplayGate(options: DisplayGateOptions) {
         const contextsChanged = current.contexts !== last.contexts;
         const othersChanged =
           contextsChanged ||
+          current.plan !== last.plan ||
           current.manualRefreshing !== last.manualRefreshing ||
           current.observer !== last.observer ||
           current.pending !== last.pending ||

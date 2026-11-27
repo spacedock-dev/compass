@@ -173,6 +173,14 @@ code, which cites this file instead:
 
 A terminal monitor can save the page's drafted goal before its first tick. It changes the stored annotation, not the browser's held edit. The [typed monitor guard](design-reading-a-session.md#owner-ruling-2026-11-06-the-skill-pre-approves-its-own-actions-in-claude-code) records admission and concurrent-save rules.
 
+## Plan page and session links
+
+The fragment holds the requested destination. The board shows Sessions while Plan is unavailable.
+The runtime reads Plan after the board at boot, on safety polls, and after manual refresh. The
+store holds the latest configured reply in memory. The Plan view joins session keys to the
+displayed board. Stable goal, lane, ask and session keys preserve surviving links and their focus
+through a refresh. Document scroll follows the same rules as the other destinations.
+
 ## Disclosure write precedence
 
 The keyed store is the single writer. `createDisclosureStore` publishes a stable snapshot with an

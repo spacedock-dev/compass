@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { planLimits } from '../test/plan-fixtures';
 import { PlanPage } from '../src/plan/PlanPage';
 import type { PlanModel } from '../src/plan/model';
 import { hasFocusRing, restingRing, rgbOf } from './a11y.audit';
@@ -89,9 +90,9 @@ const goalWithoutLanes = {
 } as const;
 const ask = {
   id: 'hours',
-  verb: 'ask',
   text: 'Should the pickup shelf stay open on Sundays?',
   at: loggedAt,
+  timeLabel: 'from the log',
   source: sourceByKind.log.name,
   sessions: [],
 } as const;
@@ -145,7 +146,7 @@ const pickupDiagram = {
   id: 'pickup-route',
   title: 'From the library entrance to the pickup shelf',
   summary: 'The route from the entrance, past the desk, to the shelf.',
-  linkHost: 'diagrams.example.org',
+  linkHosts: ['diagrams.example.org'],
   source: sourceByKind.diagrams.name,
 } as const;
 const refusedSource = {
@@ -163,7 +164,7 @@ const empty: PlanModel = {
   tracker: [],
   diagrams: [],
   sources: [],
-  limits: ['health-information', 'confidential-text'],
+  limits: planLimits,
 };
 const complete: PlanModel = {
   ...empty,
@@ -219,7 +220,7 @@ export const FullPage: Story = {
   args: { model: complete },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const main = within(canvas.getByRole('main', { name: 'Plan' }));
+    const main = within(canvas.getByRole('region', { name: 'Plan' }));
     await expect(main.getByRole('heading', { level: 1, name: 'Plan' })).toBeVisible();
     await expect(main.getAllByRole('heading', { level: 2 }).map((el) => el.textContent)).toEqual([
       'Waiting on you',
@@ -823,7 +824,6 @@ const trackerStates = [
 const trackerWithMetadata = {
   ...knownTrackerRow,
   date: changedDesign.date,
-  linkHost: 'work.example.org',
 };
 
 export const TrackerStatesAndMetadata: Story = {
@@ -836,7 +836,6 @@ export const TrackerStatesAndMetadata: Story = {
     const date = changedRow.getByText(`Changed ${shortDate(changedAt)}`, { exact: true });
     await expect(date).toBeVisible();
     await expect(date).toHaveAttribute('datetime', changedAt);
-    await expect(changedRow.getByText(trackerWithMetadata.linkHost, { exact: true })).toBeVisible();
     for (const [item, word] of trackerStates) {
       const row = rowWithText(tracker, item.title);
       await expect(row.getByText(word, { exact: true })).toBeVisible();
@@ -908,9 +907,7 @@ export const UnusableDates: Story = {
   },
   play: async ({ canvasElement }) => {
     const askRow = rowWithText(openAsks(canvasElement), ask.text);
-    await expect(
-      askRow.getByText('From the log · Library plan log', { exact: true }),
-    ).toBeVisible();
+    await expect(askRow.getByText('Library plan log', { exact: true })).toBeVisible();
     const design = section(canvasElement, 'Design');
     const proposedRow = rowWithText(design, proposedDesign.title);
     await expect(proposedRow.getByText(proposed, { exact: true })).toBeVisible();

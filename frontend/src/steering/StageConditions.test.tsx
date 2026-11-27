@@ -64,7 +64,9 @@ describe('nothing is sent until a press', () => {
     await page.settle();
     await page.poll(board('r1', 1001));
     expect(page.allPosts()).toEqual([]);
-    expect(page.state.requests.every((request) => request.path === '/api/data')).toBe(true);
+    expect(
+      page.state.requests.every(({ path }) => path === '/api/data' || path === '/api/plan'),
+    ).toBe(true);
   });
 });
 

@@ -107,8 +107,7 @@ test('production packaging includes full licenses and a matching document digest
   assert.equal(packed.document.includes('compass-focus'), false);
   const stylesheet = new JSDOM(packed.document).window.document.querySelector('link');
   const css = Buffer.from(stylesheet.href.split(',')[1], 'base64').toString('utf8');
-  // The Plan story's session-title width stays in Storybook until Plan has an app route.
-  assert.equal(/max-width:28ch\b/.test(css), false, 'Plan title width leaked into app CSS');
+  assert.match(css, /max-width:28ch\b/, 'Plan session-title width ships with the app');
 });
 
 async function copiedSource(prefix, use) {

@@ -1,5 +1,6 @@
 import { readBootstrap } from '../api/bootstrap';
 import { createApiClient, type FetchLike } from '../api/client';
+import { configuredPlan } from '../api/plan';
 import { exactIdentity } from '../api/identity';
 import type { FocusOutcome, SessionIdentity } from '../api/types';
 import { createBoardStore, type BoardSnapshot } from '../store/board';
@@ -58,6 +59,8 @@ export function createBoardRuntime(options: RuntimeOptions) {
     readonly context: ReturnType<typeof createContextLoader>;
     readonly record: ReturnType<typeof createRecordLoader>;
     readonly live: ReturnType<typeof createLiveTransport>;
+    readPlan(): Promise<void>;
+    abortPlan(): void;
   }
 
   const pendingRegistry = createPendingRegistry({
@@ -102,8 +105,36 @@ export function createBoardRuntime(options: RuntimeOptions) {
       paint: options.paint ?? (() => Promise.resolve()),
     };
     const refresh = createRefreshController({ sink, revisions });
+    let cancelPlan: (() => void) | null = null;
+    let stopped = false;
+
+    async function readPlan(): Promise<void> {
+      if (stopped) return;
+      cancelPlan?.();
+      const controller = new AbortController();
+      const timeout = env.clock.setTimeout(() => controller.abort(), 15_000);
+      const cancel = () => {
+        env.clock.clearTimeout(timeout);
+        controller.abort();
+      };
+      cancelPlan = cancel;
+      try {
+        const result = await client.getPlan(controller.signal);
+        if (cancelPlan !== cancel) return;
+        store.setPlan(result.kind === 'ok' && configuredPlan(result.body) ? result.body : null);
+      } finally {
+        env.clock.clearTimeout(timeout);
+        if (cancelPlan === cancel) cancelPlan = null;
+      }
+    }
     return {
       refresh,
+      readPlan,
+      abortPlan() {
+        stopped = true;
+        cancelPlan?.();
+        cancelPlan = null;
+      },
       context: createContextLoader({ client, store, storage }),
       record: createRecordLoader({ client, store }),
       live: createLiveTransport({
@@ -111,7 +142,8 @@ export function createBoardRuntime(options: RuntimeOptions) {
         storage,
         revisions,
         onWake: (revision) => refresh.wake(revision),
-        onPoll: () => void refresh.poll(),
+        // Plan reads the session-folder sidecar from the board snapshot.
+        onPoll: () => void refresh.poll().then(readPlan),
       }),
     };
   }
@@ -131,6 +163,7 @@ export function createBoardRuntime(options: RuntimeOptions) {
     owned = null;
     if (!closing) return;
     closing.live.dispose();
+    closing.abortPlan();
     closing.refresh.dispose();
     closing.context.dispose();
     closing.record.dispose();
@@ -189,8 +222,13 @@ export function createBoardRuntime(options: RuntimeOptions) {
       };
     },
 
-    refresh: (flags: { readonly manual?: boolean } = {}): Promise<void> =>
-      owned?.refresh.refresh(flags) ?? Promise.resolve(),
+    refresh(flags: { readonly manual?: boolean } = {}): Promise<void> {
+      const current = owned;
+      if (!current) return Promise.resolve();
+      const updated = current.refresh.refresh(flags);
+      if (flags.manual) void updated.then(current.readPlan);
+      return updated;
+    },
     /* Whether this tab holds the live stream: the one tab that raises a stage banner, so two open tabs do not
        both. False before the runtime is owned. */
     isLeader: (): boolean => owned?.live.isLeader() ?? false,

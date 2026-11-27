@@ -1,5 +1,5 @@
 import { type ReactNode, useId } from 'react';
-import { PLAN_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
+import { PLAN_WORDS, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
 import { cn } from '../lib/utils';
 import { fragmentForRoute } from '../router/grammar';
 import { Badge } from '../ui/badge';
@@ -22,6 +22,7 @@ const stateLabels = {
   'in-progress': PLAN_WORDS.inProgress,
   planned: 'Planned',
   done: 'Done',
+  unpublished: 'Status not published',
 } satisfies Record<PlanLaneState, string>;
 
 const sessionStates = {
@@ -35,6 +36,8 @@ const sessionStates = {
 const rowLayout = 'flex min-w-0 flex-col items-start gap-x-6 gap-y-1 leading-6 sm:flex-row';
 
 const refusalReasons = {
+  unknown: 'The source could not be read.',
+  'git reads are off': 'Git reads are off.',
   unreadable: 'The source could not be read.',
   malformed: 'The source did not have the expected format.',
   symlink: 'The file is a symbolic link.',
@@ -42,11 +45,6 @@ const refusalReasons = {
   private: 'Marked private.',
   'unknown-structural-status': 'Compass did not recognise a required status.',
 } satisfies Record<PlanRefusalReason, string>;
-
-const limitLabels = {
-  'health-information': 'health information',
-  'confidential-text': 'confidential text',
-} as const;
 
 function PlanSection({
   title,
@@ -76,17 +74,20 @@ function PlanSection({
 }
 
 function RepoDate({ date }: { readonly date: PlanRepoDate }) {
-  const parsed = new Date(date.at);
-  const hasDate = !Number.isNaN(parsed.getTime());
+  const parsed = date.at ? new Date(date.at) : null;
+  const hasDate = parsed !== null && !Number.isNaN(parsed.getTime());
   if (date.kind === 'changed' && !hasDate) return null;
 
   return (
     <p className="m-0 flex flex-wrap gap-x-2 text-label text-muted-foreground">
       {date.kind === 'proposed' && <span>Proposed, not merged</span>}
       {hasDate && (
-        <time dateTime={date.at}>
+        <time dateTime={date.at ?? undefined}>
           {date.kind === 'changed' && 'Changed '}
-          {parsed.toLocaleDateString(undefined, { dateStyle: 'medium' })}
+          {parsed.toLocaleDateString(undefined, {
+            dateStyle: 'medium',
+            ...(/^\d{4}-\d{2}-\d{2}$/.test(date.at ?? '') ? { timeZone: 'UTC' } : {}),
+          })}
         </time>
       )}
     </p>
@@ -117,8 +118,12 @@ function PlanSessionRef({
   );
 }
 
-function SessionReferences({ sessions }: { readonly sessions: readonly PlanSessionReference[] }) {
-  if (sessions.length === 0) return null;
+function SessionReferences({
+  sessions,
+}: {
+  readonly sessions: readonly PlanSessionReference[] | null;
+}) {
+  if (!sessions?.length) return null;
   const shown = sessions.slice(0, 3);
   const remaining = sessions.length - shown.length;
   return (
@@ -151,15 +156,15 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                 Open asks
               </h3>
               <ul role="list" aria-label="Open asks" className="m-0 grid list-none gap-3 p-0">
-                {asks.map(({ id, text, at, source, lane, sessions }) => {
-                  const date = new Date(at);
-                  const hasDate = !Number.isNaN(date.getTime());
+                {asks.map(({ id, text, at, timeLabel, source, lane, sessions }) => {
+                  const date = at && timeLabel ? new Date(at) : null;
+                  const hasDate = date !== null && !Number.isNaN(date.getTime());
                   return (
                     <li key={id} className={rowLayout}>
                       <div
                         className={cn(
                           'grid min-w-0 flex-1 gap-1',
-                          sessions.length > 0 && 'sm:mt-2.5',
+                          !!sessions?.length && 'sm:mt-2.5',
                         )}
                       >
                         <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
@@ -167,16 +172,16 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                           {hasDate ? (
                             <>
                               Asked{' '}
-                              <time dateTime={at}>
+                              <time dateTime={at ?? undefined}>
                                 {date.toLocaleString(undefined, {
                                   dateStyle: 'medium',
                                   timeStyle: 'short',
                                 })}
                               </time>
-                              {' · from the log · '}
+                              {` · ${timeLabel} · `}
                             </>
                           ) : (
-                            'From the log · '
+                            ''
                           )}
                           {source}
                         </p>
@@ -262,17 +267,24 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
       <h3 id={headingId} className="m-0 text-value font-bold">
         {goal.title}
       </h3>
+      {goal.proposal && <p className="m-0 text-label text-muted-foreground">{goal.proposal}</p>}
       <dl className="m-0 grid gap-1">
         <dt className="text-label font-semibold text-muted-foreground">Done when</dt>
-        <dd className="m-0 max-w-[var(--measure)]">{goal.doneWhen}</dd>
+        <dd className="m-0 max-w-[var(--measure)]">
+          {goal.doneWhen ?? 'No completion condition is listed.'}
+        </dd>
       </dl>
       {total === 0 ? (
         <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
       ) : (
         <>
-          <p className="m-0 font-semibold">
-            {done} of {total} {total === 1 ? 'lane is' : 'lanes are'} done
-          </p>
+          {groups.some(({ state }) => state === 'unpublished') ? (
+            <p className="m-0 text-muted-foreground">Lane progress is not published.</p>
+          ) : (
+            <p className="m-0 font-semibold">
+              {done} of {total} {total === 1 ? 'lane is' : 'lanes are'} done
+            </p>
+          )}
           <div className="grid gap-3">
             {groups.map(({ state, label, lanes }) => (
               <div
@@ -292,7 +304,7 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
                       <span
                         className={cn(
                           'min-w-0 flex-1 text-body',
-                          sessions.length > 0 && 'sm:mt-2.5',
+                          !!sessions?.length && 'sm:mt-2.5',
                         )}
                       >
                         {title}
@@ -313,17 +325,21 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
 function NotesList({ notes }: { readonly notes: readonly PlanNote[] }) {
   return (
     <ul role="list" className="m-0 grid list-none gap-4 p-0">
-      {notes.map(({ id, title, summary, date, linkHost }) => (
+      {notes.map(({ id, title, summary, date, linkHosts }) => (
         <li key={id} className="grid gap-1">
           <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
-          <p className="m-0 max-w-[var(--measure)] text-muted-foreground">{summary}</p>
+          {summary && <p className="m-0 max-w-[var(--measure)] text-muted-foreground">{summary}</p>}
           {date && <RepoDate date={date} />}
-          {linkHost && <p className="m-0 text-label text-muted-foreground">{linkHost}</p>}
+          {linkHosts && linkHosts.length > 0 && (
+            <p className="m-0 text-label text-muted-foreground">{linkHosts.join(', ')}</p>
+          )}
         </li>
       ))}
     </ul>
   );
 }
+
+const trackerLabels = { ...stateLabels, waiting: 'Waiting', dropped: 'Dropped' };
 
 function Tracker({ items }: { readonly items: PlanModel['tracker'] }) {
   return (
@@ -333,17 +349,16 @@ function Tracker({ items }: { readonly items: PlanModel['tracker'] }) {
       ) : (
         <Card className="max-sm:p-4">
           <ul role="list" className="m-0 grid list-none gap-4 p-0">
-            {items.map(({ id, title, status, date, linkHost }) => (
+            {items.map(({ id, title, status, date }) => (
               <li key={id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
                 <div className="grid min-w-0 gap-1">
                   <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
                   {date && <RepoDate date={date} />}
-                  {linkHost && <p className="m-0 text-label text-muted-foreground">{linkHost}</p>}
                 </div>
                 {status === 'unrecognised' ? (
                   <span className="text-label text-muted-foreground">Status not recognised</span>
                 ) : (
-                  <Badge>{stateLabels[status]}</Badge>
+                  <Badge>{trackerLabels[status]}</Badge>
                 )}
               </li>
             ))}
@@ -381,22 +396,47 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
         )}
       </PlanSection>
       <PlanSection title="What Compass can't see">
-        <p className="m-0 max-w-[var(--measure)] text-muted-foreground">
-          Compass cannot detect {limits.map((limit) => limitLabels[limit]).join(' or ')} typed into
-          these sources.
-        </p>
+        <p className="m-0 max-w-[var(--measure)] text-muted-foreground">{limits}</p>
       </PlanSection>
     </footer>
+  );
+}
+
+const pageLayout =
+  'mx-auto max-w-5xl px-4 py-6 leading-relaxed [overflow-wrap:anywhere] sm:px-8 sm:py-8';
+
+export function RefusedPlanPage({ reason }: { readonly reason: string }) {
+  const detail: Readonly<Record<string, string>> = {
+    'malformed settings': 'The Plan settings did not have the expected format.',
+    'could not identify a private root':
+      'Compass could not identify a private root in the Plan settings.',
+    'settings are inside a repository': 'Keep the Plan settings outside a Git repository.',
+    'symbolic link': 'The Plan settings file is a symbolic link.',
+    'hard link': 'The Plan settings file has another name.',
+    private: 'The Plan settings file is marked private.',
+    'not an owned regular file': 'Use a regular Plan settings file you own.',
+    'over the byte cap': 'The Plan settings file exceeds the size limit.',
+    'file changed before it could be read': 'The Plan settings file changed during the read.',
+    'guarded plan reads are unavailable on this platform':
+      'Compass cannot read Plan settings on this platform.',
+  };
+  return (
+    <section className={cn(pageLayout, 'grid gap-3')}>
+      <h1 className="m-0 text-hero leading-tight font-extrabold">{SHOWN.plan}</h1>
+      <p className="m-0 text-muted-foreground">
+        {Object.hasOwn(detail, reason) ? detail[reason] : 'The Plan settings could not be read.'}
+      </p>
+    </section>
   );
 }
 
 export function PlanPage({ model }: { readonly model: PlanModel }) {
   const headingId = useId();
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 leading-relaxed [overflow-wrap:anywhere] sm:px-8 sm:py-8">
-      <main aria-labelledby={headingId} className="grid gap-8">
+    <div className={pageLayout}>
+      <section aria-labelledby={headingId} className="grid gap-8">
         <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
-          Plan
+          {SHOWN.plan}
         </h1>
         <WaitingOnYou asks={model.asks} waitingSessions={model.waitingSessions} />
         <PlanSection title="Goals">
@@ -426,7 +466,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
             </Card>
           )}
         </PlanSection>
-      </main>
+      </section>
       <PlanSources sources={model.sources} limits={model.limits} />
     </div>
   );

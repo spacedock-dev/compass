@@ -57,6 +57,7 @@ export const SHOWN = {
   breadcrumb: 'Breadcrumb',
   sessions: 'Sessions',
   projects: 'Projects',
+  plan: 'Plan',
   settings: 'Settings',
   help: 'Help',
   session: 'Session',

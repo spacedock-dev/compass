@@ -915,6 +915,10 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    and reason. If you configure private roots or marker files, keep the declared Git file's
    parent directories present in the checkout so Compass can check them. See
    [what the local plan route publishes](SECURITY.md#published-plan-fields).
+4. Open the dashboard on the Compass computer. Choose **Plan** in the page links, or open
+   **Menu** on a narrow screen. If Compass refuses the settings, Plan shows why. With no
+   settings file or with `--no-plan`, the destination is hidden.
+
 
 ## Turn a feature off
 

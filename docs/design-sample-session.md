@@ -415,6 +415,10 @@ previous build. Storybook compiles the Plan utilities while the page has no app 
 The page bound follows the measured package. The fixture bound stays at 250,000 bytes.
 
 
+The configured Plan destination packages at 2,512,259 bytes on Node 26.10.0 and pnpm 12.19.0,
+up 22,260 bytes (0.89%). The increase covers the Plan transport, page and styles. The bound
+follows the measured package. The fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

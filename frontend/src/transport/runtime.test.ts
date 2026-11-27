@@ -13,7 +13,7 @@ import {
 } from './testing';
 
 const flush = async () => {
-  for (let turn = 0; turn < 12; turn += 1) await Promise.resolve();
+  for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
 };
 
 interface Backend {
@@ -32,15 +32,17 @@ function backend(): Backend {
     requests,
     generated: 1,
     revision: '5.1',
-    respond: () =>
-      new Response(
-        JSON.stringify({
-          generated: state.generated,
-          build: 'b1',
-          sessions: [{ harness: 'claude', sid: `s${String(state.generated)}` }],
-        }),
-        { status: 200, headers: { 'X-Compass-Revision': state.revision } },
-      ),
+    respond: (url) =>
+      url === '/api/plan'
+        ? new Response(null, { status: 404 })
+        : new Response(
+            JSON.stringify({
+              generated: state.generated,
+              build: 'b1',
+              sessions: [{ harness: 'claude', sid: `s${String(state.generated)}` }],
+            }),
+            { status: 200, headers: { 'X-Compass-Revision': state.revision } },
+          ),
     fetch: (url, init) => {
       requests.push({ method: init?.method ?? 'GET', url });
       return Promise.resolve(state.respond(url));
@@ -449,8 +451,11 @@ describe('request shape', () => {
     expect(hub.usage).toBe('granted');
     expect(api.requests.map((request) => request.url)).toEqual([
       '/api/data?usage=1',
+      '/api/plan',
       '/api/data',
+      '/api/plan',
       '/api/data?usage=1',
+      '/api/plan',
     ]);
     runtime.dispose();
   });
@@ -468,7 +473,9 @@ describe('actions are explicit', () => {
     release();
     clock.advance(0);
     expect(api.posts()).toBe(0);
-    expect(api.requests.every((request) => request.url.startsWith('/api/data'))).toBe(true);
+    expect(
+      api.requests.every(({ url }) => url.startsWith('/api/data') || url === '/api/plan'),
+    ).toBe(true);
   });
 
   it('sends a focus request only when called and only with a capability', async () => {
@@ -560,7 +567,8 @@ function heldFetch(api: Backend) {
   }[] = [];
   const fetch: FetchLike = (url, init) => {
     api.requests.push({ method: init?.method ?? 'GET', url });
-    if (url.startsWith('/api/data')) return Promise.resolve(api.respond(url));
+    if (url.startsWith('/api/data') || url === '/api/plan')
+      return Promise.resolve(api.respond(url));
     return new Promise<Response>((resolve) => held.push({ url, init, release: resolve }));
   };
   return { held, fetch };

@@ -47,8 +47,14 @@ export function mountShell(options: TestShellOptions = {}) {
     backend.requests.push({ method: init?.method ?? 'GET', url });
     if (init?.method === 'POST' && options.postResponse)
       return Promise.resolve(options.postResponse());
-    if ((!init?.method || init.method === 'GET') && Object.hasOwn(options.getResponses ?? {}, url))
-      return Promise.resolve(Response.json(options.getResponses?.[url]));
+    if (
+      (!init?.method || init.method === 'GET') &&
+      Object.hasOwn(options.getResponses ?? {}, url)
+    ) {
+      const body = options.getResponses?.[url];
+      return Promise.resolve(body instanceof Response ? body.clone() : Response.json(body));
+    }
+    if (url === '/api/plan') return Promise.resolve(new Response(null, { status: 404 }));
     if (url.startsWith('/api/session-record')) {
       const session = new URLSearchParams(url.split('?')[1]).get('session') ?? ':';
       const split = session.indexOf(':');

@@ -14,6 +14,14 @@ outside the plugin only because the paused Intent and drift study evaluated thei
 retired that study on 2026-11-01 and the parts were deleted with it; a test under the dashboard suite
 keeps all twenty names out of `web/`. The recorded answers the React page is held to are described in the next section.
 
+## Conditional Plan destination
+
+`#n=plan` opens the signed-off Plan layout when the local plan route reports ready or refused
+settings. An unavailable plan uses the Sessions view with no Plan destination. This route
+arrived after the retired page. The [Plan route stories](../frontend/stories/PlanRoute.stories.tsx)
+and [shell test](../frontend/src/plan/PlanRoute.test.tsx) cover its states and refresh.
+[Reader state](design-reader-state.md#plan-page-and-session-links) records who holds the current reply.
+
 ## Held to recorded answers
 
 Departure (2026-11-24, saved progress): the far-right Sessions cell shows the current saved departure pill,

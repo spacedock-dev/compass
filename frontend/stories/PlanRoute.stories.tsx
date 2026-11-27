@@ -1,0 +1,196 @@
+import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useEffect, useState } from 'react';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { App } from '../src/App';
+import type { PlanPayload } from '../src/api/plan';
+import { createRouter } from '../src/router/router';
+import { fakeRouterEnvironment } from '../src/router/testing';
+import { createShell } from '../src/shell/createShell';
+import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
+import {
+  hostileDiagramBody,
+  planBoard,
+  readyPlan,
+  refusedPlanSettings,
+  unconfiguredPlan,
+} from '../test/plan-fixtures';
+import { fakeBackend } from '../test/storage_backends';
+import { atPageWidth } from './PageFit';
+import { settledRect } from './settled-layout';
+
+function PlanBoard({ plan }: { readonly plan: PlanPayload | null }) {
+  const [shell] = useState(() => {
+    const history = fakeRouterEnvironment('#n=plan');
+    return createShell({
+      env: createFakeEnvironment({ clock: createFakeClock() }),
+      router: createRouter(history.env),
+      provider: () => fakeBackend(),
+      events: { addEventListener: () => undefined, removeEventListener: () => undefined },
+      search: '',
+      doc: null,
+      reducedMotion: () => true,
+      fetch: async (url) => {
+        if (url === '/api/plan') {
+          return plan ? Response.json(plan) : new Response(null, { status: 404 });
+        }
+        if (url.startsWith('/api/data')) return Response.json(planBoard);
+        return new Response(null, { status: 404 });
+      },
+    });
+  });
+  useEffect(
+    () => () => {
+      shell.runtime.dispose();
+      shell.display.dispose();
+    },
+    [shell],
+  );
+  return <App shell={shell} />;
+}
+
+const meta = {
+  title: 'Pages/Plan route',
+  component: PlanBoard,
+  parameters: { layout: 'fullscreen' },
+} satisfies Meta<typeof PlanBoard>;
+export default meta;
+type Story = StoryObj<typeof meta>;
+
+const progressUnavailable = 'Lane progress is not published.';
+
+async function expectPublishedPlan(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await expect(await canvas.findByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+  const plan = within(canvas.getByRole('region', { name: 'Plan' }));
+  await expect(
+    plan.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+  ).toEqual(['Waiting on you', 'Goals', 'Design', 'Tracker', 'Diagrams']);
+  await expect(
+    plan.getByText('Should the pickup shelf stay open on Sundays?', { exact: true }),
+  ).toBeVisible();
+  const untimed = plan
+    .getByText('Who can check the entrance signs?', { exact: true })
+    .closest('li');
+  if (!untimed) throw new Error('The untimed ask needs a row.');
+  await expect(within(untimed).getByText('Library plan log', { exact: true })).toBeVisible();
+  await expect(within(untimed).queryByRole('time')).toBeNull();
+  await expect(untimed).not.toHaveTextContent(/from the log|Asked|Lane:/);
+  await expect(plan.getByText(progressUnavailable, { exact: true })).toBeVisible();
+  await expect(plan.queryByText(/\d+ of \d+ lanes/)).toBeNull();
+  const draft = within(plan.getByRole('article', { name: 'Make after-hours returns easier' }));
+  await expect(draft.getByText('Proposed, not merged', { exact: true })).toBeVisible();
+  await expect(draft.getByText('No lanes serve this goal yet', { exact: true })).toBeVisible();
+  await expect(draft.queryByRole('time')).toBeNull();
+  for (const title of ['Agree on weekend hours', 'Put up signs at the entrance']) {
+    const lane = plan.getByText(title, { exact: true }).closest('li');
+    if (!lane) throw new Error('The lane needs a row.');
+    await expect(lane.textContent).toBe(title);
+    await expect(within(lane).queryByRole('link')).toBeNull();
+  }
+  const shelfLinks = plan.getAllByRole('link', {
+    name: 'Open session Review the shelf layout, Waiting on you',
+  });
+  await expect(shelfLinks).toHaveLength(2);
+  await expect(plan.queryByRole('link', { name: /missing|weekend rota/i })).toBeNull();
+  await expect(plan.getByText('Status not recognised', { exact: true })).toBeVisible();
+  await expect(plan.queryByText('No tracker items are listed.')).toBeNull();
+  const sources = within(canvas.getByRole('region', { name: 'Sources' }));
+  const refused = sources.getByText('Annex design notes', { exact: true }).closest('li');
+  if (!refused) throw new Error('The refused source needs a row.');
+  await expect(within(refused).getByText('Refused', { exact: true })).toBeVisible();
+  await expect(within(refused).getByText('Marked private.', { exact: true })).toBeVisible();
+  await expect(within(refused).queryByText('Read', { exact: true })).toBeNull();
+}
+
+export const PublishedPlan: Story = {
+  args: { plan: readyPlan },
+  play: async ({ canvasElement }) => expectPublishedPlan(canvasElement),
+};
+
+export const PublishedPlanOnPhone: Story = {
+  args: { plan: readyPlan },
+  parameters: {
+    viewport: {
+      options: { planPhone: { name: '400 px', styles: { width: '400px', height: '800px' } } },
+    },
+  },
+  globals: { viewport: { value: 'planPhone', isRotated: false } },
+  play: async ({ canvasElement }) =>
+    atPageWidth(400, async () => {
+      await expectPublishedPlan(canvasElement);
+      const goal = within(canvasElement).getByRole('article', {
+        name: 'Make library pickup easier',
+      });
+      const { left, right } = await settledRect(goal);
+      await expect(left).toBe(16);
+      await expect(right).toBe(384);
+    }),
+};
+
+async function primary(canvas: ReturnType<typeof within>) {
+  const menu = canvas.queryByRole('button', { name: 'Menu' });
+  if (menu && menu.getClientRects().length > 0) await userEvent.click(menu);
+  return within(canvas.getByRole('navigation', { name: 'Primary' }));
+}
+
+async function expectNoPlan(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await expect(await canvas.findByRole('heading', { name: 'All sessions' })).toBeVisible();
+  const nav = await primary(canvas);
+  await expect(nav.getByRole('link', { name: 'Sessions', current: 'page' })).toBeVisible();
+  await expect(nav.queryByRole('link', { name: 'Plan' })).toBeNull();
+  await expect(canvas.queryByRole('heading', { name: 'Plan', level: 1 })).toBeNull();
+  await expect(canvas.queryByText(/The Plan settings/)).toBeNull();
+}
+
+export const NotConfigured: Story = {
+  args: { plan: unconfiguredPlan },
+  play: async ({ canvasElement }) => expectNoPlan(canvasElement),
+};
+
+export const Disabled: Story = {
+  args: { plan: null },
+  play: async ({ canvasElement }) => expectNoPlan(canvasElement),
+};
+
+export const RefusedSettings: Story = {
+  args: { plan: refusedPlanSettings },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+    await expect(
+      (await primary(canvas)).getByRole('link', { name: 'Plan', current: 'page' }),
+    ).toBeVisible();
+    await expect(
+      canvas.getByText('The Plan settings did not have the expected format.', { exact: true }),
+    ).toBeVisible();
+    await expect(canvas.queryByRole('heading', { name: 'Goals' })).toBeNull();
+    await expect(
+      canvas.queryByText('The Plan settings could not be read.', { exact: true }),
+    ).toBeNull();
+  },
+};
+
+export const InertDiagram: Story = {
+  args: {
+    plan: { ...readyPlan, diagrams: [{ ...readyPlan.diagrams[0], body: hostileDiagramBody }] },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const diagrams = await canvas.findByRole('region', { name: 'Diagrams' });
+    const section = within(diagrams);
+    await expect(
+      section.getByText('From the library entrance to the pickup shelf', { exact: true }),
+    ).toBeVisible();
+    await expect(section.getByText('diagrams.example.org', { exact: true })).toBeVisible();
+    await expect(section.queryByText('Run diagram', { exact: true })).toBeNull();
+    await waitFor(async () => {
+      await expect(diagrams.querySelector('img, script, a, iframe, object')).toBeNull();
+      await expect(Reflect.get(window, 'planDiagramRan')).toBeUndefined();
+      await expect(performance.getEntriesByType('resource').map(({ name }) => name)).not.toContain(
+        'https://diagram-canary.example.test/plan-image',
+      );
+    });
+    // The Storybook offline guard also fails this story on any external request attempt.
+  },
+};

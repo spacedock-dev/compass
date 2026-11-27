@@ -14,6 +14,7 @@ export const TOP_LEVEL_VIEWS = [
   'projects',
   'sessions',
   'intent',
+  'plan',
   'settings',
   'help',
 ] as const;
