@@ -1163,7 +1163,10 @@ markers. A marker can match a whole name, a token split at hyphens, underscores,
 or a substring. Homoglyphs remain distinct. A configured marker filename can also mark any parent
 directory. Compass checks for an exact match and scans up to 4,096 directory entries for an
 NFC-normalised, casefolded match. It checks the name without reading the entry. An unreadable
-scan or one that exceeds the cap refuses the source.
+scan or one that exceeds the cap refuses the source. A private root that can be entered but not
+listed (mode 111, say) is identified from its metadata, so the settings still load and a source
+beneath it is refused as private. A directory that cannot be opened at all refuses the source as
+unreadable.
 
 The local reader uses held POSIX directory descriptors and refuses directory and file symlinks,
 apart from the root-owned macOS ancestor aliases for `/tmp`, `/var` and `/etc`. The identity checks
@@ -1290,7 +1293,9 @@ checks each session folder's ancestry under the declared privacy rules before co
 device and inode to the declared lane folders. It links a session when exactly one lane folder
 appears in the admitted ancestry. The JSON excludes the working folders. `sessions` is null
 for a cold snapshot or a lane with no admitted folder, and `[]` when the comparison ran and
-found zero matching sessions.
+found zero matching sessions. A private or deleted session folder joins no lane. If any session
+folder cannot be examined, such as one Compass is not permitted to open, every lane's `sessions`
+is null, because that session could belong to any of them.
 
 Plan text and its source diagnostics stay out of the board's session rows, event stream and
 [local history](#local-history-the-session-history-store). Fetching the plan does not collect

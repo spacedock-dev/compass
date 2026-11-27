@@ -496,6 +496,43 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(cold, {"hull": None, "none": None, "refused": None})
         self.assertEqual(warm, {"hull": [], "none": None, "refused": None})
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory whatever its mode")
+    def test_unexaminable_session_folder_leaves_the_join_unmeasured(self) -> None:
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")
+        locked = self.root / "locked"
+        (locked / "inner").mkdir(parents=True)
+        sealed = self.root / "sealed"
+        (sealed / "inner").mkdir(parents=True)
+        policy = self.configure(private={"roots": [str(sealed)]}).sources.policy
+        app = self.application()
+
+        def lanes(*folders: Path) -> Any:
+            app.snapshot.publish(
+                (app.config.window_hours, False),
+                b"{}",
+                folders=(
+                    ("claude", "public", str(self.hull)),
+                    *(("claude", f"s{index}", str(path)) for index, path in enumerate(folders)),
+                ),
+            )
+            return self.payload(app)[0]["lanes"][0]["sessions"]
+
+        public = ['session:["claude","public"]']
+        self.assertEqual(lanes(locked / "inner", self.root / "gone"), public)
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o700)
+        # The locked folder might sit below the lane folder, so neither a full nor an empty
+        # list would be true.
+        self.assertIsNone(lanes(locked / "inner"))
+        self.assertIsNone(runtime_io.plan_session_ancestry(str(locked / "inner"), policy))
+        # A private folder is excluded rather than unexamined, even when it cannot be listed.
+        sealed.chmod(0o111)
+        self.addCleanup(sealed.chmod, 0o700)
+        self.assertEqual(lanes(sealed / "inner"), public)
+        self.assertEqual(
+            runtime_io.plan_session_ancestry(str(sealed / "inner"), policy), frozenset()
+        )
+
     def test_refused_lane_folder_has_a_path_free_reason(self) -> None:
         (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")
         (self.hull / ".restricted").touch()

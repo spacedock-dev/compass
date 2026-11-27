@@ -478,6 +478,37 @@ class PlanSettingsTest(unittest.TestCase):
         self.assertEqual(loaded.reason, "could not identify a private root")
         self.assertIsNone(loaded.settings)
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory whatever its mode")
+    def test_execute_only_private_root_loads_and_refuses_beneath_it(self) -> None:
+        for private in (self.private, self.repo / "sealed"):
+            with self.subTest(private=private.name):
+                (private / "nested").mkdir(parents=True)
+                log = private / "nested" / "events.log"
+                log.write_bytes(b"ask lane:one CANARY_EXECUTE_ONLY")
+                (private / "goals.md").write_text("## Goals\n- G1: CANARY_EXECUTE_ONLY\n")
+                doc = self.fixture()
+                doc["private"]["roots"] = [str(private)]
+                doc["log"]["path"] = str(log)
+                doc["briefs"]["folder"] = str(private / "nested")
+                doc["repos"][0]["files"] = {"goals": ["sealed/goals.md"]}
+                private.chmod(0o111)
+                self.addCleanup(private.chmod, 0o700)
+                plan = self.loaded(doc).sources
+                self.assertEqual(plan.events.reason, "private")
+                self.assertEqual(plan.brief_folder.reason, "private")
+                with mock.patch.object(io, "open_plan_source") as opened:
+                    self.assertEqual(plan.read_log().reason, "private")
+                    self.assertEqual(plan.brief_names().reason, "private")
+                opened.assert_not_called()
+                if private.parent == self.repo:
+                    self.assertEqual(
+                        plan.tree_source("Example", "main", "sealed/goals.md").reason, "private"
+                    )
+                # A private root that cannot even be entered still loads; beneath it is refused.
+                private.chmod(0)
+                self.assertIn(self.loaded(doc).sources.read_log().reason, {"private", "unreadable"})
+                private.chmod(0o700)
+
     def test_an_unreadable_repository_does_not_refuse_other_sources(self) -> None:
         doc = self.fixture()
         locked = self.root / "locked"

@@ -701,6 +701,8 @@ def _directory_child(
         try:
             target = os.readlink(part, dir_fd=fd)
         except OSError:
+            if directory_check is not None and open_error.errno in {errno.EACCES, errno.EPERM}:
+                _check_unlisted(fd, part, directory_check)
             raise open_error from None
         trusted = (
             _platform_alias(child, target)
@@ -723,6 +725,36 @@ def _directory_child(
             follow_links=follow_links,
             directory_check=directory_check,
         )
+
+
+# Opens a directory for lookups only: enough for metadata, not for a listing.
+_SEARCH_ONLY = getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)
+
+
+def _check_unlisted(
+    fd: int, part: str, directory_check: Callable[[int, str, os.stat_result], None]
+) -> None:
+    """Let a policy refuse a directory this user may enter but not list, before EACCES does.
+
+    A declared private root of mode 111 is still private: report it as such rather than as
+    unreadable. Only the policy's refusal escapes; the walk never continues through the child.
+    """
+    if not _SEARCH_ONLY:
+        return
+    try:
+        child = os.open(
+            part,
+            _SEARCH_ONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=fd,
+        )
+    except OSError:
+        return
+    try:
+        directory_check(child, part, os.fstat(child))
+    except OSError:
+        return
+    finally:
+        os.close(child)
 
 
 def _directory_fd(
@@ -841,9 +873,10 @@ def plan_private_prefixes(
     """Remember where each private root sits below directory identities, including repo roots."""
     prefixes: dict[tuple[int, int], set[tuple[str, ...]]] = {}
     for root in roots:
-        ancestry = _plan_ancestry(
-            os.path.realpath(root, strict=True), PlanPathPolicy(), require_owner=False
-        )
+        # Identify the root itself by metadata under its held parent, so a root this user may
+        # enter but not list (mode 111) still loads.
+        parent, name = os.path.split(os.path.realpath(root, strict=True))
+        ancestry = _plan_ancestry(parent, PlanPathPolicy(), require_owner=False, leaf=name)
         if ancestry[-1][1] not in private_ids:
             raise PlanReadError(PlanRefusal.CHANGED)
         names = tuple(name for name, _ in ancestry)
@@ -933,7 +966,7 @@ def inspect_plan_directory(path: str, policy: PlanPathPolicy) -> tuple[int, int]
 
 
 def _plan_ancestry(
-    path: str, policy: PlanPathPolicy, *, require_owner: bool = True
+    path: str, policy: PlanPathPolicy, *, require_owner: bool = True, leaf: str = ""
 ) -> list[tuple[str, tuple[int, int]]]:
     ancestry: list[tuple[str, tuple[int, int]]] = []
 
@@ -941,15 +974,27 @@ def _plan_ancestry(
         policy.check(directory, name, info)
         ancestry.append((name, _identity(info)))
 
-    os.close(
-        _directory_fd(path, follow_links=False, directory_check=check, require_owner=require_owner)
+    directory = _directory_fd(
+        path, follow_links=False, directory_check=check, require_owner=require_owner
     )
+    try:
+        if leaf:
+            info = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
+            if not stat.S_ISDIR(info.st_mode) or not info.st_ino:
+                raise OSError(errno.ENOTDIR, "Not a directory", leaf)
+            ancestry.append((leaf, _identity(info)))
+    finally:
+        os.close(directory)
     return ancestry
 
 
-def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[int, int]]:
+def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[int, int]] | None:
+    """The identities above a session folder, empty when it is private or gone.
+
+    None means the folder could not be examined, so it may sit below any lane folder.
+    """
     if os.name == "nt" or not os.path.isabs(path):
-        return frozenset()
+        return None
     try:
         resolved = os.path.realpath(path, strict=True)
         ancestry = _plan_ancestry(resolved, policy)
@@ -958,12 +1003,16 @@ def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[
             alias = _directory_fd(path, directory_check=policy.check)
             try:
                 if _identity(os.fstat(alias)) != ancestry[-1][1]:
-                    return frozenset()
+                    return None
             finally:
                 os.close(alias)
         return frozenset(identity for _, identity in ancestry)
-    except (OSError, ValueError, PlanReadError):
+    except PlanReadError as exc:
+        return frozenset() if exc.reason == PlanRefusal.PRIVATE else None
+    except (FileNotFoundError, NotADirectoryError):
         return frozenset()
+    except (OSError, ValueError):
+        return None
 
 
 def _check_plan_leaf(
