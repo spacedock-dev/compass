@@ -842,10 +842,10 @@ writes. `--no-spacedock` leaves saved intent readable but suspended. See the
 
 ## Repository git reads (the end-of-session probe)
 
-Two features run a program inside a directory the user chose, both git, both in `git_status.py`.
 Compass already records each session's working directory; when a session ends, the server runs one
 bounded git command there, so the board can show that a session stopped with work still in the tree.
-The second, below the probe's own contract, reads a project's check scripts as a commit held them.
+The check-script and plan readers also run git in their declared repositories. All three use
+`git_status.py`.
 
 The end-of-session probe is exactly this command, or there is no probe. The identity read
 in [Pull request CI reads](#pull-request-ci-reads) runs two other fixed commands and never this
@@ -1146,11 +1146,15 @@ leaves the settings file untouched. The agent summary setting defaults to off.
 
 The settings name each repository, its local branch, an optional draft branch and the exact tree
 paths for each file. They also name one event log and one flat lane-brief folder with a filename
-template. Source admission uses those entries alone. The log is capped at the configured limit,
-up to 1 MiB. Each brief is capped at 64 KiB. The folder scan checks at most 4,096 names and admits
-at most 200 matching names, subject to a lower configured cap. The templates use literal tokens
-and bounded named fields. The diagnostics command checks source metadata. Reading committed
-content, serving the Plan page and delivering session summaries require their respective readers.
+template. An optional map names the working folder for each lane. Compass checks that folder's
+metadata under the same privacy rules and records its normalised path, device and inode. It
+reads no files from the working folder for that lookup.
+
+The log is capped at the configured limit of up to 1 MiB. Compass counts and discards lines that
+fail the configured template or ask and answer ordering. It retains open asks and their supplied
+timestamps. Unread logs have no rejected-line count. Each brief is capped at 64 KiB. The folder
+scan checks at most 4,096 names and admits at most 200 matching names, subject to a lower
+configured cap. The templates use literal tokens and bounded named fields.
 
 The local reader checks the device and inode of each parent directory against the declared
 private roots. It checks each directory name's NFC-normalised, casefolded text against the declared
@@ -1165,9 +1169,30 @@ cover the target ancestry of those aliases too. The leaf must be an owned regula
 hard link. Compass checks its identity again after opening and reads under the byte cap.
 Platforms without the guarded traversal refuse the read.
 
-`--no-plan` skips plan settings and sources for the run. With `--no-git`, plan diagnostics mark
-repository sources as "git reads are off". `--diagnose` reports the settings path, each source by
-kind and position, and the reason for a refusal. It reports counts for private roots and markers.
+`--no-plan` skips plan settings and sources for the run. `--diagnose` reports the settings path,
+each source by kind and position, and its refusal reason if any. It reports counts for private
+roots and markers, rejected log lines when the log was read, and goal and lane link mismatches
+when both inputs were available. Unknown tracker and inventory status words of up to 32 characters
+appear only in diagnostics.
+
+### Plan reads of committed files
+
+Compass checks the declared repository directory before launching Git and verifies its root with
+`rev-parse --show-prefix`. It resolves one exact `refs/heads/<name>` to a commit using
+`for-each-ref`. Tags, remote refs and symbolic branch aliases cannot supply the tip.
+
+For each allowed path, `ls-tree -l -z <commit> -- <path>` returns the mode, object ID and size.
+Compass uses `cat-file blob <id>` only for the exact named entry, with a regular mode and a size
+of at most 256 KiB. It never reads working-tree content, older blobs or commit messages. A source
+that is unavailable or malformed contributes no rows. A failure leaves other sources readable.
+
+Each command uses the resolved executable, disables fsmonitor and hooks, and passes
+`--no-optional-locks`. Compass strips inherited `GIT_*` variables and sets
+`GIT_NO_REPLACE_OBJECTS=1`, `GIT_LITERAL_PATHSPECS=1`, `GIT_TERMINAL_PROMPT=0` and
+`GIT_NO_LAZY_FETCH=1`. An empty `GIT_ALLOW_PROTOCOL` also prevents transport on older Git versions.
+`GIT_CEILING_DIRECTORIES` stops discovery at the declared repository's parent. Tip resolution and
+each file read have their own deadline. `--no-git` stops these commands while leaving the brief
+and log readers available.
 
 ## Reaching a session's terminal (the focus command)
 

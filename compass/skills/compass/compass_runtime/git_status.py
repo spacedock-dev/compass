@@ -553,21 +553,33 @@ def _read(
     deadline: float,
     runner: Callable[..., Any],
 ) -> bytes | None:
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        return None
     try:
-        result = runner(
-            (resolved, *_SAFE_READ, *args),
-            cwd=cwd,
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=remaining,
-            check=False,
-            env=dict(environ),
-        )
+        return _run_read(args, cwd, environ, resolved, deadline=deadline, runner=runner)
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
+
+
+def _run_read(
+    args: tuple[str, ...],
+    cwd: str,
+    environ: Mapping[str, str],
+    resolved: str,
+    *,
+    deadline: float,
+    runner: Callable[..., Any],
+) -> bytes | None:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired(args, 0)
+    result = runner(
+        (resolved, *_SAFE_READ, *args),
+        cwd=cwd,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        timeout=remaining,
+        check=False,
+        env=dict(environ),
+    )
     if getattr(result, "returncode", 1) != 0:
         return None
     out = getattr(result, "stdout", b"")
@@ -639,3 +651,119 @@ def read_committed(
             content = run(("cat-file", "blob", oid), toplevel)
         entries.append(CommittedEntry(name, mode, size, content))
     return CommittedFiles(toplevel, commit, tuple(entries))
+
+
+class PlanGitError(Exception):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+_PLAN_REF = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}")
+_PLAN_TREE_PART = re.compile(r"[A-Za-z0-9._ -]{1,128}")
+
+
+@dataclass(frozen=True)
+class PlanTreeReader:
+    """Read blobs from a pinned tip. The caller admits each repository, ref and path."""
+
+    cwd: str
+    timeout_sec: float
+    _environ: Mapping[str, str]
+    _resolved: str | None
+    _runner: Callable[..., Any]
+
+    def _run(self, args: tuple[str, ...], deadline: float) -> bytes:
+        if self._resolved is None:
+            raise PlanGitError("git unavailable")
+        try:
+            result = _run_read(
+                args,
+                self.cwd,
+                self._environ,
+                self._resolved,
+                deadline=deadline,
+                runner=self._runner,
+            )
+        except subprocess.TimeoutExpired:
+            raise PlanGitError("git timed out") from None
+        except (OSError, ValueError, subprocess.SubprocessError):
+            raise PlanGitError("unreadable") from None
+        if result is None:
+            raise PlanGitError("unreadable")
+        return result
+
+    def tip(self, ref: str) -> str:
+        if _PLAN_REF.fullmatch(ref) is None:
+            raise PlanGitError("branch missing")
+        deadline = time.monotonic() + self.timeout_sec
+        if self._run(("rev-parse", "--show-prefix"), deadline) != b"\n":
+            raise PlanGitError("outside declared root")
+        full = f"refs/heads/{ref}"
+        # An exact name comparison avoids revision DWIM and rejects symbolic aliases.
+        found = self._run(
+            (
+                "for-each-ref",
+                "--count=1",
+                "--format=%(refname)%00%(objectname)%00%(objecttype)%00%(symref)",
+                "--",
+                full,
+            ),
+            deadline,
+        )
+        fields = found.removesuffix(b"\n").split(b"\0")
+        if len(fields) != 4 or fields[0] != full.encode("ascii") or fields[2:] != [b"commit", b""]:
+            raise PlanGitError("branch missing")
+        oid = fields[1].decode("ascii", "replace")
+        if _OBJECT_ID.fullmatch(oid) is None:
+            raise PlanGitError("branch missing")
+        return oid
+
+    def tree_file(self, tip: str, path: str, *, max_bytes: int) -> bytes:
+        if (
+            _OBJECT_ID.fullmatch(tip) is None
+            or len(path) > 1024
+            or any(
+                part in {".", ".."}
+                or part.startswith("-")
+                or _PLAN_TREE_PART.fullmatch(part) is None
+                for part in path.split("/")
+            )
+        ):
+            raise PlanGitError("outside declared root")
+        deadline = time.monotonic() + self.timeout_sec
+        listing = self._run(("ls-tree", "-l", "-z", tip, "--", path), deadline)
+        if not listing:
+            raise PlanGitError("not in branch")
+        entry = _TREE_ENTRY.fullmatch(listing.removesuffix(b"\0"))
+        if not listing.endswith(b"\0") or entry is None or entry[5] != path.encode("ascii"):
+            raise PlanGitError("unreadable")
+        if entry[2] != b"blob" or entry[1].decode() not in _REGULAR_MODES:
+            raise PlanGitError("not a regular file in branch")
+        oid, size = entry[3].decode(), entry[4]
+        if _OBJECT_ID.fullmatch(oid) is None or not size.isdigit():
+            raise PlanGitError("unreadable")
+        if len(size) > 19 or int(size) > max_bytes:
+            raise PlanGitError("over the byte cap")
+        data = self._run(("cat-file", "blob", oid), deadline)
+        if len(data) != int(size):
+            raise PlanGitError("unreadable")
+        return data
+
+
+def plan_reader(
+    cwd: str, *, timeout_sec: float, runner: Callable[..., Any] = subprocess.run
+) -> PlanTreeReader:
+    environ = probe_environment(
+        {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
+    )
+    environ.update(
+        GIT_CEILING_DIRECTORIES=os.path.dirname(cwd),
+        GIT_NO_REPLACE_OBJECTS="1",
+        GIT_LITERAL_PATHSPECS="1",
+        GIT_TERMINAL_PROMPT="0",
+        GIT_NO_LAZY_FETCH="1",
+        # Also prohibit transports on versions that predate GIT_NO_LAZY_FETCH.
+        GIT_ALLOW_PROTOCOL="",
+    )
+    return PlanTreeReader(cwd, timeout_sec, environ, _executable(environ), runner)

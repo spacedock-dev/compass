@@ -146,6 +146,7 @@
     "section": "Goals",
     "section_level": 2,
     "form": "heading",
+    "numbered_id_prefix": "P",
     "templates": [
       ["P", {"name": "n", "kind": "integer", "max_chars": 5}, ". ", {"name": "title", "kind": "text", "max_chars": 200}]
     ],

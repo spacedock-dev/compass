@@ -48,6 +48,7 @@ from .support import (
     runtime,
     store_patch,
 )
+from .test_project_script_checks import GIT, git
 
 
 class CompassServerTest(RuntimeTestCase):
@@ -1107,6 +1108,54 @@ class StoreRootsTest(unittest.TestCase):
 
 
 class DiagnoseTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Plan reads require POSIX directory descriptors")
+    def test_plan_diagnosis_reports_read_results_and_diagnose_only_status(self) -> None:
+        if GIT is None:
+            self.skipTest("Git is not on PATH")
+        fixture = Path(__file__).parent / "fixtures" / "plan" / "stand-in.json"
+        doc = json.loads(fixture.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            home = root / "state"
+            repo = root / "project"
+            briefs = root / "briefs"
+            for path in (home, repo, briefs):
+                path.mkdir()
+            git(repo, "init", "-q", "-b", "main")
+            (repo / "tracker.md").write_text(
+                "| Item | Status |\n| --- | --- |\n"
+                "| Title reserved for the plan | uncommon bird; omitted note |\n",
+                encoding="utf-8",
+            )
+            git(repo, "add", "tracker.md")
+            git(repo, "commit", "-qm", "Synthetic plan")
+            log = root / "events.log"
+            log.write_text("discarded note\n", encoding="utf-8")
+            doc["private"]["roots"] = []
+            doc["briefs"]["folder"] = str(briefs)
+            doc["log"]["path"] = str(log)
+            doc["repos"][0].update(path=str(repo), files={"tracker": ["tracker.md"]})
+            (home / "compass-plan.json").write_text(json.dumps(doc), encoding="utf-8")
+            flags = ["--diagnose", "--json", "--no-usage", "--no-spacedock"]
+            output = io.StringIO()
+            with (
+                mock.patch.dict(os.environ, {"HOME": str(root), "COMPASS_HOME": str(home)}),
+                contextlib.redirect_stdout(output),
+            ):
+                self.assertEqual(cli.main(flags), 0)
+            report = json.loads(output.getvalue())
+            plan = report["plan"]
+            self.assertEqual(plan["log_rejected"], 1)
+            self.assertEqual(
+                plan["unknown_statuses"], [{"source": 1, "line": 3, "word": "uncommon bird"}]
+            )
+            text = diagnostics.render_diagnosis(report)
+            self.assertIn("uncommon bird", text)
+            for rendered in (text, json.dumps(plan)):
+                self.assertNotIn("discarded note", rendered)
+                self.assertNotIn("omitted note", rendered)
+                self.assertNotIn("Title reserved for the plan", rendered)
+
     @unittest.skipIf(os.name == "nt", "Plan reads require POSIX directory descriptors")
     def test_plan_diagnosis_reports_sources_without_private_values(self) -> None:
         fixture = Path(__file__).parent / "fixtures" / "plan" / "stand-in.json"

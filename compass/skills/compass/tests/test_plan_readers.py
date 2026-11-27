@@ -1,0 +1,411 @@
+"""The plan's declared inputs, using two synthetic grammars and real Git trees."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+from unittest import mock
+
+from compass_runtime import git_status, io
+from compass_runtime.plan import readers, settings, sources
+
+from .test_project_script_checks import GIT, git
+
+FIXTURES = Path(__file__).parent / "fixtures" / "plan"
+
+STAND_IN = {
+    "goals": "## Goals\n- G1 · Restore the model ship\n"
+    "**Done when:** The model floats.\n**Lanes:** hull, paint\n"
+    "- G2: Light the display\n#### Done when\nThe lamp lights.\n\n"
+    "## Notes\n- G3: Unrelated outline\n",
+    "design": "### Decision: Use a wooden stand\n\n"
+    "This note is outside the entry grammar.\n\n"
+    "### Clear coat, decided, 2026-01-01\n"
+    "### Decided: Evaluate a brass stand\n"
+    "### An owner ruling on adhesives\n### Reconsidered glue\n",
+    "built": "| Item | State | Notes |\n| --- | --- | --- |\n"
+    "| Frame | shipped | Detail omitted |\n| Lamp | partial | |\n| Plaque | new | |\n",
+    "tracker": "| Item | Status | Other |\n| --- | --- | --- |\n"
+    "| Cut the hull | 🔧 **FIXED** (work note) | Extra text |\n"
+    "| Paint the deck | unusual seabird; hidden tail | |\n"
+    "| Test buoyancy | driving | |\n\n"
+    "| State | Item |\n| --- | --- |\n| open | Buy sandpaper |\n",
+    "diagrams": "## Build order\n```mermaid\nflowchart LR\n"
+    '  A["https://example.test/private?key=sample"] --> B\n```\n'
+    "```\n[A] -> [B]\n```\n",
+}
+VARIANT = {
+    "goals": "## Goals\n### P4. Align the telescope\n**Done when**: The stars are sharp.\n",
+    "design": "### Choose a mount, decided,\n### Consider a tripod\n",
+    "built": "- [x] Base plate\n* [ ] Lens cover\n",
+    "tracker": "| Item | State |\n| --- | --- |\n| Focus | delivered — Change note |\n",
+    "diagrams": "Figure: Optics\n```mermaid\nsequenceDiagram\n  Eye->>Lens: Look\n```\n",
+}
+
+
+@unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
+class PlanReadersTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory(dir="/tmp" if sys.platform == "darwin" else None)
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.repo = self.root / "repo"
+        self.home = self.root / "state"
+        self.briefs = self.root / "briefs"
+        self.hull = self.root / "work" / "hull"
+        self.log = self.root / "events.log"
+        for folder in (self.repo, self.home, self.briefs, self.hull):
+            folder.mkdir(parents=True)
+        git(self.repo, "init", "-q", "-b", "main")
+        self.log.write_bytes(b"")
+
+    def write_sources(self, data: dict[str, str]) -> None:
+        (self.repo / "plan").mkdir(exist_ok=True)
+        for name, text in data.items():
+            (self.repo / "plan" / f"{name}.md").write_text(text, encoding="utf-8")
+        git(self.repo, "add", "plan")
+        git(self.repo, "commit", "-qm", "Synthetic snapshot")
+
+    def configure(self, fixture: str = "stand-in", **overrides: Any) -> settings.Settings:
+        doc = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
+        doc["repos"][0]["path"] = str(self.repo)
+        doc["briefs"]["folder"] = str(self.briefs)
+        doc["briefs"]["lane_folders"] = {"hull": str(self.hull)}
+        doc["private"]["roots"] = []
+        doc["log"]["path"] = str(self.log)
+        if fixture == "variant":
+            # The system's real temp ancestry can contain a directory named "private".
+            doc["private"]["markers"][0]["value"] = "sealed"
+        for name, patch in overrides.items():
+            doc[name].update(patch)
+        (self.home / settings.FILENAME).write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        self.assertIsNone(loaded.reason)
+        assert loaded.settings is not None
+        return loaded.settings
+
+    def test_stand_in_reads_each_declared_source(self) -> None:
+        self.write_sources(STAND_IN)
+        (self.briefs / "hull.md").write_text(
+            "**Goal:** Shape the hull.\nIt needs to float.\n\n"
+            "## Done\nThe hull floats.\n\n*Serves*: G1 G2\n",
+            encoding="utf-8",
+        )
+        (self.briefs / "paint.md").write_text("## Goal\nPaint it.\n", encoding="utf-8")
+        (self.briefs / "unlisted.txt").write_text("Skip this file", encoding="utf-8")
+        self.log.write_bytes(b"ask hull:1 Can it float?\nask hull:2 Pick a color\nanswer hull:2\n")
+        result = readers.read_plan(self.configure())
+        model = result.model
+        self.assertEqual(
+            [(g.id, g.done, g.lanes) for g in model.goals],
+            [
+                ("G1", "The model floats.", ("hull",)),
+                ("G2", "The lamp lights.", ("hull",)),
+            ],
+        )
+        self.assertEqual([g.origin.line for g in model.goals], [2, 5])
+        self.assertEqual(len({g.origin.commit for g in model.goals}), 1)
+        self.assertEqual([d.decided for d in model.decisions], [True, True, False, True, False])
+        self.assertEqual([i.status for i in model.inventory], ["built", "partial", "not_built"])
+        self.assertEqual(
+            [i.status for i in model.tracker],
+            [
+                "done",
+                "Status not recognised",
+                "running",
+                "not_started",
+            ],
+        )
+        self.assertNotIn("unusual seabird", repr(model))
+        self.assertNotIn("hidden tail", repr(result))
+        self.assertNotIn("work note", repr(model))
+        self.assertNotIn("outside the entry grammar", repr(model))
+        self.assertEqual(
+            [word.word for word in result.diagnostics.unknown_statuses], ["unusual seabird"]
+        )
+        self.assertEqual(result.diagnostics.goal_lane_mismatches, 2)
+        self.assertEqual([d.caption for d in model.diagrams], ["Build order", "Build order"])
+        self.assertNotIn("https://example.test", repr(model))
+        self.assertIn("https://example.test", model.diagrams[0].unredacted_body)
+        self.assertEqual([lane.slug for lane in model.lanes], ["hull", "paint"])
+        hull, paint = model.lanes
+        self.assertEqual(
+            (hull.goal, hull.done, hull.serves),
+            ("Shape the hull. It needs to float.", "The hull floats.", ("G1", "G2")),
+        )
+        self.assertEqual(paint.serves, ())
+        self.assertIsNone(paint.folder)
+        assert hull.folder is not None
+        stat = self.hull.stat()
+        self.assertEqual(
+            (hull.folder.path, hull.folder.device, hull.folder.inode),
+            (str(self.hull), stat.st_dev, stat.st_ino),
+        )
+        self.assertEqual(
+            [(ask.id, ask.text, ask.lane, ask.source, ask.timestamp) for ask in model.asks],
+            [("hull:1", "Can it float?", "hull", "Coordination", None)],
+        )
+        self.assertEqual(model.log_rejected, 0)
+        self.assertTrue(all(s.reason is None for s in model.sources))
+
+    def test_variant_uses_declared_grammars(self) -> None:
+        self.write_sources(VARIANT)
+        (self.briefs / "hull.brief.md").write_text(
+            "**Objective:** Set the lens.\nKeep it aligned.\n"
+            "_Exit_: The image is sharp.\nGoals: P4\n",
+            encoding="utf-8",
+        )
+        self.log.write_bytes(
+            b"2026-01-02T03:04:05.123456789Z ASK hull a1 Is the lens set?\n"
+            b"2026-01-02T03:04:06+00:00 ASK hull a2 Check alignment\n"
+            b"2026-01-02T03:04:07Z DONE hull a2\n"
+        )
+        model = readers.read_plan(self.configure("variant")).model
+        self.assertEqual(
+            [(g.id, g.done, g.lanes) for g in model.goals],
+            [("P4", "The stars are sharp.", ("hull",))],
+        )
+        self.assertEqual([row.status for row in model.inventory], ["built", "not_built"])
+        self.assertEqual([row.status for row in model.tracker], ["done"])
+        self.assertEqual([row.decided for row in model.decisions], [True, False])
+        self.assertEqual(
+            [(row.kind, row.caption) for row in model.diagrams], [("sequenceDiagram", "Optics")]
+        )
+        self.assertEqual(model.lanes[0].goal, "Set the lens. Keep it aligned.")
+        self.assertEqual(
+            [(a.id, a.timestamp, a.lane) for a in model.asks],
+            [("a1", "2026-01-02T03:04:05.123456789Z", "hull")],
+        )
+        self.assertEqual(model.log_rejected, 0)
+
+    def test_canary_physical_log_lines_are_counted_and_discarded(self) -> None:
+        self.log.write_bytes(
+            b"free text canary\n"
+            b'{"kind":"json canary","id":"b"}\n'
+            b"ask hull:over " + b"o" * 201 + b"\n"
+            b"unknown hull:word unknown verb canary\n"
+            b"ask hull:cr CR canary\rask hull:split Split canary\n"
+            b"ask hull:ctrl Control canary\x1b[0m\n"
+            b"ask hull:valid This ask is permitted\n"
+        )
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(model.log_rejected, 6)
+        self.assertEqual([ask.id for ask in model.asks], ["hull:valid"])
+        self.assertNotIn("canary", str(asdict(model)).lower())
+        self.assertNotIn("o" * 201, str(asdict(model)))
+
+    def test_log_rejects_invalid_utf8_and_invalid_ask_answer_order(self) -> None:
+        self.log.write_bytes(
+            b"answer one\nask one question\nask one duplicate\n"
+            b"answer one\nanswer one\nask one reopened\n"
+            b"answer unknown\nask hull:two \xff\n"
+            b"note locally audited note\n"
+            b"ask hull:three question three"
+        )
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(model.log_rejected, 6)
+        self.assertEqual([ask.id for ask in model.asks], ["hull:three"])
+
+    def test_only_local_branch_tip_content_survives_dirty_tree_and_history(self) -> None:
+        self.write_sources({**STAND_IN, "gone": "## Goals\n- G9: Older blob"})
+        git(self.repo, "rm", "plan/gone.md")
+        self.write_sources(STAND_IN)
+        (self.repo / "plan" / "goals.md").write_text("## Goals\n- G8: Dirty text", encoding="utf-8")
+        (self.repo / "plan" / "gone.md").write_text("## Goals\n- G9: Untracked", encoding="utf-8")
+        git(self.repo, "switch", "-qc", "unrelated")
+        git(self.repo, "add", "plan/goals.md")
+        git(self.repo, "commit", "-qm", "Unrelated branch")
+        files = {"goals": ["plan/goals.md", "plan/gone.md"]}
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual([g.id for g in model.goals], ["G1", "G2"])
+        doc = json.loads((self.home / settings.FILENAME).read_text(encoding="utf-8"))
+        doc["repos"][0]["files"] = files
+        (self.home / settings.FILENAME).write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        assert loaded.settings is not None
+        model = readers.read_plan(loaded.settings).model
+        self.assertEqual([g.id for g in model.goals], ["G1", "G2"])
+        self.assertEqual(
+            [s.reason for s in model.sources if s.kind == "goals"], [None, "not in branch"]
+        )
+        self.assertNotIn("Older blob", repr(model))
+        self.assertNotIn("Unrelated branch", repr(model))
+
+    def test_refused_source_does_not_inherit_a_previous_read(self) -> None:
+        self.write_sources(STAND_IN)
+        (self.briefs / "hull.md").write_text("## Goal\nA valid brief.\n", encoding="utf-8")
+        self.log.write_bytes(b"ask hull:1 Read me\n")
+        config = self.configure(log={"max_bytes": 512})
+        self.assertEqual(len(readers.read_plan(config).model.asks), 1)
+        self.log.write_bytes(b"x" * 513)
+        (self.briefs / "hull.md").write_text(
+            "## Goal\nDuplicate\n## Goal\nAgain\n", encoding="utf-8"
+        )
+        self.write_sources(
+            {
+                "tracker": "| Item | Status |\n| --- | --- |\n| Column missing |\n",
+                "diagrams": '```mermaid\nflowchart LR\nclick A href "https://example.test"\n```\n',
+                "built": "x" * (256 * 1024 + 1),
+            }
+        )
+        model = readers.read_plan(config).model
+        self.assertEqual(
+            (model.tracker, model.inventory, model.diagrams, model.lanes, model.asks),
+            ((), (), (), (), ()),
+        )
+        self.assertIsNone(model.log_rejected)
+        self.assertEqual(
+            {s.kind: s.reason for s in model.sources},
+            {
+                "goals": None,
+                "decisions": None,
+                "inventory": "over the byte cap",
+                "diagrams": "malformed",
+                "tracker": "malformed",
+                "lane briefs": None,
+                "lane brief": "malformed",
+                "event log": "over the byte cap",
+            },
+        )
+
+    def test_no_git_keeps_the_local_plan_and_starts_no_subprocess(self) -> None:
+        self.write_sources(STAND_IN)
+        self.log.write_bytes(b"ask hull:1 Is the stand ready?\n")
+        self.configure()
+        loaded = settings.load(str(self.home), git_enabled=False)
+        assert loaded.settings is not None
+        with mock.patch.object(git_status, "plan_reader") as factory:
+            model = readers.read_plan(loaded.settings).model
+        factory.assert_not_called()
+        self.assertEqual(len(model.asks), 1)
+        self.assertEqual(model.goals, ())
+        self.assertEqual([s.reason for s in model.sources[:5]], ["git reads are off"] * 5)
+
+    def test_a_tag_remote_or_symbolic_alias_cannot_supply_the_configured_branch(self) -> None:
+        self.write_sources(STAND_IN)
+        git(self.repo, "branch", "-m", "committed")
+        git(self.repo, "tag", "refs/heads/main")
+        git(self.repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+        config = self.configure()
+        for symbolic in (False, True):
+            if symbolic:
+                git(self.repo, "symbolic-ref", "refs/heads/main", "refs/remotes/origin/main")
+            with self.subTest(symbolic=symbolic):
+                model = readers.read_plan(config).model
+                self.assertEqual(model.goals, ())
+                self.assertEqual([s.reason for s in model.sources[:5]], ["branch missing"] * 5)
+
+    def test_diagram_directives_discard_the_source_before_any_diagram_survives(self) -> None:
+        for directive in (
+            "%%{init: {}}%%",
+            "click A B",
+            "href value",
+            "CALLBACK",
+            "<script>",
+            "javascript:value",
+        ):
+            with self.subTest(directive=directive):
+                self.write_sources(
+                    {
+                        "diagrams": "```mermaid\nflowchart LR\nA --> B\n```\n"
+                        "```mermaid\nsequenceDiagram\n" + directive + "\n```\n"
+                    }
+                )
+                model = readers.read_plan(self.configure()).model
+                self.assertEqual(model.diagrams, ())
+                self.assertEqual(
+                    next(s.reason for s in model.sources if s.kind == "diagrams"), "malformed"
+                )
+
+    def test_json_inventory_uses_declared_field_names(self) -> None:
+        self.write_sources(
+            {
+                "built": json.dumps(
+                    [
+                        {"label": "Small mirror", "phase": "PARTIAL", "note": "Unselected field"},
+                        {"label": "Large mirror", "phase": "shipped"},
+                    ]
+                )
+            }
+        )
+        result = readers.read_plan(
+            self.configure(
+                inventory={"form": "json", "title_column": "label", "state_locator": "phase"}
+            )
+        )
+        self.assertEqual(
+            [(row.title, row.status) for row in result.model.inventory],
+            [("Small mirror", "partial"), ("Large mirror", "built")],
+        )
+        self.assertNotIn("Unselected field", repr(result))
+
+    def test_unknown_status_even_if_identical_to_header_affects_only_its_row(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Status |\n| --- | --- |\n"
+                "| Item | Status |\n| Second row | fixed |\n",
+            }
+        )
+        result = readers.read_plan(self.configure())
+        self.assertEqual(
+            [(row.title, row.status) for row in result.model.tracker],
+            [("Item", "Status not recognised"), ("Second row", "done")],
+        )
+
+    def test_overlong_goal_in_a_declared_list_withdraws_the_file(self) -> None:
+        self.write_sources(
+            {
+                "goals": "## Goals\n- G1: Valid goal\n- G2: " + "x" * 201 + "\n",
+            }
+        )
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(model.goals, ())
+        self.assertEqual(model.sources[0].reason, "over the byte cap")
+
+    def test_lane_folders_are_declared_and_admitted_as_metadata(self) -> None:
+        config = self.configure(briefs={"lane_folders": {"hull": str(self.hull)}})
+        (self.briefs / "hull.md").write_text("## Goal\nShape it.\n", encoding="utf-8")
+        (self.hull / ".restricted").touch()
+        model = readers.read_plan(config).model
+        self.assertEqual(len(model.lanes), 1)
+        self.assertIsNone(model.lanes[0].folder)
+        self.assertEqual(model.lanes[0].folder_reason, io.PlanRefusal.PRIVATE)
+        doc = json.loads((self.home / settings.FILENAME).read_text(encoding="utf-8"))
+        for folders in ({"hull": "relative"}, {"Not a slug": str(self.hull)}):
+            with self.subTest(folders=folders):
+                doc["briefs"]["lane_folders"] = folders
+                (self.home / settings.FILENAME).write_text(json.dumps(doc), encoding="utf-8")
+                self.assertEqual(settings.load(str(self.home)).reason, settings.MALFORMED)
+
+    def test_git_tree_modes_are_checked_before_opening_a_blob(self) -> None:
+        self.write_sources(STAND_IN)
+        (self.repo / "plan" / "link").symlink_to("design.md")
+        git(self.repo, "add", "plan/link")
+        tip = subprocess.check_output(
+            [GIT or "git", "rev-parse", "HEAD"], cwd=self.repo, text=True
+        ).strip()
+        git(self.repo, "update-index", "--add", "--cacheinfo", f"160000,{tip},plan/module")
+        git(self.repo, "commit", "-qm", "Non-file entries")
+        runner = mock.Mock(wraps=subprocess.run)
+        reader = git_status.plan_reader(str(self.repo), timeout_sec=5, runner=runner)
+        tip = reader.tip("main")
+        assert tip is not None
+        for name in ("link", "module", "absent"):
+            with self.subTest(name=name), self.assertRaises(git_status.PlanGitError) as error:
+                reader.tree_file(tip, f"plan/{name}", max_bytes=1024)
+            expected = "not in branch" if name == "absent" else "not a regular file in branch"
+            self.assertEqual(error.exception.reason, expected)
+        with self.assertRaises(git_status.PlanGitError):
+            reader.tree_file(tip, "../outside", max_bytes=1024)
+        self.assertFalse(any("cat-file" in call.args[0] for call in runner.call_args_list))
+        self.assertEqual(
+            self.configure().sources.tree_source("Example", "main", "plan/gone").reason,
+            sources.NOT_NAMED,
+        )

@@ -498,9 +498,10 @@ request overflow retains that session's wait until the plugin restarts. It remem
 ## See why a harness is missing
 
 A collector skips a store it cannot read rather than taking the dashboard down, so a wrong path and an
-idle machine look identical on the board. `--diagnose` is the only thing that tells them apart. It
-reads local paths, may run the read-only local `git` commands that read a project's check scripts
-(`--no-git` stops them), writes nothing, transmits nothing, and starts no server:
+idle machine look identical on the board. `--diagnose` checks local paths and reports what it
+finds. It can run read-only Git commands for project check scripts and configured plan files.
+`--no-git` stops those commands. The report stays on the machine. Diagnostics write nothing and
+start no server.
 
 ```bash
 python3 "$SKILL/launch.py" "$SKILL/server.py" --diagnose
@@ -904,7 +905,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-events` | The event coordinator. State comes from scanning stores rather than from pushed events, and the session-end store is neither read nor written |
 | `--no-spacedock` | Reading Spacedock workflow state out of a project; saved stage conditions remain readable but suspended |
 | `--no-tripwires` | Workflow stage conditions and every read or write of their saved store |
-| `--no-git` | The end-of-session git probe and the read of a project's check scripts. No git command runs inside any repository |
+| `--no-git` | The end-of-session git probe, project check-script reads and plan reads from Git |
 | `--no-plan` | Reading the Plan board settings and sources |
 | `--no-ci-read` | Reading a pull request's or merge request's CI checks from GitHub or GitLab when you press Check progress. No `gh` or `glab` command runs, and Read pull request status in Settings is held off |
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
