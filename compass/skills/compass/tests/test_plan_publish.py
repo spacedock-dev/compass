@@ -422,6 +422,46 @@ class PlanPublicationTest(PlanRepoTestCase):
             ("git@host:CANARY_ORG\\repo.git", "[link]"),
             ("git@host:/srv/CANARY_ABSOLUTE.git", "[link]"),
             ("[repo](git@host:CANARY_ORG/repo.git)", "[repo]"),
+            # A bracketed IPv6 address before a path, a query or a fragment.
+            ("[::1]/CANARY_IPV6", "[::1]"),
+            ("[2001:db8::1]/r?c=CANARY_IPV6_LONG", "[2001:db8::1]"),
+            ("参考[::1]?code=CANARY_IPV6_QUERY", "[::1]"),
+            ("CANARY_V6_USER@[::1]#CANARY_IPV6_FRAGMENT", "[::1]"),
+            ("_[::1]/CANARY_IPV6_EMPHASIS_", "[::1]"),
+            ("[fe80::1%25CANARY_ZONE]/CANARY_IPV6_ZONE", "[link]"),
+            # Userinfo before a bare `www.` host with nothing after it.
+            ("CANARY_W_USER:CANARY_W_PASS@www.example.test", "www.example.test"),
+            # A full-width solidus or a zero-width character between a host and its path.
+            ("example.test\uff0fCANARY_FULLWIDTH_SOLIDUS", "[link]"),
+            (
+                "\uff45\uff58\uff41\uff4d\uff50\uff4c\uff45\uff0e\uff43\uff4f\uff4d\uff0fCANARY_WIDE",
+                "[link]",
+            ),
+            ("example.test\u200b/CANARY_ZERO_WIDTH", "[link]"),
+            ("example.test\u200b:8443/CANARY_ZERO_WIDTH_PORT", "[link]"),
+            ("localhost\uff0fCANARY_LOCAL_SOLIDUS", "[link]"),
+            # Masked from the token's start, so a later link's userinfo is still covered.
+            ("CANARY_PRE!example.test\uff0fx@host:org/r.git", "[link]"),
+            (":/CANARY_SCHEME:WWW.a.bc\uff0f:pw@blob:x", "[link]"),
+            ("example.test\u2060\u00ad?code=CANARY_WORD_JOINER", "[link]"),
+            # A git remote whose path holds a colon: what follows the colon may be another link
+            # form, so no host is named.
+            ("git@host:CANARY_ORG:CANARY_COLON.git", "[link]"),
+            ("git@host:22:CANARY_PORT_PATH/r.git", "[link]"),
+            # A slash, a query mark or a hash inside a password.
+            ("CANARY_S_USER:CANARY_S1/CANARY_S2@host:org/r.git", "host"),
+            ("CANARY_T_USER:CANARY_T1/CANARY_T2@example.test/x", "example.test"),
+            ("CANARY_Q_USER:CANARY_Q1?CANARY_Q2#CANARY_Q3@1192.168.1.10/x", "192.168.1.10"),
+            ("CANARY_B64/CANARY_B64+x@www.example.test/x", "www.example.test"),
+            ("CANARY_X/CANARY_Y@www.example.test", "www.example.test"),
+            ("x.рф\u200b/CANARY_ZW_IDN", "[link]"),
+            ("例子。com\u200b/CANARY_ZW_WIDE", "[link]"),
+            ("CANARY_V6_PREFIX![::1]/x", "[::1]"),
+            ("CANARY_GZ!a-localhost\u200b/x", "[link]"),
+            # An `@` after a remote's colon may be a password's: the host after it is named, or
+            # none is.
+            ("CANARY_R1@CANARY_R2:CANARY_R3@host:org/r.git", "host"),
+            ("CANARY_R4@CANARY_R5:CANARY_R6/x@host:org/r.git", "[link]"),
         )
         self.write_sources(
             {
@@ -1097,6 +1137,12 @@ class LinkProjectionTest(unittest.TestCase):
             "see webcal: later",
             "1tel: call me",
             "ping @team:design/ux",
+            "arr[::2]/n",
+            "[1:2]/3",
+            "完了しました。詳細\uff0f補足は後で",
+            "A\uff0fB testing",
+            "see plan.md\u200b: notes",
+            "ping alice@corp: 12:30/45",
         ):
             with self.subTest(text=text):
                 self.assertEqual(records.hosts_only(text), (text, ()))
@@ -1119,6 +1165,55 @@ class LinkProjectionTest(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 hosts = () if host is None else (host,)
+                self.assertEqual(records.hosts_only(text), (expected, hosts))
+
+    def test_a_form_found_here_first_never_cuts_a_later_link_short(self) -> None:
+        # A form the board did not mask before can start ahead of one it did, whose own end
+        # reaches further: to the line's end after an unmatched quote.
+        for text in (
+            "<example.test\u200b/x@host:org/r.git< CANARY_TAIL",
+            "'a.bc\u200b/x@host:org/r.git' CANARY_TAIL",
+            "'[::1]/webcal:x' CANARY_TAIL",
+            '"[::1]/x-localhost:80/" CANARY_TAIL',
+            "a.bc\uff0f'x@host:org/r.git' CANARY_TAIL 'tail",
+            "'git@host:a:b.git`x-localhost/' CANARY_TAIL",
+            "'git@host:a:b/c@d:e.git' CANARY_TAIL",
+        ):
+            with self.subTest(text=text):
+                self.assertNotIn("CANARY", records.hosts_only(text)[0])
+
+    def test_a_host_before_a_backslash_in_userinfo_is_not_named(self) -> None:
+        # Userinfo read back past a backslash would leave a host before it named, where the
+        # board left it unnamed.
+        for text, host in (
+            ("CANARY_USER:CANARY.secret\u3002/]\\@www.example.test", "www.example.test"),
+            ("x-localhost/]\\@k.test/x", "k.test"),
+            ("a.test\u3002/}\\x@www.example.test", "www.example.test"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.hosts_only(text)[1], (host,))
+
+    def test_forms_found_here_first_keep_their_masks(self) -> None:
+        for text, expected, hosts in (
+            # A glued host before a colon is named, as before a path.
+            ("a-localhost:CANARY", "a-localhost", ("localhost",)),
+            ("example.test\ufeff/CANARY", "[link]", ()),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.hosts_only(text), (expected, hosts))
+
+    def test_prose_a_link_could_spell_stays_masked(self) -> None:
+        # Each is prose here and a link elsewhere: `.md` is a country's top-level domain, git
+        # reads `name@host:path` as a remote, and a word glued to a dotted quad is masked like
+        # the hosts glued to one. Unmasking any of them would show what such a link carries.
+        for text, expected, hosts in (
+            ("README.md\\CANARY", "[link]", ()),
+            ("v1.2.3.4/CANARY", "v1.2.3.4", ("1.2.3.4",)),
+            ("docker image@sha256:abc/CANARY", "docker sha256", ("sha256",)),
+            ("pkg@1.2.3:src/CANARY.js", "[link]", ()),
+            ("完了。中国/CANARY", "[link]", ()),
+        ):
+            with self.subTest(text=text):
                 self.assertEqual(records.hosts_only(text), (expected, hosts))
 
 
@@ -1183,6 +1278,21 @@ class LinkProjectionTimingTest(unittest.TestCase):
                 ("repeated known links", "", "https://a.test/x ", "!"),
                 ("repeated added links", "", "a.рф/x ", "!"),
                 ("known links with no added form ahead", "", "//x ", "!"),
+                ("bracketed addresses", "", "[::1]/ ", "!"),
+                ("unclosed brackets of colons", "", "[1:", "!"),
+                ("bracketed zones", "", "[::1%", "!"),
+                ("full-width solidi after labels", "", "a.bc\uff0f", "!"),
+                ("wide labels before solidi", "", "ab\uff0e\uff0f", "!"),
+                ("zero-width characters after labels", "", "a.bc\u200b", "!"),
+                ("a zero-width run before a path", "a.bc", "\u200b", "/"),
+                ("scp-like remotes with colons", "", "a@b:c:", "!"),
+                ("scp-like remotes before a far slash", "", "a@b:", "/x.git"),
+                ("scp-like remotes with at signs", "", "a@b:c@", "/"),
+                ("slashes, queries and hashes in userinfo", "", "a/?#", "@b.test/"),
+                ("userinfo before www hosts", "", "a:b@www.", "!"),
+                ("full-width solidi before quotes", "", "a.bc\uff0f'", "!"),
+                ("quotes after a known link", "https://a.test/", "x'", "!"),
+                ("quoted addresses before an opaque link", "", "'[::1]/webcal:x' ", "!"),
             )
         }
         for name, text in cases.items():
@@ -1197,13 +1307,42 @@ class LinkProjectionTimingTest(unittest.TestCase):
     def test_an_added_link_before_a_known_one_scans_in_linear_time(self) -> None:
         # Linear time quadruples from 250 KB to 1 MB; a rescan to the line end for each added
         # link grows sixteenfold.
-        for unit, tail in (("a.рф/< //x ", "!"), ("x-localhost/< https://k.test/ ", ">")):
+        for head, unit, tail in (
+            ("", "a.рф/< //x ", "!"),
+            ("", "x-localhost/< https://k.test/ ", ">"),
+            ("", "[::1]/< www.k.test/ ", ">"),
+            ("", "a.bc\uff0f< u:p@www.k.test ", ">"),
+            # Each known link read the text back to an added link far after it: 4 s at 250 KB.
+            ("", "//x ", "a.рф/x"),
+            # Each quote searched for the line's end again.
+            ("", "a.bc\uff0f'", "!"),
+            ("https://a.test/", "x'", "!"),
+            ("", "'[::1]/webcal:x' ", "!"),
+        ):
             with self.subTest(unit=unit):
                 took = []
                 for size in (250_000, 1_000_000):
-                    text = unit * (size // len(unit)) + tail
+                    text = head + unit * (size // len(unit)) + tail
                     started = time.monotonic()
                     records.hosts_only(text)
                     took.append(time.monotonic() - started)
                 self.assertLess(took[0], 5.0)
                 self.assertLess(took[1], 8 * took[0])
+
+    def test_a_long_userinfo_after_many_added_links_is_read_once(self) -> None:
+        # Reading the userinfo back again for each added link before it was quadratic: 20 KB
+        # of added links before a 20 KB token took 3.3 s (measured 2026-11-27).
+        # Many known links before one added link read the text between them back once each:
+        # 50 KB took 11.6 s.
+        for links, link, token, tail in (
+            ("a.рф/x ", 14, "a", "@b.test/"),
+            ("//x ", 8, "!", "a.bc\uff0f"),
+        ):
+            took = []
+            for size in (250_000, 1_000_000):
+                text = links * (size // link) + token * (size // 2) + tail
+                started = time.monotonic()
+                records.hosts_only(text)
+                took.append(time.monotonic() - started)
+            self.assertLess(took[0], 5.0)
+            self.assertLess(took[1], 8 * took[0])
