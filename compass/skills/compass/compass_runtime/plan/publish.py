@@ -266,8 +266,8 @@ _STATE_WORDS: Final = MappingProxyType(
         markdown.STATUS_UNKNOWN: markdown.STATUS_UNKNOWN,
     }
 )
-# An unrecognised status is shown but never counted: it measures nothing about progress.
-_MEASURED_STATES: Final = frozenset(settings.BOARD_GROUPS)
+# Dropped and unrecognised states are shown but never counted: neither says how far the goal is.
+_COUNTED_STATES: Final = frozenset(settings.BOARD_GROUPS) - {"dropped"}
 _UNMEASURED: Final = "not measured"
 
 
@@ -285,7 +285,7 @@ def _summary(plan: dict[str, Any], slug: str) -> str:
             for row in lanes
             if row["id"] in serving[0]
             and isinstance(row["state"], str)
-            and row["state"] in _MEASURED_STATES
+            and row["state"] in _COUNTED_STATES
         ]
         if measured:
             unit = "lane is" if len(measured) == 1 else "lanes are"

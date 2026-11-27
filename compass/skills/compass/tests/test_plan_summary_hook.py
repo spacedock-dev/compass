@@ -249,7 +249,10 @@ class PlanSummaryHookTest(PlanRepoTestCase):
             (["done"], "1 of 1 lane is done"),
             (["running", "blocked"], "0 of 2 lanes are done"),
             (["done", None, "Status not recognised"], "1 of 1 lane is done"),
-            (["done", "dropped", "waiting", "not_started"], "1 of 4 lanes are done"),
+            (["done", "dropped", "waiting", "not_started"], "1 of 3 lanes are done"),
+            (["done", "dropped"], "1 of 1 lane is done"),
+            (["dropped"], "not measured"),
+            (["dropped", None, "Status not recognised"], "not measured"),
             ([None, None], "not measured"),
             (["Status not recognised"], "not measured"),
         ):
