@@ -671,3 +671,208 @@ class PlanReadersTest(PlanRepoTestCase):
             self.configure().sources.tree_source("Example", "main", "plan/gone").reason,
             sources.NOT_NAMED,
         )
+
+
+LANE_TRACKER = (
+    "| Item | Lane | Status |\n| --- | --- | --- |\n"
+    "| Cut the hull | `Hull` | fixed |\n"
+    "| Paint the deck | paint | unusual seabird |\n"
+    "| Rig the mast | mast | open |\n"
+    "| Rig the mast again | mast | driving |\n"
+    "| Unassigned work | | open |\n"
+    "| Not a lane id | Not a lane | open |\n\n"
+    "| State | Item | Lane |\n| --- | --- | --- |\n| open | Buy sandpaper | |\n"
+)
+
+
+@unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
+class PlanLaneStateTest(PlanRepoTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        for slug in ("hull", "paint", "mast", "keel"):
+            (self.briefs / f"{slug}.md").write_text("## Goal\nSample lane\n", encoding="utf-8")
+
+    def configure(self, fixture: str = "stand-in", **overrides: Any) -> settings.Settings:
+        overrides.setdefault("tracker", {"lane_column": "Lane"})
+        return super().configure(fixture, **overrides)
+
+    def states(self, config: settings.Settings) -> dict[str, str | None]:
+        return {lane.slug: lane.state for lane in readers.read_plan(config).model.lanes}
+
+    def test_one_tracker_row_sets_the_lane_state_and_others_are_not_measured(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        result = readers.read_plan(self.configure())
+        self.assertEqual(
+            {lane.slug: lane.state for lane in result.model.lanes},
+            # One row each for hull and paint; two rows name mast; no row names keel.
+            {"hull": "done", "paint": "Status not recognised", "mast": None, "keel": None},
+        )
+        self.assertEqual(
+            [row.lane for row in result.model.tracker],
+            ["hull", "paint", "mast", "mast", None, None, None],
+        )
+        self.assertNotIn("unusual seabird", repr(result.model))
+        self.assertEqual(
+            [word.word for word in result.diagnostics.unknown_statuses], ["unusual seabird"]
+        )
+
+    def test_no_declared_lane_column_measures_no_lane(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        config = super().configure()
+        self.assertIsNone(config.tracker.lane_column)
+        model = readers.read_plan(config).model
+        self.assertEqual(len(model.tracker), 7)
+        self.assertEqual(set(self.states(config).values()), {None})
+        self.assertEqual({row.lane for row in model.tracker}, {None})
+
+    def test_a_table_without_the_declared_lane_column_withdraws_the_tracker(self) -> None:
+        # A header typo must show as a refused source, not as every lane quietly unmeasured.
+        for text in (
+            STAND_IN["tracker"],
+            LANE_TRACKER.replace("| State | Item | Lane |", "| State | Item | Lame |"),
+        ):
+            with self.subTest(text=text):
+                self.write_sources({"tracker": text})
+                model = readers.read_plan(self.configure()).model
+                self.assertEqual(model.tracker, ())
+                self.assertEqual(
+                    [s.reason for s in model.sources if s.kind == "tracker"], ["malformed"]
+                )
+                self.assertEqual({lane.state for lane in model.lanes}, {None})
+
+    def test_a_repeated_lane_column_withdraws_the_tracker(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status | Lane |\n| --- | --- | --- | --- |\n"
+                "| Cut the hull | hull | fixed | hull |\n"
+            }
+        )
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(model.tracker, ())
+        self.assertEqual([s.reason for s in model.sources if s.kind == "tracker"], ["malformed"])
+        self.assertEqual({lane.state for lane in model.lanes}, {None})
+
+    def test_an_unread_tracker_source_leaves_every_lane_unmeasured(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        file = self.home / settings.FILENAME
+        self.configure()
+        doc = json.loads(file.read_bytes())
+        # The second file cannot be read, so it could hold a second row for hull.
+        doc["repos"][0]["files"] = {"tracker": ["plan/tracker.md", "plan/absent.md"]}
+        file.write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        assert loaded.settings is not None
+        self.assertEqual(set(self.states(loaded.settings).values()), {None})
+
+    def test_rows_across_tracker_files_are_counted_together(self) -> None:
+        self.write_sources(
+            {
+                "tracker": LANE_TRACKER,
+                "more": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                "| Lay the keel | keel | driving |\n| Recut the hull | hull | open |\n",
+            }
+        )
+        file = self.home / settings.FILENAME
+        self.configure()
+        doc = json.loads(file.read_bytes())
+        doc["repos"][0]["files"] = {"tracker": ["plan/tracker.md", "plan/more.md"]}
+        file.write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        assert loaded.settings is not None
+        self.assertEqual(
+            self.states(loaded.settings),
+            {"hull": None, "paint": "Status not recognised", "mast": None, "keel": "running"},
+        )
+
+    def test_a_lane_cell_that_is_not_one_lane_id_makes_named_lanes_ambiguous(self) -> None:
+        head = "| Item | Lane | Status |\n| --- | --- | --- |\n| Cut the hull | hull | fixed |\n"
+        for rows, expected in (
+            ("| Paint both | hull, paint | open |\n", {"hull": None, "paint": None}),
+            ("| Sand the hull | hull. | open |\n", {"hull": None, "paint": None}),
+            ("| Sand the hull | **Hull**; | open |\n", {"hull": None, "paint": None}),
+            ("| Stray work | Not a lane | open |\n", {"hull": "done", "paint": None}),
+            ("| Stray work | hull-paint | open |\n", {"hull": "done", "paint": None}),
+        ):
+            with self.subTest(rows=rows):
+                self.write_sources({"tracker": head + rows})
+                states = self.states(self.configure())
+                self.assertEqual({lane: states[lane] for lane in expected}, expected)
+
+    def test_a_lane_cell_naming_several_lanes_never_sets_a_state_alone(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                "| Paint both | hull, paint | fixed |\n"
+            }
+        )
+        self.assertEqual(
+            self.states(self.configure()),
+            {"hull": None, "paint": None, "mast": None, "keel": None},
+        )
+
+    def test_credential_shaped_lane_cells_never_become_lane_ids(self) -> None:
+        # Synthetic shapes, built here so no credential-shaped literal sits in the source.
+        cells = (
+            "AKIA" + "IOSFODNN7EXAMPLE",
+            "`" + "AIza" + "Q" * 35 + "`",
+            "xoxb-" + "1" * 20,
+            "XOXB-" + "1" * 20,
+        )
+        rows = "".join(f"| Row {n} | {cell} | fixed |\n" for n, cell in enumerate(cells))
+        self.write_sources({"tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n" + rows})
+        for cell in cells:
+            (self.briefs / f"{cell.strip('`').lower()}.md").write_text(
+                "## Goal\nSample lane\n", encoding="utf-8"
+            )
+        result = readers.read_plan(self.configure())
+        self.assertEqual([row.lane for row in result.model.tracker], [None] * 4)
+        mentioned = {lane for row in result.model.tracker for lane in row.mentions}
+        for cell in cells:
+            with self.subTest(cell=cell):
+                self.assertNotIn(cell.strip("`").lower(), mentioned)
+                self.assertNotIn(cell.strip("`").lower(), repr(result.model.tracker))
+        self.assertEqual({lane.state for lane in result.model.lanes}, {None})
+
+    def test_exact_case_lane_cells_must_match_the_slug(self) -> None:
+        for cell, expected in (("Hull", None), ("hull", "done")):
+            with self.subTest(cell=cell):
+                self.write_sources(
+                    {
+                        "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                        f"| Cut the hull | {cell} | fixed |\n"
+                    }
+                )
+                config = self.configure(tracker={"lane_column": "Lane", "case": "exact"})
+                self.assertEqual(self.states(config)["hull"], expected)
+
+    def test_two_rows_with_the_same_status_still_leave_the_lane_unmeasured(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                "| Rig the mast | mast | fixed |\n| Rig it again | mast | fixed |\n"
+            }
+        )
+        self.assertIsNone(self.states(self.configure())["mast"])
+
+    def test_an_overlong_lane_cell_names_no_lane_and_still_counts_against_it(self) -> None:
+        cell = "`" + " " * 510 + "hull`"
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                f"| Cut the hull | {cell} | fixed |\n"
+            }
+        )
+        result = readers.read_plan(self.configure())
+        self.assertIsNone(result.model.tracker[0].lane)
+        self.assertIsNone({lane.slug: lane.state for lane in result.model.lanes}["hull"])
+
+    def test_a_draft_only_row_does_not_set_a_lane_state(self) -> None:
+        self.write_sources({"tracker": LANE_TRACKER})
+        git(self.repo, "switch", "-qc", "draft/plan")
+        self.write_sources(
+            {"tracker": LANE_TRACKER.replace("| Unassigned work | |", "| Lay the keel | keel |")}
+        )
+        git(self.repo, "switch", "main")
+        model = readers.read_plan(self.configure()).model
+        self.assertIn("keel", [row.lane for row in model.tracker if row.origin.source.draft])
+        self.assertIsNone({lane.slug: lane.state for lane in model.lanes}["keel"])

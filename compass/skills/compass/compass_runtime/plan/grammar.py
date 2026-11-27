@@ -127,6 +127,27 @@ def is_safe_lane_id(text: str) -> bool:
     return is_slug(text) and records.redact_secrets(text) == text
 
 
+_LANE_TOKEN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+
+
+def admit_lane_id(word: str, *, fold: bool) -> str | None:
+    """One lane ID from source text. Some secret shapes are case-sensitive, so the text is
+    checked before folding as well as after."""
+    if records.redact_secrets(word) != word:
+        return None
+    lane = folded(word) if fold else word
+    return lane if is_safe_lane_id(lane) else None
+
+
+def lane_mentions(word: str, *, fold: bool) -> tuple[str, ...]:
+    """Every lane-ID-shaped word in source text, read after secrets are masked."""
+    text = records.redact_secrets(word)
+    if fold:
+        text = records.redact_secrets(folded(text))
+    words = (part for part in _LANE_TOKEN.findall(text) if is_safe_lane_id(part))
+    return tuple(dict.fromkeys(words))
+
+
 def is_goal_id(text: str) -> bool:
     return 1 <= len(text) <= _FIELD_CAPS["goal_id"] and any(
         _FIELD_PATTERNS[kind].fullmatch(text) for kind in ("goal_id", "numbered_goal_id", "integer")

@@ -60,6 +60,9 @@ class Item:
     title: str
     status: str
     origin: Origin
+    lane: str | None = field(default=None, repr=False)
+    # Lane IDs inside a lane cell that is not exactly one ID. They only make a lane ambiguous.
+    mentions: tuple[str, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,8 @@ class Lane:
     folder: FolderIdentity | None = field(default=None, repr=False)
     folder_reason: str | None = None
     date: ItemDate | None = None
+    # None means not measured, never a default group (AGENTS.md "Measured Invariants").
+    state: str | None = None
 
 
 @dataclass(frozen=True)

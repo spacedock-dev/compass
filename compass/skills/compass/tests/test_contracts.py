@@ -2367,6 +2367,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.config",
             "compass_runtime.io",
             "compass_runtime.plan.grammar",
+            "compass_runtime.plan.markdown",
             "compass_runtime.plan.model",
             "compass_runtime.plan.readers",
             "compass_runtime.plan.settings",

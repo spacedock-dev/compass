@@ -375,8 +375,8 @@ def _divider(line: Line, width: int) -> bool:
 
 
 def _table(
-    text: str, state_columns: tuple[str, ...], title_column: str
-) -> Iterator[tuple[str, str, int]]:
+    text: str, state_columns: tuple[str, ...], title_column: str, lane_column: str | None = None
+) -> Iterator[tuple[str, str, int, str | None]]:
     lines = prose(text)
     index = 0
     found = False
@@ -388,6 +388,9 @@ def _table(
         # A neighboring table can start without an intervening blank line.
         states = _column(head, state_columns)
         titles = _column(head, (title_column,))
+        # A declared lane column is required like the title, so a header typo refuses the
+        # source instead of reading as every lane unmeasured.
+        lanes = _column(head, (lane_column,)) if lane_column is not None else None
         if not _divider(lines[index + 1], len(head)):
             raise ParseError
         found = True
@@ -402,7 +405,8 @@ def _table(
                 break
             if len(cells) != len(head):
                 raise ParseError
-            yield cells[titles], cells[states], lines[index].number
+            lane = cells[lanes] if lanes is not None else None
+            yield cells[titles], cells[states], lines[index].number, lane
             index += 1
         if (
             index < len(lines)
@@ -419,6 +423,24 @@ def _status_word(cell: str, spec: settings.WordGrammar) -> str | None:
     word = cell[:end].strip()
     if len(word) > MAX_TEXT_CHARS:
         return None
+    return _undecorated(word, spec)
+
+
+def _lane_names(cell: str | None, spec: settings.WordGrammar) -> tuple[str | None, tuple[str, ...]]:
+    """The one lane a cell names, or else every lane ID it could plausibly name."""
+    if cell is None:
+        return None, ()
+    word = _undecorated(cell.strip(), spec)
+    fold = spec.case == "fold"
+    lane = grammar.admit_lane_id(word, fold=fold) if len(cell) <= MAX_TEXT_CHARS else None
+    if lane is not None:
+        return lane, ()
+    # Fail closed: "hull, paint", "hull." or an overlong cell still counts against each lane it
+    # could name, so another row naming that lane cannot set its state alone.
+    return None, grammar.lane_mentions(word, fold=fold)
+
+
+def _undecorated(word: str, spec: settings.WordGrammar) -> str:
     while word:
         for decoration in spec.strip:
             if decoration == "emoji":
@@ -439,18 +461,21 @@ def _status_word(cell: str, spec: settings.WordGrammar) -> str | None:
 
 
 def _items(
-    rows: Iterator[tuple[str, str, int | None]], spec: settings.WordGrammar, source: model.Source
+    rows: Iterator[tuple[str, str, int | None, str | None]],
+    spec: settings.WordGrammar,
+    source: model.Source,
 ) -> tuple[tuple[model.Item, ...], tuple[model.UnknownStatus, ...]]:
     items: list[model.Item] = []
     unknown: list[model.UnknownStatus] = []
-    for title, state, line in rows:
+    for title, state, line, lane in rows:
         if len(items) >= MAX_ROWS:
             raise ParseError(TOO_MANY_ROWS)
         word = _status_word(state, spec)
         key = grammar.folded(word) if word is not None and spec.case == "fold" else word
         status = spec.words.get(key, STATUS_UNKNOWN) if key is not None else STATUS_UNKNOWN
         origin = model.Origin(source, line)
-        items.append(model.Item(_text(title), status, origin))
+        named, mentions = _lane_names(lane, spec)
+        items.append(model.Item(_text(title), status, origin, named, mentions))
         if status == STATUS_UNKNOWN:
             if not word:
                 detail = "empty status" if word == "" else "over the status word cap"
@@ -463,10 +488,11 @@ def _items(
 def tracker(
     text: str, spec: settings.Tracker, source: model.Source
 ) -> tuple[tuple[model.Item, ...], tuple[model.UnknownStatus, ...]]:
-    return _items(_table(text, spec.status_columns, spec.title_column), spec.status, source)
+    rows = _table(text, spec.status_columns, spec.title_column, spec.lane_column)
+    return _items(rows, spec.status, source)
 
 
-def _json_items(text: str, state: str, title: str) -> Iterator[tuple[str, str, None]]:
+def _json_items(text: str, state: str, title: str) -> Iterator[tuple[str, str, None, None]]:
     try:
         rows = json.loads(text)
     except (ValueError, RecursionError):
@@ -483,7 +509,7 @@ def _json_items(text: str, state: str, title: str) -> Iterator[tuple[str, str, N
             or not all(grammar.is_line(value) for value in (name, word))
         ):
             raise ParseError
-        yield name, word, None
+        yield name, word, None, None
 
 
 def inventory(
