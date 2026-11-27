@@ -8,6 +8,7 @@ import os
 import subprocess
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -22,7 +23,7 @@ from compass_runtime import (
     sessions,
 )
 from compass_runtime import io as runtime_io
-from compass_runtime.plan import publish, settings, sources
+from compass_runtime.plan import model, publish, readers, settings, sources
 
 from .support import make_config
 from .test_history import stub_application
@@ -171,6 +172,50 @@ class PlanPublicationTest(PlanRepoTestCase):
                         payload["design"][0]["date"], {"label": "Changed", "at": "2026-09-01"}
                     )
 
+    def test_every_published_row_has_exactly_its_documented_keys(self) -> None:
+        expected = {
+            "goals": {"id", "title", "doneWhen", "lanes", "proposal"},
+            "lanes": {"id", "title", "doneWhen", "state", "date", "sessions"},
+            "asks": {"id", "text", "at", "timeLabel", "source", "lane"},
+            "asks.lane": {"id", "title"},
+            "design": {"title", "summary", "decided", "source", "date"},
+            "tracker": {"title", "group", "source", "date"},
+            "inventory": {"title", "group", "source", "date"},
+            "diagrams": {"title", "caption", "kind", "source", "date", "linkHosts", "body"},
+            "date": {"label", "at"},
+            "sources": {"label", "kind", "state", "reason"},
+        }
+        self.assertEqual(publish.PLAN_ITEM_FIELDS, expected)
+        for fixture, files, brief, brief_text, log in (
+            ("stand-in", STAND_IN, "hull.md", "## Goal\nBuild it.\n", "ask hull:1 Sample?\n"),
+            (
+                "variant",
+                VARIANT,
+                "hull.brief.md",
+                "**Objective:** Build it.\n",
+                "2026-01-02T03:04:05Z ASK hull a1 Sample?\n",
+            ),
+        ):
+            with self.subTest(fixture=fixture):
+                self.write_sources(files)
+                self.configure(fixture)
+                (self.briefs / brief).write_text(brief_text, encoding="utf-8")
+                self.log.write_text(log, encoding="utf-8")
+                plan, _ = self.payload()
+                rows = {name: plan[name] for name in expected.keys() - {"asks.lane", "date"}}
+                rows["asks.lane"] = [ask["lane"] for ask in plan["asks"]]
+                rows["date"] = [
+                    row["date"]
+                    for name in ("lanes", "design", "tracker", "inventory", "diagrams")
+                    for row in plan[name]
+                    if row["date"] is not None
+                ]
+                for name, fields in expected.items():
+                    with self.subTest(row=name):
+                        self.assertTrue(rows[name])
+                        for row in rows[name]:
+                            self.assertEqual(set(row), fields)
+
     def test_no_git_refuses_git_sources_and_keeps_the_log(self) -> None:
         self.write_sources(STAND_IN)
         self.configure()
@@ -196,18 +241,51 @@ class PlanPublicationTest(PlanRepoTestCase):
             ("https://share.example.test/share/CANARY_SHARE", "share.example.test"),
             ("bare.example.test/share/CANARY_BARE", "bare.example.test"),
             ("bare.example.test?code=CANARY_BARE_QUERY", "bare.example.test"),
+            ("_docs.example.test/d/CANARY_ITALIC/edit_", "docs.example.test"),
+            ("-docs.example.test/d/CANARY_DASH/edit", "docs.example.test"),
+            ("参考docs.example.test/d/CANARY_CJK/edit", "docs.example.test"),
+            ("参考www.example.test/d/CANARY_CJK_WWW/edit", "www.example.test"),
+            ("参考https://example.test/p/CANARY_CJK_SCHEME", "example.test"),
+            ("@docs.example.test/d/CANARY_AT/edit", "docs.example.test"),
+            ("a@docs.example.test/d/CANARY_EMAIL/edit", "docs.example.test"),
+            ("docs.example.test:8443/d/CANARY_PORT", "docs.example.test"),
+            ("staging.example.test:8443/invite?key=CANARY_PORT_QUERY", "staging.example.test"),
+            ("docs.example.test#code=CANARY_FRAGMENT", "docs.example.test"),
+            ("localhost:3000/reset?code=CANARY_LOCALHOST", "localhost"),
+            ("192.168.1.1/hooks/CANARY_IPV4", "192.168.1.1"),
+            ("192.168.1.10:8080/share/CANARY_IP_PORT", "192.168.1.10"),
+            ("example.xn--p1ai/reset?code=CANARY_PUNY", "example.xn--p1ai"),
+            ("user:CANARY_PASS@example.test/CANARY_PATH", "example.test"),
+            ("exämple.test/share/CANARY_IDN", "[link]"),
             ("!www.prefix.example.test/CANARY_PUNCT", "www.prefix.example.test"),
             ("_www.prefix.example.test/CANARY_UNDERSCORE", "www.prefix.example.test"),
             ("-www.prefix.example.test/CANARY_HYPHEN", "www.prefix.example.test"),
             ("!mailto:CANARY_OPAQUE@example.test", "[link]"),
+            ("slack:channel?code=CANARY_CUSTOM_OPAQUE", "[link]"),
             ("_tel:CANARY_OPAQUE_UNDERSCORE", "[link]"),
             ("-data:CANARY_OPAQUE_HYPHEN", "[link]"),
             ("https://quote.example.test/?q='CANARY_QUOTED TAIL'", "quote.example.test"),
             ("https://quote.example.test/?q=`CANARY_BACKTICK TAIL`", "quote.example.test"),
             ("https://quote.example.test/?q=value'_CANARY_SUFFIX'", "quote.example.test"),
+            ("https://example.test/share/a' 'b/CANARY_PATH_QUOTE", "example.test"),
+            ("www.example.test/share/a' 'b/CANARY_WWW_QUOTE", "www.example.test"),
+            ("'https://example.test/p?q=foo' ,bar&key=CANARY_SINGLE'", "example.test"),
+            ('"https://example.test/p?q=a",b&key=CANARY_DOUBLE"', "example.test"),
+            ("`https://example.test/p?q=a`;key=CANARY_TICK`", "example.test"),
+            ("https://example.test/a?x=1>2&key=CANARY_GT", "example.test"),
             ("[guide](https://md.example.test/p(CANARY_NESTED)tail)", "md.example.test"),
+            ('[x](https://example.test/p?a=")"&key=CANARY_MD_QUOTE)', "example.test"),
+            ("[x](https://example.test/r?mood=:)&key=CANARY_MD_PAREN)", "example.test"),
+            ('[x](https://example.test/p?a=") CANARY_MD_QUOTED_SPACE"&key=Z)', "example.test"),
+            ('[x](https://example.test/p(v) "title ) CANARY_MD_QUOTED_TITLE")', "example.test"),
+            ("[x](https://example.test/c?f=sum(a)&key=CANARY_MD_NESTED)", "example.test"),
+            ("[x](https://example.test/p)?code=CANARY_MD_TAIL", "example.test"),
+            ("[x](<https://example.test/p>)?code=CANARY_MD_ANGLE_TAIL", "example.test"),
+            ('[x](https://example.test/p "t")&key=CANARY_MD_TITLE_TAIL', "example.test"),
             ("[guide](../guide(CANARY_RELATIVE).md)", "[guide]"),
+            ("[guide] (./secret/CANARY_SPACE_PAREN.md)", "[guide]"),
             ("[ref]: ./CANARY_REFERENCE.md", "[ref]"),
+            (r"[a\]]: ./secret/CANARY_ESCAPED_REF.md", r"[a\]]"),
             (f"Authorization: Bearer {credential}", "REDACTED"),
         )
         self.write_sources(
@@ -243,6 +321,33 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertNotIn(b"CANARY_", body)
         self.assertNotIn(b"https://", body)
         self.assertNotIn(credential.encode(), body)
+        self.assertNotIn("-docs.example.test", payload["diagrams"][0]["linkHosts"])
+
+    def test_multiline_diagram_link_destinations_are_stripped(self) -> None:
+        long_label = "[" + "a" * 1000 + "]"
+        self.write_sources(
+            {
+                "diagrams": "```\n[guide](\n./secret/CANARY_REL.md)\n"
+                "[guide](  \n  ./secret/CANARY_INDENTED.md)\n"
+                "[guide](\nhttps://example.test/p?code=CANARY_URL)\n"
+                "[ref]:\n  ./secret/CANARY_REF.md\n"
+                "[x](./guide.md\n)?code=CANARY_TAIL\n"
+                "[outer]([inner](\n./secret/CANARY_NESTED_LEGACY.md))\n"
+                '[x](https://example.test/p "title\nCANARY_INLINE_TITLE")\n'
+                '[reference]: ./guide.md\n  "title\nCANARY_REFERENCE_TITLE"\n'
+                f"{long_label}: ./secret/CANARY_LONG_LABEL.md\n"
+                "Keep this line\n"
+                "[mailto:CANARY_REFERENCE_LABEL<]:\n  ./guide.md\n```\n",
+            }
+        )
+        self.configure()
+        plan, body = self.payload()
+        self.assertNotIn(b"CANARY_", body)
+        self.assertEqual(
+            plan["diagrams"][0]["body"],
+            "[guide]\n[guide]\n[guide] (example.test)\n[ref]\n[x]\n[outer]\n"
+            f"[x] (example.test)\n[reference]\n{long_label}\nKeep this line\n[[link]",
+        )
 
     def test_common_markdown_destinations_are_stripped(self) -> None:
         self.write_sources(
@@ -268,6 +373,31 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(plan["goals"][0]["lanes"], ["hull"])
         self.assertIsNone(plan["asks"][0]["lane"])
         self.assertNotIn(credential.encode(), body)
+
+    def test_log_lane_and_projection_refuse_credential_shaped_lane_ids(self) -> None:
+        credential = "xoxb-225556655-example-token"
+        self.write_sources({"goals": "## Goals\n- G1: Sample\n**Lanes:** hull\n"})
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n", encoding="utf-8")
+        self.log.write_text(f"ask {credential}:1 Sample question\n", encoding="utf-8")
+        plan = readers.read_plan(self.only_goals()).model
+        self.assertIsNone(plan.asks[0].lane)
+
+        unsafe = replace(
+            plan,
+            goals=(replace(plan.goals[0], lanes=(credential, "hull")),),
+            lanes=(*plan.lanes, model.Lane(credential, None, None, (), plan.lanes[0].source)),
+            asks=(replace(plan.asks[0], lane=credential),),
+        )
+        projected = publish._project(unsafe, {credential: ["Synthetic session"]})
+        self.assertEqual([lane["id"] for lane in projected["lanes"]], ["hull"])
+        self.assertEqual(projected["goals"][0]["lanes"], ["hull"])
+        self.assertIsNone(projected["asks"][0]["lane"])
+
+        config_file = self.home / settings.FILENAME
+        doc = json.loads(config_file.read_bytes())
+        doc["briefs"]["lane_folders"][credential] = str(self.hull)
+        config_file.write_text(json.dumps(doc), encoding="utf-8")
+        self.assertEqual(settings.load(str(self.home)).reason, settings.MALFORMED)
 
     def test_caps_keep_redaction_markers_whole(self) -> None:
         from compass_runtime import records  # noqa: PLC0415
@@ -362,6 +492,85 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(unavailable["goals"], measured["goals"])
         self.assertNotIn(b"draft/plan", body)
 
+    def test_target_ref_marker_matches_case_and_nfd_variants_before_blob(self) -> None:
+        git(self.repo, "config", "core.precomposeunicode", "false")
+        self.write_sources({"anchor": "Keep the parent in the checkout"})
+        run = git_status.PlanTreeReader._run
+        for name, marker_file in (
+            (".RESTRICTED", ".restricted"),
+            (".re\u0301stricted", ".réstricted"),
+        ):
+            git(self.repo, "switch", "-qc", "target")
+            (self.repo / "plan" / name).touch()
+            self.write_sources({"goals": "## Goals\n- G1: CANARY_REF_MARKER\n"})
+            git(self.repo, "switch", "main")
+            git(self.repo, "branch", "-f", "draft/plan", "target")
+            self.assertFalse((self.repo / "plan" / name).exists())
+            self.only_goals(private={"marker_files": [marker_file]})
+            path = self.home / settings.FILENAME
+            doc = json.loads(path.read_bytes())
+            doc["repos"][0]["files"]["goals"].append("plan/second.md")
+            for primary in (True, False):
+                with self.subTest(name=name, primary=primary):
+                    doc["repos"][0]["ref"] = "target" if primary else "main"
+                    path.write_text(json.dumps(doc), encoding="utf-8")
+                    with mock.patch.object(
+                        git_status.PlanTreeReader, "_run", autospec=True, side_effect=run
+                    ) as observed:
+                        plan, body = self.payload()
+                    kind = "goals" if primary else "draft goals"
+                    self.assertEqual(
+                        next(row["reason"] for row in plan["sources"] if row["kind"] == kind),
+                        "private",
+                    )
+                    self.assertNotIn(b"CANARY_REF_MARKER", body)
+                    self.assertTrue(
+                        all(call.args[1][0] != "cat-file" for call in observed.call_args_list)
+                    )
+                    listings = [
+                        call.args[1]
+                        for call in observed.call_args_list
+                        if call.args[1][:2] == ("ls-tree", "-z")
+                    ]
+                    with self.subTest(listings=listings):
+                        self.assertEqual(len(listings), 2 if primary else 4)
+                        self.assertEqual(len(set(listings)), len(listings))
+            git(self.repo, "branch", "-D", "target")
+
+    def test_target_ref_marker_listing_fails_closed_before_blob(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_LISTING\n"})
+        self.only_goals()
+        run = git_status.PlanTreeReader._run
+        oid = b"a" * 40
+        over_cap = b"".join(
+            b"100644 blob " + oid + b"\tplan/entry-" + str(index).encode() + b"\0"
+            for index in range(4097)
+        )
+        for listing in (None, over_cap):
+            with self.subTest(over_cap=listing is not None):
+
+                def broken_listing(
+                    tree: git_status.PlanTreeReader,
+                    args: tuple[str, ...],
+                    deadline: float,
+                    listing: bytes | None = listing,
+                ) -> bytes:
+                    if args[:2] == ("ls-tree", "-z") and args[-1] == "plan/":
+                        if listing is None:
+                            raise git_status.PlanGitError("unreadable")
+                        return listing
+                    return run(tree, args, deadline)
+
+                with mock.patch.object(
+                    git_status.PlanTreeReader, "_run", autospec=True, side_effect=broken_listing
+                ) as observed:
+                    plan, body = self.payload()
+                self.assertEqual(plan["sources"][0]["state"], "refused")
+                self.assertNotIn(b"CANARY_LISTING", body)
+                self.assertTrue(
+                    all(call.args[1][0] != "cat-file" for call in observed.call_args_list)
+                )
+
     def test_draft_goal_has_proposal_status_without_progress_date(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Primary goal\n"})
         git(self.repo, "switch", "-qc", "draft/plan")
@@ -392,6 +601,18 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(
             [row["word"] for row in report["unknown_statuses"]],
             ["Status not recognised", "unusual seabird"],
+        )
+
+    def test_diagnostics_hide_alpha_only_credentials(self) -> None:
+        credential = "Bearer Abcdefghijklmnopqrstuvwx"
+        self.write_sources(
+            {"tracker": f"| Item | Status |\n| --- | --- |\n| Sample | {credential} |\n"}
+        )
+        self.configure(tracker={"tail_separators": []})
+        report = diagnostics._plan_report(self.application().state)
+        self.assertNotIn(credential, json.dumps(report))
+        self.assertEqual(
+            [row["word"] for row in report["unknown_statuses"]], ["Status not recognised"]
         )
 
     def test_disabled_payload_opens_nothing(self) -> None:
@@ -439,7 +660,7 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.configure(log={"label": "https://log.example.test/path?code=CANARY_SOURCE"})
         payload, body = self.payload()
         diagram = payload["diagrams"][0]
-        self.assertEqual(diagram["body"], 'flowchart LR\n  A["diagram.example.test"] --> B')
+        self.assertEqual(diagram["body"], 'flowchart LR\n  A["diagram.example.test --> B')
         self.assertEqual(diagram["linkHosts"], ["diagram.example.test"])
         self.assertTrue(any(row["label"] == "log.example.test" for row in payload["sources"]))
         self.assertNotIn(b"CANARY_", body)
@@ -471,7 +692,7 @@ class PlanPublicationTest(PlanRepoTestCase):
         diagram = payload["diagrams"][0]
         self.assertEqual(len(diagram["body"]), 8192)
         self.assertTrue(diagram["body"].endswith("…"))
-        self.assertIn('bounded.example.test"] --> B', diagram["body"])
+        self.assertIn("bounded.example.test --> B", diagram["body"])
         self.assertNotIn(b"CANARY_LONG_URL_", body)
         self.assertNotIn(b"xoxb-22555", body)
         self.assertIn("REDACTED", diagram["body"])

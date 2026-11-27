@@ -1161,8 +1161,9 @@ The local reader checks the device and inode of each parent directory against th
 private roots. It checks each directory name's NFC-normalised, casefolded text against the declared
 markers. A marker can match a whole name, a token split at hyphens, underscores, periods or spaces,
 or a substring. Homoglyphs remain distinct. A configured marker filename can also mark any parent
-directory through a filesystem lookup of that name. Compass checks for the marker's presence
-without reading it.
+directory. Compass checks for an exact match and scans up to 4,096 directory entries for an
+NFC-normalised, casefolded match. It checks the name without reading the entry. An unreadable
+scan or one that exceeds the cap refuses the source.
 
 The local reader uses held POSIX directory descriptors and refuses directory and file symlinks,
 apart from the root-owned macOS ancestor aliases for `/tmp`, `/var` and `/etc`. The identity checks
@@ -1192,8 +1193,10 @@ within one Git command goes undetected. Compass verifies the repository root wit
 `rev-parse --show-prefix` and resolves one exact `refs/heads/<name>` to a commit using
 `for-each-ref`. Tags, remote refs and symbolic branch aliases cannot supply the tip.
 
-For each allowed path, `ls-tree -z` checks for configured marker filenames in the target
-commit's parent directories, including the repository root. A marker entry refuses the source
+For each allowed path, `ls-tree -z` lists the immediate entries of each parent directory on the
+target commit, including the repository root. Compass checks up to 4,096 entries per directory
+for an NFC-normalised, casefolded match to a configured marker filename. It uses the same check
+on draft branches. A marker match, unreadable listing or listing over the cap refuses the source
 before any file content read. For a path that passes, `ls-tree -l -z <commit> -- <path>`
 returns the mode, object ID and size.
 Compass uses `cat-file blob <id>` only for the exact named entry, with a regular mode and a size
@@ -1258,9 +1261,12 @@ A configured reply has `state: ready` and the following fields.
 | `limits` | Compass cannot detect health information or confidential text typed into these sources. |
 
 A date contains `label` and `at`. Unavailable dates are null. Compass applies its credential
-redaction to source text, then replaces links with their host only before capping text. It
-drops link destinations with no usable host and refuses brief slugs that match credential
-redaction. The cap keeps redaction markers intact. It is 512 characters per text field and
+redaction to source text and replaces link candidates with their host before capping text. It
+masks the rest of each link token through the next whitespace, including tails attached to
+Markdown links, and drops destinations with no usable host. The lane ID rule applies to brief
+slugs, log lane references, lane-folder settings keys and published lane references. Each ID must
+fit the slug grammar and pass through credential redaction unchanged. The cap keeps redaction
+markers intact. It is 512 characters per text field and
 8,192 for a diagram body, with up to 32 distinct hosts per diagram. The JSON excludes source
 paths, refs, commit IDs, line numbers and raw status words that the grammar did not recognise.
 

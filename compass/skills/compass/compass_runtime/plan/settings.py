@@ -177,7 +177,7 @@ def _briefs(value: object) -> Briefs:
     if len({grammar.folded(label.label) for label in labels.values()}) != len(labels):
         raise SettingsError
     folders = grammar.dictionary(raw.get("lane_folders", {}))
-    if len(folders) > 200 or not all(grammar.is_slug(lane) for lane in folders):
+    if len(folders) > 200 or not all(grammar.is_safe_lane_id(lane) for lane in folders):
         raise SettingsError
     return Briefs(
         sources.absolute_path(raw["folder"]),

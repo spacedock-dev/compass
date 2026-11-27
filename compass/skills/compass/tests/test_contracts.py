@@ -2356,7 +2356,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.model",
             "compass_runtime.state",
         },
-        "compass_runtime.plan.grammar": set(),
+        "compass_runtime.plan.grammar": {"compass_runtime.records"},
         "compass_runtime.plan.markdown": {
             "compass_runtime.plan.grammar",
             "compass_runtime.plan.model",
@@ -2366,6 +2366,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.plan.publish": {
             "compass_runtime.config",
             "compass_runtime.io",
+            "compass_runtime.plan.grammar",
             "compass_runtime.plan.model",
             "compass_runtime.plan.readers",
             "compass_runtime.plan.settings",
@@ -2381,7 +2382,6 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.model",
             "compass_runtime.plan.settings",
             "compass_runtime.plan.sources",
-            "compass_runtime.records",
             "compass_runtime.state",
         },
         "compass_runtime.plan.settings": {

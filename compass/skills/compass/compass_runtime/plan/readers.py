@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from compass_runtime import git_status, io, records
+from compass_runtime import git_status, io
 
 from . import dates, grammar, markdown, model, sources
 
@@ -210,7 +210,7 @@ def _read_brief(name: str, config: settings.Settings) -> tuple[model.Source, mod
     if fields is None:
         return model.Source(declaration.kind, "", declaration.path, reason=sources.NOT_NAMED), None
     slug = fields["lane"]
-    if records.redact_secrets(slug) != slug:
+    if not grammar.is_safe_lane_id(slug):
         return model.Source(
             declaration.kind, "", declaration.path, reason="unsafe lane identifier"
         ), None
@@ -256,7 +256,7 @@ def _log_lane(fields: dict[str, str], spec: settings.Log) -> str | None:
         parts = fields["id"].split(spec.lane.separator)
         if len(parts) > 1 and spec.lane.part < len(parts):
             lane = parts[spec.lane.part]
-    return lane if lane is not None and grammar.is_slug(lane) else None
+    return lane if lane is not None and grammar.is_safe_lane_id(lane) else None
 
 
 def _event_fields(raw: bytes, spec: settings.Log) -> dict[str, str] | None:

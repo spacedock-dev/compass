@@ -56,8 +56,9 @@ import stat
 import subprocess
 import threading
 import time
+import unicodedata
 from array import array
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final
 
 from . import rooted_path
@@ -688,6 +689,8 @@ _BLAME_NUMBER = re.compile(rb"(?<!\S)([0-9]{1,9})\) ")
 _MAX_UTC_TIMESTAMP = 253402300799
 # 64 full SHA-256 IDs fit in Windows' command line even with the fixed flags.
 _PLAN_LOG_BATCH = 64
+_PLAN_MARKER_ENTRIES = 4096
+_PLAN_TREE_METADATA = re.compile(rb"\d{6} (?:blob|tree|commit) [0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 
 @dataclass(frozen=True)
@@ -701,6 +704,9 @@ class PlanTreeReader:
     _runner: Callable[..., Any]
     request_deadline: float | None = None
     directory: int | None = None
+    _marker_names: dict[tuple[str, str], frozenset[str] | str] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
     def _run(self, args: tuple[str, ...], deadline: float) -> bytes:
         if self.request_deadline is not None:
@@ -792,14 +798,44 @@ class PlanTreeReader:
         if not markers:
             return
         self._check_path(tip, path)
-        candidates = list(markers)
-        parent = ""
-        for part in path.split("/")[:-1]:
-            parent += part + "/"
-            candidates.extend(parent + marker for marker in markers)
+        folded = {unicodedata.normalize("NFC", marker).casefold() for marker in markers}
         deadline = time.monotonic() + self.timeout_sec
-        if self._run(("ls-tree", "-z", tip, "--", *candidates), deadline):
-            raise PlanGitError("private")
+        for parent in ("", *(path[: index + 1] for index, char in enumerate(path) if char == "/")):
+            key = (tip, parent)
+            if key not in self._marker_names:
+                try:
+                    self._marker_names[key] = self._tree_names(tip, parent, deadline)
+                except PlanGitError as exc:
+                    self._marker_names[key] = exc.reason
+            names = self._marker_names[key]
+            if isinstance(names, str):
+                raise PlanGitError(names)
+            if not folded.isdisjoint(names):
+                raise PlanGitError("private")
+
+    def _tree_names(self, tip: str, parent: str, deadline: float) -> frozenset[str]:
+        args = ("ls-tree", "-z", tip)
+        listing = self._run((*args, "--", parent) if parent else args, deadline)
+        entries = listing.split(b"\0", _PLAN_MARKER_ENTRIES + 1)
+        if entries[-1] or len(entries) > _PLAN_MARKER_ENTRIES + 1:
+            raise PlanGitError("unreadable")
+        prefix = parent.encode("ascii")
+        names = set()
+        for entry in entries[:-1]:
+            metadata, tab, path = entry.partition(b"\t")
+            name = path.removeprefix(prefix)
+            if (
+                not tab
+                or not path.startswith(prefix)
+                or not name
+                or b"/" in name
+                or _PLAN_TREE_METADATA.fullmatch(metadata) is None
+            ):
+                raise PlanGitError("unreadable")
+            names.add(
+                unicodedata.normalize("NFC", name.decode("utf-8", "surrogateescape")).casefold()
+            )
+        return frozenset(names)
 
     def blame(self, tip: str, path: str, *, line_count: int) -> array[int]:
         """Return committer times in tip line order for an already admitted blob."""

@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import time
 from collections import defaultdict
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from compass_runtime import io, records
 
-from . import model, readers, settings
+from . import grammar, model, readers, settings
 
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
@@ -27,6 +28,21 @@ PLAN_FIELDS: Final = (
     "sources",
     "logRejected",
     "limits",
+)
+# Published plan fields in SECURITY.md own these wire shapes.
+PLAN_ITEM_FIELDS: Final = MappingProxyType(
+    {
+        "goals": frozenset({"id", "title", "doneWhen", "lanes", "proposal"}),
+        "lanes": frozenset({"id", "title", "doneWhen", "state", "date", "sessions"}),
+        "asks": frozenset({"id", "text", "at", "timeLabel", "source", "lane"}),
+        "asks.lane": frozenset({"id", "title"}),
+        "design": frozenset({"title", "summary", "decided", "source", "date"}),
+        "tracker": frozenset({"title", "group", "source", "date"}),
+        "inventory": frozenset({"title", "group", "source", "date"}),
+        "diagrams": frozenset({"title", "caption", "kind", "source", "date", "linkHosts", "body"}),
+        "date": frozenset({"label", "at"}),
+        "sources": frozenset({"label", "kind", "state", "reason"}),
+    }
 )
 LIMITS: Final = (
     "Compass cannot detect health information or confidential text typed into these sources."
@@ -124,7 +140,8 @@ def _lane_sessions(
 
 
 def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, Any]:
-    lane_titles = {lane.slug: _text(lane.goal) or lane.slug for lane in plan.lanes}
+    lanes = tuple(lane for lane in plan.lanes if grammar.is_safe_lane_id(lane.slug))
+    lane_titles = {lane.slug: _text(lane.goal) or lane.slug for lane in lanes}
     return {
         "state": "ready",
         "goals": [
@@ -132,7 +149,7 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
                 "id": _text(goal.id),
                 "title": _text(goal.title),
                 "doneWhen": _text(goal.done),
-                "lanes": list(goal.lanes),
+                "lanes": [slug for slug in goal.lanes if grammar.is_safe_lane_id(slug)],
                 "proposal": "Proposed, not merged" if goal.origin.source.draft else None,
             }
             for goal in plan.goals
@@ -146,7 +163,7 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
                 "date": _date(lane.date),
                 "sessions": matched.get(lane.slug),
             }
-            for lane in plan.lanes
+            for lane in lanes
         ],
         "asks": [
             {

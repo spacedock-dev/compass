@@ -13,6 +13,7 @@ import secrets
 import stat
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
@@ -869,8 +870,21 @@ class PlanPathPolicy:
             raise PlanReadError(PlanRefusal.PRIVATE)
         if self.settings_file and _git_directory_at(directory):
             raise PlanReadError(PlanRefusal.INSIDE_REPO)
-        if any(_present_at(directory, marker) for marker in self.marker_files):
+        if self.marker_files and _marker_at(directory, self.marker_files):
             raise PlanReadError(PlanRefusal.PRIVATE)
+
+
+def _marker_at(directory: int, markers: tuple[str, ...]) -> bool:
+    if any(_present_at(directory, marker) for marker in markers):
+        return True
+    folded = {unicodedata.normalize("NFC", marker).casefold() for marker in markers}
+    with os.scandir(directory) as entries:
+        for index, entry in enumerate(entries, start=1):
+            if index > 4096:
+                raise PlanReadError(PlanRefusal.UNREADABLE)
+            if unicodedata.normalize("NFC", entry.name).casefold() in folded:
+                return True
+    return False
 
 
 def _present_at(directory: int, name: str) -> bool:
