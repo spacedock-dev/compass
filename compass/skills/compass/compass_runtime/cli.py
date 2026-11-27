@@ -1188,14 +1188,19 @@ def refuse_login_proxy_without_its_parts(
 _PLAN_SLICE_COMPANIONS: Final = frozenset({"plan_slice", "lane", "no_plan", "no_update_check"})
 
 
-def _plan_slice(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
-    defaults = vars(build_parser().parse_args([]))
-    if any(
-        value != defaults[name]
-        for name, value in vars(args).items()
-        if name not in _PLAN_SLICE_COMPANIONS
-    ):
-        parser.error("--plan-slice stands alone, with only --lane and --no-plan")
+def _given_options(argv: Sequence[str]) -> set[str]:
+    """The destinations `argv` names, even where it repeats a default value."""
+    parser = build_parser()
+    for action in parser._actions:  # noqa: SLF001 - argparse has no public way to suppress defaults
+        action.default = argparse.SUPPRESS
+    return set(vars(parser.parse_args(argv)))
+
+
+def _plan_slice(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, argv: Sequence[str]
+) -> int:
+    if _given_options(argv) - _PLAN_SLICE_COMPANIONS:
+        parser.error("--plan-slice stands alone, with only --lane, --no-plan and --no-update-check")
     if args.no_plan:
         return 0
     from compass_runtime.plan import publish  # noqa: PLC0415 - only the preview needs it here
@@ -1338,7 +1343,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0912, PLR0915 â€
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.plan_slice:
-        return _plan_slice(parser, args)
+        return _plan_slice(parser, args, sys.argv[1:] if argv is None else argv)
     if args.lane is not None:
         parser.error("--lane requires --plan-slice")
     refuse_login_proxy_without_its_parts(parser, args)

@@ -362,11 +362,12 @@ hook would provide using the current settings. To inspect a specific lane, pass 
 with `--lane hull`. With no flag, `COMPASS_LANE` takes precedence over the folder match.
 
 The preview works with the dashboard down. Lane state and progress show what a dashboard last
-saved, and read "not measured" when no dashboard has read the plan in the last 24 hours. Empty
+saved, and read "not measured" when no dashboard has read the plan in the last 24 hours or since the
+settings changed. Empty
 output means the [summary is off](HOW_TO_USE.md#give-a-new-session-its-lane-summary), the plan
 could not be read, or Compass could not select a single lane. `--plan-slice` runs on its own:
-with any option but `--lane` or `--no-plan`, such as `--stop` or `--port`, it stops with a usage
-error. Codex can act on hook context without quoting it.
+with any option but `--lane`, `--no-plan` or `--no-update-check`, such as `--stop` or `--port`,
+it stops with a usage error. Codex can act on hook context without quoting it.
 Use the preview to read the text directly.
 
 ## Ask from inside a Claude Code or Codex session

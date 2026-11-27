@@ -150,7 +150,10 @@ Decided in [#1104](https://github.com/spacedock-dev/compass/issues/1104), owner 
   published state and which lanes serve each goal, with no plan text, to a small file in the
   Compass home. The hook reads that file. A missing, unreadable or malformed file, or one older
   than 24 hours, leaves state and progress "not measured". `--no-plan` writes nothing and removes
-  nothing; `--forget` deletes the file. The build writes it only while the summary is on. Progress reads as
+  nothing; `--forget` deletes the file. The build writes it only while the summary and Git reads
+  are on, and deletes it when it reads the plan with the summary off. The file names the SHA-256
+  of the settings it was built under, and the hook ignores it under other settings or while a
+  tracker or goals file is no longer admitted (review, 2026-11-28). Progress reads as
   the Plan page reads ("0 of 2 lanes are done"); with no lane measured it reads "not measured",
   never "0 of 0".
 - No model and no network. Like `--footer`, the hook starts no program and opens no socket.

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from unittest import mock
 
@@ -25,7 +28,6 @@ from .test_project_script_checks import GIT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
 SKILL = SERVER_PATH.parent
 PLUGIN = SKILL.parents[1]
@@ -274,16 +276,71 @@ class PlanSummaryHookTest(SummaryHarness):
             ("repeated key", json.dumps(saved)[:-1] + ', "v": 1}'),
             ("extra field", json.dumps({**saved, "title": "Restore"})),
             ("draft goal", json.dumps({**saved, "goals": [["hull", "hull"]]})),
+            # Shapes that once escaped the reader and silenced the whole summary.
+            ("list state", json.dumps({**saved, "lanes": {"hull": ["done"]}})),
+            ("object state", json.dumps({**saved, "lanes": {"hull": {"a": 1}}})),
+            ("list in a goal", json.dumps({**saved, "goals": [["hull", ["paint"]]]})),
+            ("object in a goal", json.dumps({**saved, "goals": [["hull", {"x": 1}]]})),
+            ("huge time", json.dumps({**saved, "written": 10**400})),
+            ("float version", json.dumps({**saved, "v": 1.0})),
+            ("other settings", json.dumps({**saved, "settings": "0" * 64})),
+            ("no settings digest", json.dumps({k: v for k, v in saved.items() if k != "settings"})),
         ):
             with self.subTest(name):
                 self.states_file.write_text(damage)
-                self.assertIn("Progress: not measured\nLane state: not measured\n", self.preview())
-        # A link to a valid file is refused too.
+                self.assert_everywhere("hull", unmeasured)
+        # A link to a valid file is refused too, symbolic or hard.
         elsewhere = self.root / "elsewhere.json"
         elsewhere.write_text(json.dumps({**saved, "written": time.time()}))
         self.states_file.unlink()
         self.states_file.symlink_to(elsewhere)
         self.assertIn("Lane state: not measured\n", self.preview())
+        self.states_file.unlink()
+        self.states_file.hardlink_to(elsewhere)
+        self.assertIn("Lane state: not measured\n", self.preview())
+        self.states_file.unlink()
+        self.states_file.write_text(elsewhere.read_text())
+        self.assertIn("Lane state: Done\n", self.preview())
+
+    def test_saved_states_are_bound_to_the_settings_and_admitted_sources(self) -> None:
+        self.setup_measured(hull="fixed", paint="driving")
+        self.board()
+        measured = "Progress: 1 of 2 lanes are done\nLane state: Done\n"
+        unmeasured = "Progress: not measured\nLane state: not measured\n"
+        self.assertIn(measured, self.preview())
+        # Changed settings: the saved states describe another plan until the board reads again.
+        self.configure(
+            summary={"enabled": True},
+            tracker={"lane_column": "Lane", "words": {**WORDS, "x": "done"}},
+        )
+        self.assertIn(unmeasured, self.preview())
+        self.assertIn(unmeasured, self.context() + "\n")
+        self.board()
+        self.assertIn(measured, self.preview())
+        # Turning the summary off and on again: the board withdrew the file while it was off.
+        self.configure(summary={"enabled": False}, tracker={"lane_column": "Lane", "words": WORDS})
+        self.board()
+        self.assertFalse(self.states_file.exists())
+        self.configure(summary={"enabled": True}, tracker={"lane_column": "Lane", "words": WORDS})
+        self.assertIn(unmeasured, self.preview())
+        self.board()
+        self.assertIn(measured, self.preview())
+        # A tracker repository that has become private, or gone, measures nothing.
+        (self.repo / ".restricted").touch()
+        self.assertIn(unmeasured, self.preview())
+        self.assertIn(unmeasured, self.context() + "\n")
+        (self.repo / ".restricted").unlink()
+        self.assertIn(measured, self.preview())
+        self.repo.rename(self.root / "moved")
+        self.assertIn(unmeasured, self.preview())
+
+    def test_a_board_without_git_keeps_the_saved_states(self) -> None:
+        self.setup_measured(hull="fixed", paint="driving")
+        self.board()
+        before = self.states_file.read_bytes()
+        self.assertEqual(self.board(git_probe_enabled=False)["state"], "ready")
+        self.assertEqual(self.states_file.read_bytes(), before)
+        self.assertIn("Lane state: Done\n", self.preview())
 
     def test_the_board_writes_the_state_file_only_with_the_summary_on(self) -> None:
         self.setup_measured(hull="fixed", paint="driving")
@@ -294,13 +351,20 @@ class PlanSummaryHookTest(SummaryHarness):
         self.configure(tracker=tracker_settings, summary={"enabled": True})
         self.board()
         saved = json.loads(self.states_file.read_bytes())
-        self.assertEqual(set(saved), {"v", "written", "lanes", "goals"})
+        self.assertEqual(set(saved), {"v", "written", "settings", "lanes", "goals"})
+        self.assertEqual(
+            saved["settings"],
+            hashlib.sha256((self.home / settings.FILENAME).read_bytes()).hexdigest(),
+        )
         self.assertEqual(saved["lanes"], {"hull": "done", "paint": "running"})
         self.assertEqual(saved["goals"], [["hull", "paint"]])
         self.assertEqual(self.states_file.stat().st_mode & 0o777, 0o600)
         text = self.states_file.read_text()
         for fragment in ("Restore", "model", "Paint", "G1", "Work on"):
             self.assertNotIn(fragment, text)
+        self.configure(tracker=tracker_settings, summary={"enabled": False})
+        self.board()
+        self.assertFalse(self.states_file.exists())
 
     def test_no_plan_writes_and_removes_nothing_and_forget_deletes_the_file(self) -> None:
         self.setup_measured(hull="fixed", paint="driving")
@@ -713,6 +777,9 @@ class PlanSliceOptionsTest(unittest.TestCase):
             ("--daemon",),
             ("--sessions",),
             ("--port", "9999"),
+            ("--port", "4553"),
+            ("--host", "127.0.0.1"),
+            ("--window-hours", "24"),
             ("--status",),
             ("--forget",),
         ):
@@ -944,3 +1011,87 @@ class PlanSummaryFormatTest(unittest.TestCase):
             with self.subTest(value=value):
                 summary = self.summary(None, lane={"id": "hull", "title": value, "doneWhen": None})
                 self.assertFalse(summary.startswith("Goal:"))
+
+
+class SavedStatesShapeTest(unittest.TestCase):
+    NOW = 1_000_000.0
+    DIGEST = "a" * 64
+
+    def document(self, **changes: Any) -> dict[str, Any]:
+        base: dict[str, Any] = {
+            "v": 1,
+            "written": self.NOW,
+            "settings": self.DIGEST,
+            "lanes": {"hull": "done"},
+            "goals": [["hull"]],
+        }
+        return {**base, **changes}
+
+    def load(self, raw: bytes) -> summary_states.Snapshot | None:
+        with tempfile.TemporaryDirectory() as home:
+            target = Path(home) / summary_states.FILENAME
+            target.write_bytes(raw)
+            target.chmod(0o600)
+            return summary_states.load(home, now=self.NOW, settings=self.DIGEST)
+
+    def test_each_cap_and_type_rule_refuses_the_whole_file(self) -> None:
+        cap = summary_states.MAX_BYTES
+        lanes = 4097
+        valid = json.dumps(self.document()).encode()
+        self.assertIsNotNone(self.load(valid))
+        self.assertIsNotNone(self.load(valid + b" " * (cap - len(valid))))
+        for name, raw in (
+            ("over the byte cap", valid + b" " * (cap + 1 - len(valid))),
+            ("too many lanes", self.document(lanes={f"l{n}": "done" for n in range(lanes)})),
+            ("too many goals", self.document(goals=[["hull"]] * lanes)),
+            ("too long a goal", self.document(goals=[[f"l{n}" for n in range(lanes)]])),
+            ("empty goal", self.document(goals=[[]])),
+            ("unsafe lane in a goal", self.document(goals=[["../x", "hull"]])),
+            ("true version", self.document(v=True)),
+            ("true time", self.document(written=True)),
+            ("text time", self.document(written=str(self.NOW))),
+            ("infinite time", json.dumps(self.document()).replace(str(self.NOW), "Infinity")),
+            ("short digest", self.document(settings="a" * 63)),
+            ("lanes as a list", self.document(lanes=[["hull", "done"]])),
+            ("goals as an object", self.document(goals={"G1": ["hull"]})),
+        ):
+            with self.subTest(name):
+                if isinstance(raw, bytes):
+                    data = raw
+                else:
+                    data = (raw if isinstance(raw, str) else json.dumps(raw)).encode()
+                self.assertIsNone(self.load(data))
+        # Settings with no digest never match a file that names none either.
+        with tempfile.TemporaryDirectory() as home:
+            (Path(home) / summary_states.FILENAME).write_text(
+                json.dumps(self.document(settings=""))
+            )
+            self.assertIsNone(summary_states.load(home, now=self.NOW, settings=""))
+        # True is 1, which is also a time a day before NOW: refused for its type alone.
+        with tempfile.TemporaryDirectory() as home:
+            target = Path(home) / summary_states.FILENAME
+            target.write_text(json.dumps(self.document(written=True)))
+            self.assertIsNone(summary_states.load(home, now=1.0, settings=self.DIGEST))
+            target.write_text(json.dumps(self.document(written=1)))
+            self.assertIsNotNone(summary_states.load(home, now=1.0, settings=self.DIGEST))
+
+    def test_saving_keeps_only_published_values_and_refuses_an_oversize_file(self) -> None:
+        projected = {
+            "lanes": [
+                {"id": "hull", "state": "done"},
+                {"id": "../x", "state": "done"},
+                {"id": "paint", "state": "FIXED"},
+            ],
+            "goals": [{"lanes": ["hull", "../x"], "proposal": None}],
+        }
+        with tempfile.TemporaryDirectory() as home:
+            summary_states.save(home, projected, now=self.NOW, settings=self.DIGEST)
+            saved = json.loads((Path(home) / summary_states.FILENAME).read_bytes())
+            self.assertEqual(saved["lanes"], {"hull": "done"})
+            self.assertEqual(saved["goals"], [["hull"]])
+            self.assertEqual(saved["settings"], self.DIGEST)
+            with (
+                mock.patch.object(summary_states, "MAX_BYTES", 32),
+                self.assertRaises(summary_states.StatesError),
+            ):
+                summary_states.save(home, projected, now=self.NOW, settings=self.DIGEST)

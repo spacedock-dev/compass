@@ -231,11 +231,18 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
     projected = _project(
         plan, _lane_sessions(plan.lanes, config, state, loaded.settings.sources.policy)
     )
-    if loaded.settings.summary_enabled:
-        # Saved for the SessionStart summary, which cannot read the tracker itself. A failed
-        # write leaves the last file to age out; the board's reply does not depend on it.
+    if not loaded.settings.summary_enabled:
+        # A file left from before the summary was turned off would describe a tracker no board
+        # has read since; withdraw it so turning the summary on again starts unmeasured.
+        summary_states.forget(config.state_home)
+    elif config.git_probe_enabled:
+        # Saved for the SessionStart summary, which cannot read the tracker itself. Without Git
+        # the board read no tracker, so it keeps the last file rather than saving nothing over
+        # it. A failed write leaves that file to age out; the board's reply does not depend on it.
         with contextlib.suppress(OSError, ValueError):
-            summary_states.save(config.state_home, projected, now=time.time())
+            summary_states.save(
+                config.state_home, projected, now=time.time(), settings=loaded.settings.digest
+            )
     return projected
 
 
@@ -349,6 +356,20 @@ def _summary_lane(config: settings.Settings, cwd: str) -> model.Lane | None:
     return matches[0] if len(matches) == 1 else None
 
 
+def _states_admitted(config: settings.Settings) -> bool:
+    """Whether the settings still admit every tracker and goals file the saved states came from.
+
+    The check is the board's own, by metadata and with no Git: a repository that has since gone
+    or become private measures nothing, whatever the file says.
+    """
+    return all(
+        config.sources.declared_tree_source(repo, kind, path).reason is None
+        for repo in config.sources.repositories
+        for kind, path in repo.files
+        if kind in {"tracker", "goals"}
+    )
+
+
 def session_summary(
     home: str, *, lane: str | None, cwd: str | None = None, now: float | None = None
 ) -> str:
@@ -376,7 +397,13 @@ def session_summary(
             "doneWhen": _text(brief.done),
         }
         asks = [_text(ask.text) for ask in readers.lane_asks(loaded, brief.slug)]
-        snapshot = summary_states.load(home, now=time.time() if now is None else now)
+        snapshot = (
+            summary_states.load(
+                home, now=time.time() if now is None else now, settings=loaded.digest
+            )
+            if _states_admitted(loaded)
+            else None
+        )
         return _summary(row, asks, snapshot)
     except Exception:  # noqa: BLE001 - SessionStart must abstain even on an unexpected reader error.
         return ""

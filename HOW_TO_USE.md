@@ -943,7 +943,8 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
 3. Start each session from inside its declared lane folder, or set `COMPASS_LANE` to its brief slug
    in the session's launch environment. The lane state and progress come from the dashboard: each
    time it reads the plan with the summary on, it saves every lane's state. If no dashboard has read
-   the plan in the last 24 hours, both read "not measured". [Preview the summary](HOW_TO_USE_TERMINAL.md#preview-the-plan-summary)
+   the plan in the last 24 hours, or since you last changed `compass-plan.json`, both read
+   "not measured". [Preview the summary](HOW_TO_USE_TERMINAL.md#preview-the-plan-summary)
    from the same folder and environment before starting the session.
 
 The summary becomes part of the session's context, goes to its model provider and is saved
