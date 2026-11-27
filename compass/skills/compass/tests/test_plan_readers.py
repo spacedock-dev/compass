@@ -413,6 +413,103 @@ class PlanReadersTest(PlanRepoTestCase):
         self.assertEqual(result.sources[0].reason, io.PlanRefusal.CHANGED)
         self.assertEqual(result.goals, ())
 
+    def assert_refused_without_git(self, config: settings.Settings, reason: str) -> None:
+        self.assertEqual(config.sources.declarations()[0].reason, reason)
+        with mock.patch.object(git_status.PlanTreeReader, "_run", autospec=True) as run:
+            result = readers.read_plan(config).model
+        run.assert_not_called()
+        self.assertEqual(result.sources[0].reason, reason)
+        self.assertEqual(result.goals, ())
+
+    def test_repository_config_includes_refuse_without_running_git(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_CONFIG_INCLUDE\n"})
+        outside = self.root / "outside.config"
+        outside.write_text("[core]\n\tabbrev = 12\n")
+        config = self.repo / ".git" / "config"
+        original = config.read_text()
+        include = io.PlanRefusal.GIT_INCLUDE
+        for name, text, reason in (
+            ("include", f"[include]\n\tpath = {outside}\n", include),
+            ("include if", f'[includeIf "gitdir:/"]\n\tpath = {outside}\n', include),
+            ("case", f"[InClUdE]\n\tpath = {outside}\n", include),
+            ("same line", f"[core] [include] path = {outside}\n", include),
+            ("legacy dotted", f"[include.sub]\n\tpath = {outside}\n", include),
+            ("crlf", f"[include]\r\n\tpath = {outside}\r\n", include),
+            ("unreadable", '[core]\n\tname = "open quote\n[include]\n', include),
+            ("worktree config", f"[include]\n\tpath = {outside}\n", include),
+            (
+                "comment",
+                f"# [include]\n; [includeIf]\n\tname = x # [include] path = {outside}\n",
+                None,
+            ),
+            ("continued value", f"[core]\n\tname = one \\\n[include] path = {outside}\n", None),
+        ):
+            with self.subTest(name=name):
+                target = (
+                    self.repo / ".git" / "config.worktree" if name == "worktree config" else config
+                )
+                target.write_text((original if target == config else "") + text, newline="")
+                loaded = self.only_goals()
+                if reason is None:
+                    self.assertIsNone(loaded.sources.declarations()[0].reason)
+                    self.assertIn(
+                        "CANARY_CONFIG_INCLUDE", json.dumps(asdict(readers.read_plan(loaded).model))
+                    )
+                else:
+                    self.assert_refused_without_git(loaded, reason)
+                config.write_text(original)
+                (self.repo / ".git" / "config.worktree").unlink(missing_ok=True)
+
+    def test_include_added_after_load_refuses_before_git(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_LATE_INCLUDE\n"})
+        config = self.only_goals()
+        with (self.repo / ".git" / "config").open("a") as stream:
+            stream.write("[include]\n\tpath = /outside\n")
+        original = git_status.plan_reader
+        runner = mock.Mock(wraps=subprocess.run)
+
+        def factory(*args: Any, **kwargs: Any) -> git_status.PlanTreeReader:
+            return original(*args, **kwargs, runner=runner)
+
+        with mock.patch.object(git_status, "plan_reader", side_effect=factory):
+            result = readers.read_plan(config).model
+        self.assertEqual(runner.call_count, 0)
+        self.assertEqual(result.sources[0].reason, io.PlanRefusal.GIT_INCLUDE)
+        self.assertNotIn("CANARY_LATE_INCLUDE", json.dumps(asdict(result)))
+
+    def test_alternate_object_store_refuses_without_running_git(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_ALTERNATE\n"})
+        shared = self.root / "shared"
+        git(self.root, "clone", "-q", "--shared", str(self.repo), str(shared))
+        info = shared / ".git" / "objects" / "info"
+        self.assertTrue((info / "alternates").read_text().strip())
+        self.repo = shared
+        self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.GIT_ALTERNATES)
+        # Comments and blank lines borrow nothing; a dumb-HTTP list still refuses.
+        own = self.root / "own"
+        git(self.root, "clone", "-q", "--no-local", str(shared), str(own))
+        self.repo = own
+        objects = own / ".git" / "objects" / "info"
+        objects.mkdir(exist_ok=True)
+        (objects / "alternates").write_text("# none\n\n")
+        self.assertIsNone(self.only_goals().sources.declarations()[0].reason)
+        (objects / "http-alternates").write_text("https://example.test/objects\n")
+        self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.GIT_ALTERNATES)
+
+    def test_linked_git_metadata_refuses_without_running_git(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_LINKED_METADATA\n"})
+        dot_git = self.repo / ".git"
+        moved = self.root / "elsewhere.config"
+        (dot_git / "config").rename(moved)
+        (dot_git / "config").symlink_to(moved)
+        self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.SYMLINK)
+        (dot_git / "config").unlink()
+        moved.rename(dot_git / "config")
+        info = dot_git / "objects" / "info"
+        info.mkdir(exist_ok=True)
+        (info / "alternates").symlink_to(moved)
+        self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.SYMLINK)
+
     def test_frozen_build_reads_git_sources(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
         config = self.only_goals()

@@ -89,6 +89,7 @@ class Repository:
     files: tuple[tuple[str, str], ...]
     reason: str | None = None
     identity: tuple[int, int] | None = None
+    common: tuple[int, int] | None = None
     private_prefixes: tuple[tuple[str, ...], ...] = ()
     parent_refusals: tuple[tuple[str, str], ...] = ()
 
@@ -168,6 +169,8 @@ class Sources:
         with self.hold_repository(repo) as current:
             held, now = os.fstat(directory), os.fstat(current)
             if (held.st_dev, held.st_ino) != (now.st_dev, now.st_ino):
+                raise io.PlanReadError(io.PlanRefusal.CHANGED)
+            if git_boundary(current, self.policy) != repo.common:
                 raise io.PlanReadError(io.PlanRefusal.CHANGED)
 
     def tree_source(
@@ -283,6 +286,126 @@ def _tree_parent_reason(
     return None
 
 
+_INCLUDE_SECTIONS = frozenset({b"include", b"includeif"})
+_SPACE = b" \t\r\v\f"
+
+
+def _name_end(data: bytes, index: int, extra: bytes) -> int:
+    while index < len(data) and (data[index : index + 1].isalnum() or data[index] in extra):
+        index += 1
+    return index
+
+
+def _subsection_end(data: bytes, index: int) -> int | None:
+    """The index after `"name"]`, starting at the opening quote."""
+    if data[index : index + 1] != b'"':
+        return None
+    index += 1
+    while index < len(data) and data[index] != ord('"'):
+        index += 2 if data[index] == ord("\\") else 1
+        if index > len(data) or b"\n" in data[index - 2 : index]:
+            return None
+    return index + 2 if data[index : index + 2] == b'"]' else None
+
+
+def _config_header(data: bytes, index: int) -> tuple[bytes, int] | None:
+    """The section name of a header starting after "[", and the index after its "]"."""
+    end = _name_end(data, index, b"-.")
+    name = data[index:end].lower()
+    if not name:
+        return None
+    if data[end : end + 1] == b"]":
+        return name, end + 1
+    if data[end : end + 1] not in {b" ", b"\t"}:
+        return None
+    while data[end : end + 1] in {b" ", b"\t"}:
+        end += 1
+    close = _subsection_end(data, end)
+    return None if close is None else (name, close)
+
+
+def _value_end(data: bytes, index: int) -> int | None:
+    """The index after a value that starts after "=", following Git's quotes and escapes."""
+    quoted = comment = False
+    while index < len(data):
+        char = data[index : index + 1]
+        index += 1
+        if char == b"\n":
+            return None if quoted else index
+        if comment:
+            continue
+        if char == b"\\":
+            # Git accepts only these escapes; a backslash at a line end continues the value.
+            if data[index : index + 1] not in {b"", b"\n", b"t", b"b", b"n", b'"', b"\\"}:
+                return None
+            index += 1
+        elif char == b'"':
+            quoted = not quoted
+        comment = comment or (not quoted and char in {b"#", b";"})
+    return None if quoted else index
+
+
+def _entry_end(data: bytes, index: int) -> int | None:
+    """The index after a key (starting at its first letter) and its value."""
+    index = _name_end(data, index, b"-")
+    while data[index : index + 1] in {b" ", b"\t"}:
+        index += 1
+    if data[index : index + 1] in {b"", b"\n"}:
+        return index
+    if data[index : index + 1] != b"=":
+        return None
+    return _value_end(data, index + 1)
+
+
+def config_reaches_outside(data: bytes) -> bool:
+    """True when Git could include another file, or when this reading of it is unsure.
+
+    A small reading of Git's config grammar: comments, quoted values and line continuations
+    are honoured, so a commented or continued "[include]" is not a header. Anything the
+    grammar would reject counts as an include, because Git would refuse it too.
+    """
+    data = data.removeprefix(b"\xef\xbb\xbf").replace(b"\r\n", b"\n")
+    if b"\0" in data:
+        return True
+    index, comment = 0, False
+    while index < len(data):
+        char = data[index : index + 1]
+        if char == b"\n" or comment or char in {b"#", b";"} or char in _SPACE:
+            comment = char != b"\n" and (comment or char in {b"#", b";"})
+            index += 1
+            continue
+        if char == b"[":
+            header = _config_header(data, index + 1)
+            if header is None or header[0].split(b".")[0] in _INCLUDE_SECTIONS:
+                return True
+            end: int | None = header[1]
+        else:
+            end = _entry_end(data, index) if char.isalpha() else None
+        if end is None:
+            return True
+        index = end
+    return False
+
+
+def _borrows_objects(data: bytes) -> bool:
+    # Git skips only empty lines and lines starting with "#"; any other line names a store.
+    lines = data.replace(b"\r", b"").split(b"\n")
+    return any(line and not line.startswith(b"#") for line in lines)
+
+
+def git_boundary(directory: int, policy: io.PlanPathPolicy) -> tuple[int, int]:
+    """Refuse a repository whose Git would read a config file or object store outside it.
+
+    Returns the identity of the repository's common Git directory.
+    """
+    files = io.inspect_plan_git(directory, policy)
+    if any(config_reaches_outside(config) for config in files.configs):
+        raise io.PlanReadError(io.PlanRefusal.GIT_INCLUDE)
+    if any(_borrows_objects(alternates) for alternates in files.alternates):
+        raise io.PlanReadError(io.PlanRefusal.GIT_ALTERNATES)
+    return files.common
+
+
 def check_repositories(
     repositories: tuple[Repository, ...],
     policy: io.PlanPathPolicy,
@@ -297,6 +420,7 @@ def check_repositories(
                 admitted = replace(
                     repo,
                     identity=identity,
+                    common=git_boundary(directory, policy),
                     private_prefixes=tuple(
                         tuple(map(folded, prefix)) for prefix in prefixes.get(identity, ())
                     ),

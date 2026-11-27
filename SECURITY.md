@@ -1208,7 +1208,21 @@ command Compass walks that path again from the filesystem root. Every folder on 
 not be a symbolic link and must pass the private root, marker and marker file checks, and the
 path must still reach the folder Compass holds open. A change before dispatch refuses the read
 and Git is not run. A change during the command discards its output if it is still there when
-Git returns. A folder moved or linked away and back within one Git command goes undetected. Compass verifies the repository root with
+Git returns. A folder moved or linked away and back within one Git command goes undetected.
+
+Git reads only the repository's own configuration and objects. Compass finds the repository's
+Git directory (its `.git` folder, or the folder a linked worktree's or submodule's `.git` file
+names) and the common Git directory that folder names, through the same guarded walk as the
+checkout. A link anywhere on those paths, or a private or marked folder, refuses the
+repository. Compass then reads the common directory's `config` and the Git directory's
+`config.worktree`, up to 256 KiB each, and refuses the repository with `repository config
+includes another file` when either has an `[include]` or `[includeIf]` section. The check
+follows Git's config grammar for comments, quoted values and continued lines, and refuses a
+file it cannot read that way. A non-comment line in `objects/info/alternates` or
+`objects/info/http-alternates` refuses it with `repository borrows another object store`, as
+does a shared or reference clone. These checks run at settings load and again before and after
+each Git command. The common directory must also stay the one found at load. A config file
+changed and restored within one Git command goes undetected. Compass verifies the repository root with
 `rev-parse --show-prefix` and resolves one exact `refs/heads/<name>` to a commit using
 `for-each-ref`. Tags, remote refs and symbolic branch aliases cannot supply the tip.
 
@@ -1248,8 +1262,11 @@ have no line attribution. The lane briefs and log items use times from admitted 
 An untimestamped line contributes no time.
 
 Each command uses the resolved executable, disables fsmonitor and hooks, and passes
-`--no-optional-locks`. Compass strips inherited `GIT_*` variables and sets
-`GIT_NO_REPLACE_OBJECTS=1`, `GIT_LITERAL_PATHSPECS=1`, `GIT_TERMINAL_PROMPT=0` and
+`--no-optional-locks`. Compass strips inherited `GIT_*` variables and `XDG_CONFIG_HOME`, and
+sets `GIT_CONFIG_NOSYSTEM=1` and `GIT_CONFIG_GLOBAL=/dev/null`, so the system and user Git
+configuration files and their includes are not read. Git versions before 2.32 ignore
+`GIT_CONFIG_GLOBAL`, so Compass also sets `HOME` to `/dev/null`, where those versions find no
+user configuration file either. It also sets `GIT_NO_REPLACE_OBJECTS=1`, `GIT_LITERAL_PATHSPECS=1`, `GIT_TERMINAL_PROMPT=0` and
 `GIT_NO_LAZY_FETCH=1`. An empty `GIT_ALLOW_PROTOCOL` also prevents transport on older Git versions.
 `GIT_CEILING_DIRECTORIES` stops discovery at the declared repository's parent. Tip resolution and
 each file read have their own timeout. For `GET /api/plan`, all Git commands also share one

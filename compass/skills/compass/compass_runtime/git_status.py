@@ -939,9 +939,18 @@ def plan_reader(
     cwd: str, *, timeout_sec: float, runner: Callable[..., Any] = subprocess.run
 ) -> PlanTreeReader:
     environ = probe_environment(
-        {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
+        {
+            key: value
+            for key, value in os.environ.items()
+            if not key.upper().startswith("GIT_") and key.upper() != "XDG_CONFIG_HOME"
+        }
     )
     environ.update(
+        # Only the repository's own config is read; the caller checks it for includes first.
+        # GIT_CONFIG_GLOBAL needs Git 2.32; an older Git looks under HOME, which names no folder.
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        HOME=os.devnull,
         GIT_CEILING_DIRECTORIES=os.path.dirname(cwd),
         GIT_NO_REPLACE_OBJECTS="1",
         GIT_LITERAL_PATHSPECS="1",

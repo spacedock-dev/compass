@@ -913,7 +913,10 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
 3. Run the dashboard launcher with `--diagnose` and check the plan settings section for refused
    sources. It reports missing or unreadable draft sources and refused lane folders by kind
    and reason. If you configure private roots or marker files, keep the declared Git file's
-   parent directories present in the checkout so Compass can check them. See
+   parent directories present in the checkout so Compass can check them. Compass refuses a
+   repository whose own Git config includes another file, or that borrows another
+   repository's objects (a shared or reference clone). Remove the include, or run
+   `git repack -a -d` and delete `.git/objects/info/alternates`, to read it. See
    [what the local plan route publishes](SECURITY.md#published-plan-fields).
 
 ## Turn a feature off

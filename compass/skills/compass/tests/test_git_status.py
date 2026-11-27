@@ -1494,3 +1494,52 @@ class PlanTreeGitTest(unittest.TestCase):
         with self.assertRaises(git_status.PlanGitError) as error:
             reader.tip("main")
         self.assertEqual(error.exception.reason, "git timed out")
+
+    def test_plan_reader_reads_no_system_or_global_config(self) -> None:
+        with mock.patch.object(git_status, "_executable", return_value="/bin/git"):
+            reader = git_status.plan_reader("/example/repo", timeout_sec=5)
+        env = reader._environ
+        self.assertEqual(env["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(env["GIT_CONFIG_GLOBAL"], os.devnull)
+        # Git before 2.32 ignores GIT_CONFIG_GLOBAL and reads $HOME/.gitconfig instead.
+        self.assertEqual(env["HOME"], os.devnull)
+        self.assertNotIn("XDG_CONFIG_HOME", env)
+
+    @unittest.skipIf(GIT is None or os.name == "nt", "Needs Git")
+    def test_a_broken_global_config_include_does_not_reach_a_plan_read(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            repo, home, xdg = root / "repo", root / "home", root / "xdg"
+            for folder in (repo, home, xdg / "git"):
+                folder.mkdir(parents=True)
+            broken = root / "outside.config"
+            broken.write_text("[[[ not a config\n")
+            for config in (home / ".gitconfig", xdg / "git" / "config", root / "global"):
+                config.write_text(f"[include]\n\tpath = {broken}\n")
+            environ = {**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(xdg)}
+            environ["GIT_CONFIG_GLOBAL"] = str(root / "global")
+            git_env = {**environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            for args in (
+                ("init", "-q", "-b", "main"),
+                ("commit", "-q", "--allow-empty", "-m", "x"),
+            ):
+                subprocess.run(
+                    [GIT or "git", "-c", "user.name=a", "-c", "user.email=a@example.test", *args],
+                    cwd=repo,
+                    env=git_env,
+                    check=True,
+                )
+            traces: list[bytes] = []
+
+            def runner(argv: Any, *, check: bool, **kwargs: Any) -> Any:
+                kwargs["env"] = {**kwargs["env"], "GIT_TRACE": "1"}
+                result = subprocess.run(argv, check=check, **kwargs)
+                traces.append(result.stderr)
+                return result
+
+            with mock.patch.dict(os.environ, environ, clear=True):
+                reader = git_status.plan_reader(str(repo), timeout_sec=10, runner=runner)
+            self.assertRegex(reader.tip("main"), r"^[0-9a-f]{40}$")
+            self.assertTrue(traces)
+            self.assertTrue(all(b"trace: built-in" in trace for trace in traces))
+            self.assertFalse(any(b"bad config" in trace for trace in traces))

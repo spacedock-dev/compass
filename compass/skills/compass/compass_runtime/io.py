@@ -825,6 +825,8 @@ class PlanRefusal(StrEnum):
     INSIDE_REPO = "settings are inside a repository"
     UNSUPPORTED = "guarded plan reads are unavailable on this platform"
     CHANGED = "file changed before it could be read"
+    GIT_INCLUDE = "repository config includes another file"
+    GIT_ALTERNATES = "repository borrows another object store"
 
 
 class PlanReadError(Exception):
@@ -1081,24 +1083,18 @@ def _content_stamp(info: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def read_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> bytes:
-    """Read the held leaf, then refuse it if its metadata moved while it was read."""
+def _read_held_leaf(fd: int, max_bytes: int) -> bytes:
+    """Read an open leaf, then refuse it if its metadata moved while it was read."""
     chunks: list[bytes] = []
     remaining = max_bytes + 1
-    fd = open_plan_source(path, policy, max_bytes)
-    try:
-        before = os.fstat(fd)
-        while remaining > 0:
-            chunk = os.read(fd, min(remaining, 64 * 1024))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        after = os.fstat(fd)
-    except OSError as exc:
-        raise _plan_refusal(exc) from None
-    finally:
-        os.close(fd)
+    before = os.fstat(fd)
+    while remaining > 0:
+        chunk = os.read(fd, min(remaining, 64 * 1024))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    after = os.fstat(fd)
     data = b"".join(chunks)
     # A same-size rewrite in place keeps the inode, so the read could join two versions.
     if _content_stamp(before) != _content_stamp(after) or len(data) != after.st_size:
@@ -1106,6 +1102,16 @@ def read_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> bytes
     if len(data) > max_bytes:
         raise PlanReadError(PlanRefusal.TOO_LARGE)
     return data
+
+
+def read_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> bytes:
+    fd = open_plan_source(path, policy, max_bytes)
+    try:
+        return _read_held_leaf(fd, max_bytes)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+    finally:
+        os.close(fd)
 
 
 def read_plan_settings(path: str, max_bytes: int) -> bytes:
@@ -1116,6 +1122,139 @@ def read_plan_settings(path: str, max_bytes: int) -> bytes:
     policy = PlanPathPolicy(settings_file=True)
     inspect_plan_source(path, policy, max_bytes)
     return read_plan_source(path, policy, max_bytes)
+
+
+# Git's own pointer files (.git, commondir) are one short line.
+_GIT_POINTER_BYTES = 4096
+_GIT_CONFIG_BYTES = 256 * 1024
+_GIT_ALTERNATES_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True)
+class PlanGitFiles:
+    """What a repository's own Git directories hold that could reach outside them."""
+
+    common: tuple[int, int]
+    configs: tuple[bytes, ...]
+    alternates: tuple[bytes, ...]
+
+
+def _read_plan_leaf_at(directory: int, name: str, max_bytes: int) -> bytes | None:
+    """A guarded leaf under a held directory, or None when it is absent."""
+    try:
+        before = _inspect_plan_leaf(directory, name, max_bytes)
+    except FileNotFoundError:
+        return None
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        _check_plan_leaf(os.fstat(fd), max_bytes, before=before)
+        return _read_held_leaf(fd, max_bytes)
+    finally:
+        os.close(fd)
+
+
+def _git_pointer(data: bytes, prefix: bytes = b"") -> str:
+    # Git strips trailing line ends only, then takes the rest as a path.
+    if not data.startswith(prefix) or b"\0" in data:
+        raise PlanReadError(PlanRefusal.UNREADABLE)
+    path = data[len(prefix) :].rstrip(b"\r\n")
+    if not path:
+        raise PlanReadError(PlanRefusal.UNREADABLE)
+    return os.fsdecode(path)
+
+
+def _plan_subdirectory(parent: int, name: str, policy: PlanPathPolicy) -> int | None:
+    """A directory entry under a held parent, or None when it is absent."""
+    try:
+        info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(info.st_mode):
+        raise PlanReadError(PlanRefusal.SYMLINK)
+    if not stat.S_ISDIR(info.st_mode):
+        raise PlanReadError(PlanRefusal.NOT_REGULAR)
+    return _directory_fd(name, parent_fd=parent, follow_links=False, directory_check=policy.check)
+
+
+def _plan_git_dir(directory: int, policy: PlanPathPolicy) -> int:
+    try:
+        info = os.stat(".git", dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        # A bare repository is its own Git directory.
+        return os.dup(directory)
+    if stat.S_ISLNK(info.st_mode):
+        raise PlanReadError(PlanRefusal.SYMLINK)
+    if stat.S_ISDIR(info.st_mode):
+        return _directory_fd(
+            ".git", parent_fd=directory, follow_links=False, directory_check=policy.check
+        )
+    pointer = _read_plan_leaf_at(directory, ".git", _GIT_POINTER_BYTES)
+    if pointer is None:
+        raise PlanReadError(PlanRefusal.CHANGED)
+    # A linked worktree or submodule names its Git directory, relative to the checkout.
+    return _directory_fd(
+        _git_pointer(pointer, b"gitdir: "),
+        parent_fd=directory,
+        follow_links=False,
+        directory_check=policy.check,
+    )
+
+
+def _plan_common_dir(gitdir: int, policy: PlanPathPolicy) -> int:
+    pointer = _read_plan_leaf_at(gitdir, "commondir", _GIT_POINTER_BYTES)
+    if pointer is None:
+        return os.dup(gitdir)
+    return _directory_fd(
+        _git_pointer(pointer), parent_fd=gitdir, follow_links=False, directory_check=policy.check
+    )
+
+
+def plan_git_common(directory: int, policy: PlanPathPolicy) -> tuple[int, int]:
+    """The identity of the Git directory a checkout shares with its linked worktrees."""
+    return inspect_plan_git(directory, policy, contents=False).common
+
+
+def inspect_plan_git(
+    directory: int, policy: PlanPathPolicy, *, contents: bool = True
+) -> PlanGitFiles:
+    """Find a checkout's Git directory and common directory under the same guards as a source.
+
+    With `contents`, also read its config files and alternate object lists, so the caller can
+    refuse a repository whose Git would read files outside it.
+    """
+    if os.name == "nt":
+        raise PlanReadError(PlanRefusal.UNSUPPORTED)
+    try:
+        with contextlib.ExitStack() as held:
+            gitdir = _plan_git_dir(directory, policy)
+            held.callback(os.close, gitdir)
+            common = _plan_common_dir(gitdir, policy)
+            held.callback(os.close, common)
+            identity = _identity(os.fstat(common))
+            if not contents:
+                return PlanGitFiles(identity, (), ())
+            configs = (
+                _read_plan_leaf_at(common, "config", _GIT_CONFIG_BYTES),
+                _read_plan_leaf_at(gitdir, "config.worktree", _GIT_CONFIG_BYTES),
+            )
+            alternates: list[bytes | None] = []
+            objects = _plan_subdirectory(common, "objects", policy)
+            if objects is not None:
+                held.callback(os.close, objects)
+                info = _plan_subdirectory(objects, "info", policy)
+                if info is not None:
+                    held.callback(os.close, info)
+                    alternates.extend(
+                        _read_plan_leaf_at(info, name, _GIT_ALTERNATES_BYTES)
+                        for name in ("alternates", "http-alternates")
+                    )
+            return PlanGitFiles(
+                identity,
+                tuple(data for data in configs if data is not None),
+                tuple(data for data in alternates if data is not None),
+            )
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
 
 
 def list_plan_names(
