@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2489131,
+    "bytes": 2489999,
     "file": "react.html",
-    "sha256": "ddfd93684039b2443cc85ecd4e01db05ec32756fb70950024e22be347efcf8cf"
+    "sha256": "d509808c6916e53dd9f30dea87362f1eedf0afacf94e7683b9330f503e6016ed"
   },
   "format": 1,
   "frontend": "react",
@@ -919,7 +919,7 @@
       },
       {
         "file": "frontend/src/language/glossary.ts",
-        "sha256": "c49ae1e25486b62183a108312ec645bb98173b01d6deac55804f3409760b74e6"
+        "sha256": "69702a2e366b4fea2735569639cd9d8f8fe15b1228f9da802ff8f7bb1cc4ca47"
       },
       {
         "file": "frontend/src/lib/utils.ts",
@@ -996,6 +996,14 @@
       {
         "file": "frontend/src/observed/values.ts",
         "sha256": "827cbca7287bde4f5532a02201d8311c3b9333e8dbd6f31e0132d98126fe8b7b"
+      },
+      {
+        "file": "frontend/src/plan/PlanPage.tsx",
+        "sha256": "51880d41e0bea4234e9a2935155f3aa70c94afc5ef8ff79aaff8f11c9d88c2f4"
+      },
+      {
+        "file": "frontend/src/plan/model.ts",
+        "sha256": "fd73d44f346623c0c42c9e7ccb9b5d22d46ca4d021ef04f5bf4595865dfd9155"
       },
       {
         "file": "frontend/src/project/ActivityViews.tsx",
