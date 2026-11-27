@@ -1203,10 +1203,12 @@ private root below the repository also covers its relative tree prefix if it lat
 from the checkout. When private roots or marker files are configured, a missing checkout parent
 refuses the read.
 
-Compass checks the repository directory's identity immediately before and after each Git
-command. A swap before dispatch refuses the read. A swap during the command discards its
-output if the replacement is still there when Git returns. A directory swapped out and back
-within one Git command goes undetected. Compass verifies the repository root with
+Git starts in the repository folder by its path, so immediately before and after each Git
+command Compass walks that path again from the filesystem root. Every folder on the way must
+not be a symbolic link and must pass the private root, marker and marker file checks, and the
+path must still reach the folder Compass holds open. A change before dispatch refuses the read
+and Git is not run. A change during the command discards its output if it is still there when
+Git returns. A folder moved or linked away and back within one Git command goes undetected. Compass verifies the repository root with
 `rev-parse --show-prefix` and resolves one exact `refs/heads/<name>` to a commit using
 `for-each-ref`. Tags, remote refs and symbolic branch aliases cannot supply the tip.
 

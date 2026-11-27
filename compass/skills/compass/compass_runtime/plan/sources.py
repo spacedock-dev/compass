@@ -159,6 +159,17 @@ class Sources:
                 raise io.PlanReadError(io.PlanRefusal.CHANGED)
             yield directory
 
+    def verify_repository(self, repo: Repository, directory: int) -> None:
+        """Walk the repository path afresh and require it to reach the held folder.
+
+        Every ancestor passes the link, private identity, name marker and marker file checks
+        again, which a stat of the path alone would not do.
+        """
+        with self.hold_repository(repo) as current:
+            held, now = os.fstat(directory), os.fstat(current)
+            if (held.st_dev, held.st_ino) != (now.st_dev, now.st_ino):
+                raise io.PlanReadError(io.PlanRefusal.CHANGED)
+
     def tree_source(
         self,
         repo_label: str,

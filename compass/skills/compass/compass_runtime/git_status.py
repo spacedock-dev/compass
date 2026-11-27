@@ -585,14 +585,23 @@ def _run_read(
     deadline: float,
     runner: Callable[..., Any],
     directory: int | None = None,
+    verify_cwd: Callable[[], None] | None = None,
 ) -> bytes | None:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(args, 0)
     command = (resolved, *_SAFE_READ, *args)
     env = dict(environ)
-    if directory is not None:
-        _require_plan_cwd(cwd, directory)
+
+    # Git takes `cwd` as a path, so its ancestry is checked as well as its identity: an ancestor
+    # replaced by a link would otherwise lead the same folder somewhere private.
+    def verify() -> None:
+        if verify_cwd is not None:
+            verify_cwd()
+        elif directory is not None:
+            _require_plan_cwd(cwd, directory)
+
+    verify()
     result = runner(
         command,
         cwd=cwd,
@@ -602,8 +611,7 @@ def _run_read(
         check=False,
         env=env,
     )
-    if directory is not None:
-        _require_plan_cwd(cwd, directory)
+    verify()
     if getattr(result, "returncode", 1) != 0:
         return None
     out = getattr(result, "stdout", b"")
@@ -704,6 +712,8 @@ class PlanTreeReader:
     _runner: Callable[..., Any]
     request_deadline: float | None = None
     directory: int | None = None
+    # Raises PlanGitError when the working folder no longer passes its admission checks.
+    verify_cwd: Callable[[], None] | None = None
     _marker_names: dict[tuple[str, str], frozenset[str] | str] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
@@ -724,6 +734,7 @@ class PlanTreeReader:
                 deadline=deadline,
                 runner=self._runner,
                 directory=self.directory,
+                verify_cwd=self.verify_cwd,
             )
         except subprocess.TimeoutExpired:
             raise PlanGitError("git timed out") from None

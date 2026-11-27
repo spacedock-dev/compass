@@ -282,22 +282,105 @@ class PlanReadersTest(PlanRepoTestCase):
 
     def test_repo_cwd_identity_is_held_through_git_dispatch(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
-        substitute = self.root / "other"
-        substitute.mkdir()
-        config = self.only_goals(private={"roots": [str(substitute)]})
+        for declared, reason in ((True, io.PlanRefusal.PRIVATE), (False, io.PlanRefusal.CHANGED)):
+            with self.subTest(private=declared):
+                substitute = self.root / "other"
+                substitute.mkdir()
+                roots = [str(substitute)] if declared else []
+                config = self.only_goals(private={"roots": roots})
+                original = git_status.plan_reader
+                runner = mock.Mock(wraps=subprocess.run)
+
+                def factory(*args: Any, **kwargs: Any) -> git_status.PlanTreeReader:
+                    self.repo.rename(self.root / "original")
+                    substitute.rename(self.repo)  # noqa: B023 - called inside this iteration
+                    return original(*args, **kwargs, runner=runner)  # noqa: B023 - as above
+
+                with mock.patch.object(git_status, "plan_reader", side_effect=factory):
+                    result = readers.read_plan(config).model
+                self.repo.rename(substitute)
+                (self.root / "original").rename(self.repo)
+                substitute.rmdir()
+                self.assertEqual(runner.call_count, 0)
+                self.assertEqual(result.sources[0].reason, reason)
+                self.assertEqual(result.goals, ())
+
+    def move_repo_below(self, outer: str) -> Path:
+        """Put the checkout one folder deeper, so an ancestor other than its parent exists."""
+        moved = self.root / outer / "repo"
+        moved.parent.mkdir()
+        self.repo.rename(moved)
+        self.repo = moved
+        return moved.parent
+
+    def link_ancestor_into(self, ancestor: Path, private: Path) -> None:
+        """Move the checkout under a private root and point its old ancestor there."""
+        self.repo.rename(private / self.repo.name)
+        ancestor.rmdir()
+        ancestor.symlink_to(private, target_is_directory=True)
+
+    def test_repo_ancestor_linked_to_a_private_root_before_git_refuses(self) -> None:
+        outer = self.move_repo_below("outer")
+        private = self.root / "hide"
+        private.mkdir()
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_LINKED_ANCESTOR\n"})
+        config = self.only_goals(private={"roots": [str(private)]})
         original = git_status.plan_reader
         runner = mock.Mock(wraps=subprocess.run)
 
         def factory(*args: Any, **kwargs: Any) -> git_status.PlanTreeReader:
-            self.repo.rename(self.root / "original")
-            substitute.rename(self.repo)
+            self.link_ancestor_into(outer, private)
             return original(*args, **kwargs, runner=runner)
 
         with mock.patch.object(git_status, "plan_reader", side_effect=factory):
             result = readers.read_plan(config).model
+        # The repository folder kept its identity; only its ancestry changed.
+        self.assertTrue((outer / "repo" / ".git").is_dir())
         self.assertEqual(runner.call_count, 0)
-        self.assertEqual(result.sources[0].reason, io.PlanRefusal.CHANGED)
+        self.assertEqual(result.sources[0].reason, io.PlanRefusal.SYMLINK)
         self.assertEqual(result.goals, ())
+        self.assertNotIn("CANARY_LINKED_ANCESTOR", json.dumps(asdict(result)))
+
+    def test_repo_ancestry_changed_during_git_run_discards_output(self) -> None:
+        private = self.root / "hide"
+        private.mkdir()
+        outer = self.move_repo_below("outer")
+        canary = "CANARY_ANCESTRY_DURING_RUN"
+        self.write_sources({"goals": f"## Goals\n- G1: {canary}\n"})
+
+        def link(_: Path) -> None:
+            self.link_ancestor_into(outer, private)
+
+        def mark(folder: Path) -> None:
+            (folder / ".restricted").touch()
+
+        for change, reason in (
+            (mark, io.PlanRefusal.PRIVATE),
+            (link, io.PlanRefusal.SYMLINK),
+        ):
+            with self.subTest(change=change.__name__):
+                config = self.only_goals(private={"roots": [str(private)]})
+                original = git_status.plan_reader
+                calls: list[tuple[str, ...]] = []
+
+                def runner(
+                    argv: tuple[str, ...], *, check: bool, **kwargs: Any
+                ) -> subprocess.CompletedProcess[bytes]:
+                    if argv[-3:-1] == ("cat-file", "blob"):
+                        calls.append(argv)  # noqa: B023 - called inside this iteration
+                        change(outer)  # noqa: B023 - as above
+                    return subprocess.run(argv, check=check, **kwargs)
+
+                def factory(cwd: str, *, timeout_sec: float) -> git_status.PlanTreeReader:
+                    return original(cwd, timeout_sec=timeout_sec, runner=runner)  # noqa: B023
+
+                with mock.patch.object(git_status, "plan_reader", side_effect=factory):
+                    result = readers.read_plan(config).model
+                (outer / ".restricted").unlink(missing_ok=True)
+                self.assertEqual(len(calls), 1)
+                self.assertNotIn(canary, json.dumps(asdict(result)))
+                self.assertEqual(result.sources[0].reason, reason)
+                self.assertEqual(result.goals, ())
 
     def test_swap_during_git_run_discards_output(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
