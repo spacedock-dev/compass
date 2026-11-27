@@ -532,6 +532,38 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(
             runtime_io.plan_session_ancestry(str(sealed / "inner"), policy), frozenset()
         )
+        # Even one that cannot be entered at all is identified by its metadata.
+        sealed.chmod(0)
+        self.assertEqual(lanes(sealed, sealed / "inner"), public)
+        for folder in (sealed, sealed / "inner"):
+            self.assertEqual(runtime_io.plan_session_ancestry(str(folder), policy), frozenset())
+
+    def test_root_owned_and_crowded_ancestors_keep_the_join_measured(self) -> None:
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")
+        crowded = self.root / "crowded"
+        (crowded / "inner").mkdir(parents=True)
+        for index in range(4100):
+            (crowded / f"entry-{index}").touch()
+        policy = self.configure().sources.policy
+        app = self.application()
+        app.snapshot.publish(
+            (app.config.window_hours, False),
+            b"{}",
+            folders=(
+                ("claude", "public", str(self.hull)),
+                ("claude", "root", "/"),
+                ("claude", "tmp", "/tmp"),
+                ("claude", "crowded", str(crowded / "inner")),
+            ),
+        )
+        lanes = self.payload(app)[0]["lanes"]
+        self.assertEqual(lanes[0]["sessions"], ['session:["claude","public"]'])
+        for folder in ("/", "/tmp"):
+            self.assertIsNotNone(runtime_io.plan_session_ancestry(folder, policy))
+        # A marker scan over the cap cannot clear the folder, so it joins no lane.
+        self.assertEqual(
+            runtime_io.plan_session_ancestry(str(crowded / "inner"), policy), frozenset()
+        )
 
     def test_refused_lane_folder_has_a_path_free_reason(self) -> None:
         (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")

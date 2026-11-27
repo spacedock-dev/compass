@@ -559,6 +559,38 @@ class PlanReadersTest(PlanRepoTestCase):
         self.repo = linked
         self.assert_private_without_tree_read(self.only_goals(private={"roots": [str(container)]}))
 
+    def test_each_ancestor_is_scanned_for_markers_once_per_read(self) -> None:
+        outer = self.move_repo_below("outer")
+        for index in range(500):
+            (outer / f"entry-{index}").touch()
+        self.write_sources(STAND_IN)
+        config = self.configure()
+        original = os.scandir
+        scanned: list[tuple[int, int]] = []
+
+        def scandir(target: Any) -> Any:
+            info = os.fstat(target) if isinstance(target, int) else os.stat(target)
+            scanned.append((info.st_dev, info.st_ino))
+            return original(target)
+
+        git_calls = mock.Mock(wraps=subprocess.run)
+        plan_reader = git_status.plan_reader
+
+        def factory(*args: Any, **kwargs: Any) -> git_status.PlanTreeReader:
+            return plan_reader(*args, **kwargs, runner=git_calls)
+
+        with (
+            mock.patch("compass_runtime.io.os.scandir", side_effect=scandir),
+            mock.patch.object(git_status, "plan_reader", side_effect=factory),
+        ):
+            result = readers.read_plan(config).model
+        self.assertTrue(all(source.reason is None for source in result.sources[:5]))
+        self.assertGreater(git_calls.call_count, 10)
+        info = outer.stat()
+        # The settings load already scanned it; an unchanged folder is not scanned again.
+        self.assertLessEqual(scanned.count((info.st_dev, info.st_ino)), 1)
+        self.assertLessEqual(max(map(scanned.count, scanned)), 1)
+
     def test_frozen_build_reads_git_sources(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
         config = self.only_goals()

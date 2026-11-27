@@ -644,9 +644,13 @@ def _owned(info: os.stat_result) -> bool:
     return os.name == "nt" or info.st_uid == os.getuid()
 
 
+class NotOwnedError(PermissionError):
+    """A directory Compass's ownership rule refuses, as distinct from one the system refused."""
+
+
 def _check_directory(info: os.stat_result, path: str, *, require_owner: bool = True) -> None:
     if not stat.S_ISDIR(info.st_mode) or (require_owner and not _owned(info)):
-        raise OSError(errno.EPERM, "Directory is not owned by this user", path)
+        raise NotOwnedError(errno.EPERM, "Directory is not owned by this user", path)
 
 
 def _check_regular(info: os.stat_result, path: str) -> None:
@@ -671,7 +675,7 @@ def _directory_child(
     mode: int,
     links: list[int],
     follow_links: bool,
-    directory_check: Callable[[int, str, os.stat_result], None] | None = None,
+    directory_check: Callable[[int | None, str, os.stat_result], None] | None = None,
 ) -> int:
     child = os.path.join(walked, part)
     # Without O_DIRECTORY, nonblocking open plus fstat still refuses a planted FIFO.
@@ -732,19 +736,31 @@ _SEARCH_ONLY = getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)
 
 
 def _check_unlisted(
-    fd: int, part: str, directory_check: Callable[[int, str, os.stat_result], None]
+    fd: int, part: str, directory_check: Callable[[int | None, str, os.stat_result], None]
 ) -> None:
-    """Let a policy refuse a directory this user may enter but not list, before EACCES does.
+    """Let a policy refuse a directory this user may not list, before EACCES does.
 
-    A declared private root of mode 111 is still private: report it as such rather than as
-    unreadable. Only the policy's refusal escapes; the walk never continues through the child.
+    A declared private root of mode 111 or 000 is still private: report it as such rather than
+    as unreadable. Its identity and name come from metadata under the held parent; the parts
+    of the policy that look inside it need a lookup-only open, which mode 000 refuses. Only
+    the policy's refusal escapes; the walk never continues through the child.
     """
+    try:
+        info = os.stat(part, dir_fd=fd, follow_symlinks=False)
+    except OSError:
+        return
+    if not stat.S_ISDIR(info.st_mode):
+        return
+    directory_check(None, part, info)
     if not _SEARCH_ONLY:
         return
     try:
         child = os.open(
             part,
-            _SEARCH_ONLY | (getattr(os, "O_DIRECTORY", 0) or 0) | getattr(os, "O_NOFOLLOW", 0),
+            _SEARCH_ONLY
+            | (getattr(os, "O_DIRECTORY", 0) or 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
             dir_fd=fd,
         )
     except OSError:
@@ -766,7 +782,7 @@ def _directory_fd(
     require_owner: bool = True,
     follow_links: bool = True,
     parent_fd: int | None = None,
-    directory_check: Callable[[int, str, os.stat_result], None] | None = None,
+    directory_check: Callable[[int | None, str, os.stat_result], None] | None = None,
 ) -> int:
     """Walk held directories and bound link traversal, preserving platform ancestor aliases."""
     links = [0] if links is None else links
@@ -925,7 +941,7 @@ def plan_private_prefixes(
         # enter but not list (mode 111) still loads.
         real = os.path.realpath(root, strict=True)
         parent, name = os.path.split(real)
-        ancestry = _plan_ancestry(parent, PlanPathPolicy(), require_owner=False, leaf=name)
+        ancestry = _plan_ancestry(parent, PlanPathPolicy().check, require_owner=False, leaf=name)
         if ancestry[-1][1] not in private_ids:
             raise PlanReadError(PlanRefusal.CHANGED)
         names = tuple(name for name, _ in ancestry)
@@ -944,8 +960,14 @@ class PlanPathPolicy:
     marker_files: tuple[str, ...] = ()
     settings_file: bool = False
     repo_ids: frozenset[tuple[int, int]] = frozenset()
+    # One settings load is one read. Its marker scans are kept by the directory's identity and
+    # times, which any added, renamed or removed entry changes.
+    _scans: dict[tuple[int, int, int, int], PlanRefusal | None] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
-    def check(self, directory: int, name: str, info: os.stat_result) -> None:
+    def check(self, directory: int | None, name: str, info: os.stat_result) -> None:
+        """Refuse a directory by policy. Without a descriptor, only its metadata is checked."""
         if not info.st_ino:
             raise PlanReadError(PlanRefusal.UNREADABLE)
         identity = _identity(info)
@@ -953,15 +975,32 @@ class PlanPathPolicy:
             raise PlanReadError(PlanRefusal.INSIDE_REPO)
         if identity in self.private_ids or (self.marked_name and self.marked_name(name)):
             raise PlanReadError(PlanRefusal.PRIVATE)
+        if directory is None:
+            return
         if self.settings_file and _git_directory_at(directory):
             raise PlanReadError(PlanRefusal.INSIDE_REPO)
-        if self.marker_files and _marker_at(directory, self.marker_files):
+        if self.marker_files:
+            self._check_markers(directory, info)
+
+    def _check_markers(self, directory: int, info: os.stat_result) -> None:
+        # The exact names cost one lookup each, so they are checked on every walk.
+        if any(_present_at(directory, marker) for marker in self.marker_files):
             raise PlanReadError(PlanRefusal.PRIVATE)
+        key = (info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns)
+        if key not in self._scans:
+            if len(self._scans) >= 4096:
+                self._scans.clear()
+            try:
+                self._scans[key] = (
+                    PlanRefusal.PRIVATE if _marker_scan(directory, self.marker_files) else None
+                )
+            except PlanReadError as exc:
+                self._scans[key] = exc.reason
+        if (reason := self._scans[key]) is not None:
+            raise PlanReadError(reason)
 
 
-def _marker_at(directory: int, markers: tuple[str, ...]) -> bool:
-    if any(_present_at(directory, marker) for marker in markers):
-        return True
+def _marker_scan(directory: int, markers: tuple[str, ...]) -> bool:
     folded = {unicodedata.normalize("NFC", marker).casefold() for marker in markers}
     with os.scandir(directory) as entries:
         for index, entry in enumerate(entries, start=1):
@@ -1018,12 +1057,16 @@ def inspect_plan_directory(path: str, policy: PlanPathPolicy) -> tuple[int, int]
 
 
 def _plan_ancestry(
-    path: str, policy: PlanPathPolicy, *, require_owner: bool = True, leaf: str = ""
+    path: str,
+    policy_check: Callable[[int | None, str, os.stat_result], None],
+    *,
+    require_owner: bool = True,
+    leaf: str = "",
 ) -> list[tuple[str, tuple[int, int]]]:
     ancestry: list[tuple[str, tuple[int, int]]] = []
 
-    def check(directory: int, name: str, info: os.stat_result) -> None:
-        policy.check(directory, name, info)
+    def check(directory: int | None, name: str, info: os.stat_result) -> None:
+        policy_check(directory, name, info)
         ancestry.append((name, _identity(info)))
 
     directory = _directory_fd(
@@ -1040,31 +1083,51 @@ def _plan_ancestry(
     return ancestry
 
 
-def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[int, int]] | None:
-    """The identities above a session folder, empty when it is private or gone.
+def _session_identities(
+    path: str, check: Callable[[int | None, str, os.stat_result], None]
+) -> frozenset[tuple[int, int]] | None:
+    try:
+        resolved = os.path.realpath(path, strict=True)
+    except PermissionError:
+        # Walk the given route: a private folder there may be what refuses the lookup.
+        os.close(_directory_fd(path, directory_check=check, require_owner=False))
+        return None
+    ancestry = _plan_ancestry(resolved, check, require_owner=False)
+    if path != resolved:
+        # Check the alias route too, without using it for the join.
+        alias = _directory_fd(path, directory_check=check, require_owner=False)
+        try:
+            if _identity(os.fstat(alias)) != ancestry[-1][1]:
+                return None
+        finally:
+            os.close(alias)
+    return frozenset(identity for _, identity in ancestry)
 
-    None means the folder could not be examined, so it may sit below any lane folder.
+
+def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[int, int]] | None:
+    """The identities above a session folder, empty when it is or may be private, or is gone.
+
+    None means the folder's identity chain could not be looked up, so it may sit below any lane
+    folder. A chain that resolves but fails a policy check it cannot finish (a folder Compass
+    does not own, a marker scan over the cap) may be private, so it joins no lane.
     """
     if os.name == "nt" or not os.path.isabs(path):
         return None
+
+    def check(directory: int | None, name: str, info: os.stat_result) -> None:
+        try:
+            policy.check(directory, name, info)
+        except OSError:
+            raise PlanReadError(PlanRefusal.UNREADABLE) from None
+
     try:
-        resolved = os.path.realpath(path, strict=True)
-        ancestry = _plan_ancestry(resolved, policy)
-        if path != resolved:
-            # Check the alias route too, without using it for the join.
-            alias = _directory_fd(path, directory_check=policy.check)
-            try:
-                if _identity(os.fstat(alias)) != ancestry[-1][1]:
-                    return None
-            finally:
-                os.close(alias)
-        return frozenset(identity for _, identity in ancestry)
-    except PlanReadError as exc:
-        return frozenset() if exc.reason == PlanRefusal.PRIVATE else None
-    except (FileNotFoundError, NotADirectoryError):
+        return _session_identities(path, check)
+    except (PlanReadError, NotOwnedError):
         return frozenset()
-    except (OSError, ValueError):
+    except PermissionError:
         return None
+    except (OSError, ValueError):
+        return frozenset()
 
 
 def _check_plan_leaf(

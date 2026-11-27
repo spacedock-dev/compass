@@ -402,6 +402,30 @@ class PlanSettingsTest(unittest.TestCase):
         self.assertEqual(read.reason, "file changed before it could be read")
         self.assertEqual(plan.sources.read_log().data, b"ask lane:one Check on that")
 
+    def test_log_refuses_a_rewrite_that_restores_its_modification_time(self) -> None:
+        plan = self.loaded(self.fixture())
+        before = self.log.stat()
+        original_read = os.read
+        rewritten: list[bool] = []
+
+        def read(fd: int, size: int) -> bytes:
+            if rewritten:
+                return original_read(fd, size)
+            rewritten.append(True)
+            chunk = original_read(fd, min(size, 16))
+            with self.log.open("r+b") as stream:
+                stream.write(self.log.read_bytes().replace(b"on this", b"on that"))
+            # Only the change time still shows the write.
+            os.utime(self.log, ns=(before.st_atime_ns, before.st_mtime_ns))
+            self.assertEqual(self.log.stat().st_mtime_ns, before.st_mtime_ns)
+            return chunk
+
+        with mock.patch("compass_runtime.io.os.read", side_effect=read):
+            read_back = plan.sources.read_log()
+        self.assertTrue(rewritten)
+        self.assertIsNone(read_back.data)
+        self.assertEqual(read_back.reason, "file changed before it could be read")
+
     def test_brief_listing_refuses_an_overfull_folder_without_opening_briefs(self) -> None:
         doc = self.fixture()
         doc["briefs"]["max_files"] = 1

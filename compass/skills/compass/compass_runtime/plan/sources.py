@@ -160,16 +160,14 @@ class Sources:
                 raise io.PlanReadError(io.PlanRefusal.CHANGED)
             yield directory
 
-    def verify_repository(self, repo: Repository, directory: int) -> None:
-        """Walk the repository path afresh and require it to reach the held folder.
+    def verify_repository(self, repo: Repository) -> None:
+        """Walk the repository path afresh and require it to reach the admitted folder.
 
         Every ancestor passes the link, private identity, name marker and marker file checks
-        again, which a stat of the path alone would not do.
+        again, which a stat of the path alone would not do, and the repository's Git files
+        pass the boundary check against the common directory found at load.
         """
         with self.hold_repository(repo) as current:
-            held, now = os.fstat(directory), os.fstat(current)
-            if (held.st_dev, held.st_ino) != (now.st_dev, now.st_ino):
-                raise io.PlanReadError(io.PlanRefusal.CHANGED)
             if git_boundary(current, self.policy) != repo.common:
                 raise io.PlanReadError(io.PlanRefusal.CHANGED)
 

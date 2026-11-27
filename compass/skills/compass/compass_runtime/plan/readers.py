@@ -182,7 +182,7 @@ def _read_repository(
 
     def verify_cwd() -> None:
         try:
-            config.sources.verify_repository(repo, directory)
+            config.sources.verify_repository(repo)
         except io.PlanReadError as exc:
             raise git_status.PlanGitError(exc.reason) from None
 

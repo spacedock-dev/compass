@@ -587,9 +587,6 @@ def _run_read(
     directory: int | None = None,
     verify_cwd: Callable[[], None] | None = None,
 ) -> bytes | None:
-    remaining = deadline - time.monotonic()
-    if remaining <= 0:
-        raise subprocess.TimeoutExpired(args, 0)
     command = (resolved, *_SAFE_READ, *args)
     env = dict(environ)
 
@@ -602,6 +599,10 @@ def _run_read(
             _require_plan_cwd(cwd, directory)
 
     verify()
+    # Measured after the check, which walks the folder's ancestry and can take a while.
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired(args, 0)
     result = runner(
         command,
         cwd=cwd,

@@ -1543,3 +1543,34 @@ class PlanTreeGitTest(unittest.TestCase):
             self.assertTrue(traces)
             self.assertTrue(all(b"trace: built-in" in trace for trace in traces))
             self.assertFalse(any(b"bad config" in trace for trace in traces))
+
+    def test_plan_git_timeout_is_measured_after_the_working_folder_check(self) -> None:
+        clock = [100.0]
+        runner = mock.Mock(return_value=subprocess.CompletedProcess([], 0, b"\n", b""))
+
+        def slow_check() -> None:
+            clock[0] += 5.0
+
+        with mock.patch("compass_runtime.git_status.time.monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                git_status._run_read(
+                    ("rev-parse",),
+                    "/example/repo",
+                    {},
+                    "/bin/git",
+                    deadline=103.0,
+                    runner=runner,
+                    verify_cwd=slow_check,
+                )
+            runner.assert_not_called()
+            clock[0] = 100.0
+            git_status._run_read(
+                ("rev-parse",),
+                "/example/repo",
+                {},
+                "/bin/git",
+                deadline=110.0,
+                runner=runner,
+                verify_cwd=slow_check,
+            )
+        self.assertEqual(runner.call_args.kwargs["timeout"], 5.0)

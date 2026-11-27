@@ -1163,19 +1163,24 @@ markers. A marker can match a whole name, a token split at hyphens, underscores,
 or a substring. Homoglyphs remain distinct. A configured marker filename can also mark any parent
 directory. Compass checks for an exact match and scans up to 4,096 directory entries for an
 NFC-normalised, casefolded match. It checks the name without reading the entry. An unreadable
-scan or one that exceeds the cap refuses the source. A private root that can be entered but not
-listed (mode 111, say) is identified from its metadata, so the settings still load and a source
-beneath it is refused as private. A directory that cannot be opened at all refuses the source as
-unreadable.
+scan or one that exceeds the cap refuses the source. Within one read of the plan, Compass keeps
+each folder's scan result by the folder's device, inode, modification time and change time, so
+an unchanged folder is scanned once; adding, renaming or removing any entry changes those times
+and the folder is scanned again. The exact marker names are looked up on every check. A marker
+created within one tick of a coarse filesystem clock after a scan may go unseen until the next
+read. A private root that cannot be listed (mode 111 or 000, say) is identified from its
+metadata, so the settings still load and a source beneath it is refused as private. Any other
+directory that cannot be opened refuses the source as unreadable.
 
 The local reader uses held POSIX directory descriptors and refuses directory and file symlinks,
 apart from the root-owned macOS ancestor aliases for `/tmp`, `/var` and `/etc`. The identity checks
 cover the target ancestry of those aliases too. The leaf must be an owned regular file with one
 hard link. Compass checks its identity again after opening and reads under the byte cap. It
-compares the open file's device, inode, size, link count, modification time and change time
-before and after the read, and refuses a file that changed while it was read. That refuses a
-same-size rewrite in place, which could otherwise mix the old and new contents. A rewrite that
-finishes within one tick of a coarse filesystem clock keeps the same times and is not detected.
+compares the open file's device, inode, mode, size, link count, modification time and change
+time before and after the read, and refuses a file that changed while it was read. That refuses
+a same-size rewrite in place, which could otherwise mix the old and new contents. A rewrite that
+finishes within one tick of a coarse filesystem clock keeps the same times and is not detected,
+and neither is a write through a shared memory mapping that does not update the file's times.
 Platforms without the guarded traversal refuse the read.
 
 `--no-plan` skips plan settings, sources and working-folder capture for the run. `--diagnose` reports the settings path,
@@ -1323,9 +1328,13 @@ checks each session folder's ancestry under the declared privacy rules before co
 device and inode to the declared lane folders. It links a session when exactly one lane folder
 appears in the admitted ancestry. The JSON excludes the working folders. `sessions` is null
 for a cold snapshot or a lane with no admitted folder, and `[]` when the comparison ran and
-found zero matching sessions. A private or deleted session folder joins no lane. If any session
-folder cannot be examined, such as one Compass is not permitted to open, every lane's `sessions`
-is null, because that session could belong to any of them.
+found zero matching sessions. A private or deleted session folder joins no lane, and so does
+one whose ancestry Compass could look up but not clear: a folder that fails the ownership rule,
+or one whose marker scan is over the cap. Folders above the user's own, such as `/` or `/tmp`,
+are checked under the privacy rules without the ownership rule; lane folders keep it, so they
+never match one. If the system refuses the lookup of any session folder's path, and no private
+folder on that path explains it, every lane's `sessions` is null, because that session could
+belong to any of them.
 
 Plan text and its source diagnostics stay out of the board's session rows, event stream and
 [local history](#local-history-the-session-history-store). Fetching the plan does not collect
