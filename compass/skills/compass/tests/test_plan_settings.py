@@ -533,6 +533,35 @@ class PlanSettingsTest(unittest.TestCase):
                 self.assertIn(self.loaded(doc).sources.read_log().reason, {"private", "unreadable"})
                 private.chmod(0o700)
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory whatever its mode")
+    def test_a_private_root_held_open_but_not_searchable_still_loads(self) -> None:
+        # Linux opens a mode 000 folder with O_PATH, but any lookup inside it is refused.
+        (self.private / "nested").mkdir()
+        log = self.private / "nested" / "events.log"
+        log.write_bytes(b"ask lane:one CANARY_NOT_SEARCHABLE")
+        doc = self.fixture()
+        doc["log"]["path"] = str(log)
+        held = os.open(self.private, os.O_RDONLY)
+        self.addCleanup(os.close, held)
+        self.private.chmod(0)
+        self.addCleanup(self.private.chmod, 0o700)
+        lookup = io._lookup_fd
+
+        def opened_anyway(path: str) -> int | None:
+            return os.dup(held) if path == str(self.private) else lookup(path)
+
+        with mock.patch.object(io, "_lookup_fd", side_effect=opened_anyway):
+            plan = self.loaded(doc)
+        self.assertIn(plan.sources.read_log().reason, {"private", "unreadable"})
+
+    @unittest.skipUnless(sys.platform == "darwin", "the macOS lookup-only flag")
+    def test_lookup_only_flag_does_not_depend_on_the_python_build(self) -> None:
+        # Python built against an SDK before O_SEARCH was declared does not export it.
+        with mock.patch.dict(os.__dict__):
+            for name in ("O_SEARCH", "O_EXEC", "O_PATH"):
+                os.__dict__.pop(name, None)
+            self.assertEqual(io._search_only_flag(), 0x40000000 | os.O_DIRECTORY)
+
     def test_an_unreadable_repository_does_not_refuse_other_sources(self) -> None:
         doc = self.fixture()
         locked = self.root / "locked"

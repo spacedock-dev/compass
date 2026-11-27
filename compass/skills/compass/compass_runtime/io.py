@@ -731,8 +731,19 @@ def _directory_child(
         )
 
 
-# Opens a directory for lookups only: enough for metadata, not for a listing.
-_SEARCH_ONLY = getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)
+def _search_only_flag() -> int:
+    """The open flag for a directory held for lookups only: enough for metadata, not a listing."""
+    flag = getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)
+    if not flag and sys.platform == "darwin":
+        # A Python built against an older macOS SDK does not export O_SEARCH: on 2026-11-27 the
+        # CPython 3.12.10 GitHub's macOS runners install failed only the test that needs it.
+        # The SDK defines O_SEARCH as O_EXEC (0x40000000) | O_DIRECTORY. A kernel without it
+        # refuses the open, and the caller then treats the folder as one it cannot examine.
+        flag = 0x40000000 | (getattr(os, "O_DIRECTORY", 0) or 0)
+    return flag
+
+
+_SEARCH_ONLY = _search_only_flag()
 
 
 def _check_unlisted(
@@ -926,7 +937,16 @@ def _checkout_prefixes(real: str) -> Iterator[tuple[tuple[int, int], tuple[str, 
             # A root this user cannot enter cannot be checked for a .git entry.
             continue
         try:
-            if _present_at(directory, ".git"):
+            try:
+                found = _present_at(directory, ".git")
+            except PermissionError:
+                # Linux opens a mode 000 root with O_PATH but refuses lookups inside it. Like
+                # a root Compass cannot open, it cannot be checked for a .git entry. Every
+                # folder above it was entered on the way, so this is only the root itself.
+                if depth != len(parts):
+                    raise
+                continue
+            if found:
                 common = inspect_plan_git(directory, PlanPathPolicy(), contents=False).common
                 yield common, tuple(parts[depth:])
         finally:
