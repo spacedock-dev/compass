@@ -353,6 +353,9 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Read pull request status | Turn off the pull request read | Account-wide GitHub and GitLab check reads | An individual recorded pull request read | The flag and route stay |
 | Show my AI allowance | No dedicated Settings section | Browser-stored usage consent | An account setting | Labelled as kept in this browser |
 | Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |
+| Blocked | New label | A lane with work that cannot continue | A session waiting for a reply | Plan lane and tracker group |
+| Lane | New label | A line of work serving a plan goal | Working, a session state | Plan goals and lane counts |
+| Product decisions | New label | Decisions from the plan design notes | Decisions, the Project tab | Design section on Plan |
 
 Check means a Compass progress check on the first layer. Use "tests and builds" for the
 agent's own runs. Allowance belongs to the plan quota. The
