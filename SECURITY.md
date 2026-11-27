@@ -1329,17 +1329,23 @@ A configured reply has `state: ready` and the following fields.
 A date contains `label` and `at`. Unavailable dates are null. Compass applies its credential
 redaction to source text and replaces link candidates with their host before capping text. It
 masks the rest of each link token through the next whitespace, including tails attached to
-Markdown links, and drops destinations with no usable host. A host with a non-ASCII letter, with
-an ideographic or full-width dot between labels, or followed by a backslash is masked unnamed,
-because a browser and Python's URL parser read those hosts differently. A host glued to a word,
-digit or hyphen before it counts as a link too, and so does a `data:` URI glued to text. A
-`webcal:` or `web+name:` link is masked unnamed. A plain git remote such as
-`git@host:org/repo.git` shows only its host, and one whose path starts with a slash, or that is
-a Markdown link's destination, shows no host. Userinfo before any of these hosts, such as
-`user:password@`, is masked with the link. These forms are masked only in
-tokens where no other link form starts, so they never show text the other forms hide. The link
-scan's time grows in proportion to the text: 250 KB built to slow it took under a quarter of a
-second, where the previous scan took 90 seconds. The lane ID rule applies to brief
+Markdown links, and drops destinations with no usable host. A host with a non-ASCII letter or
+combining mark, with an ideographic, full-width or half-width full stop between labels, or
+followed by a backslash is masked unnamed, because a browser and Python's URL parser read those hosts
+differently. A trailing dot after a host is left out of its name. A host with one of those stops
+or a non-ASCII top-level label counts as a link only before a path or a port, and its mask ends
+at the next ideographic punctuation mark, so CJK prose that contains a full stop stays readable.
+A host glued to a word, digit or hyphen before it counts as a link too, and so does a `data:`
+URI glued to text. A `webcal:` or `web+name:` link is masked unnamed. A plain git remote such as
+`git@host:org/repo.git` shows only its host. One whose path starts with a slash, whose host is
+an opaque scheme's name, or that is a Markdown link's destination shows no host. Userinfo before
+any of these hosts, such as `user:password@`, is masked with the link, through every `@` in the
+token. When another link form starts later in the same token, these forms mask only up to it
+and name a host only if it ends before it, and that link keeps its own mask and host, so they
+never show text the other forms hide. The link scan's time grows linearly with the text. Each
+source is capped, a repository file at 256 KB, a brief at 64 KB and the log at 1 MB, and the
+slowest inputs found took under a second at 250 KB and under three seconds at 1 MB, where the
+previous scan took 90 seconds or more at 250 KB. The lane ID rule applies to brief
 slugs, log lane references, tracker lane cells, lane-folder settings keys and published lane
 references. Each ID must
 fit the slug grammar and pass through credential redaction unchanged. The cap keeps redaction

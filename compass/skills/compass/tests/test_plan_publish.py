@@ -361,6 +361,24 @@ class PlanPublicationTest(PlanRepoTestCase):
             ("webcal:feed?c=CANARY_WEBCAL", "[link]"),
             ("web+example:opaque-CANARY_WEB_PLUS", "[link]"),
             ("1webcal:CANARY_GLUED_WEBCAL", "[link]"),
+            # A known link later in the token keeps its own span; the added form masks the rest.
+            ("CANARY_U1:CANARY_P1@1192.168.1.10/admin?r=//x", "192.168.1.10"),
+            ("git@host:CANARY_ORG/repo.git#readme", "host"),
+            ("example.рф/CANARY_NEXT?next=https://other.test/", "[link]"),
+            ("webcal:CANARY_WEBCAL_NEXT?next=https://x.test/", "[link]"),
+            ("a-localhost\\CANARY_GLUED_BACKSLASH", "[link]"),
+            ("example.xn--p1ai\\CANARY_PUNY_BACKSLASH", "[link]"),
+            ("x@webcal:org/CANARY_OPAQUE_REMOTE.git", "[link]"),
+            ("参考docs.example.test\\CANARY_CJK_BACKSLASH", "参考[link]"),
+            ("CANARY_U2:CANARY_P2%3A@host:org/repo.git", "host"),
+            ("CANARY_U3:CANARY_P3!@host:org/repo.git", "host"),
+            ("CANARY_U4:CANARY_P4@host:/srv/CANARY_SLASH.git", "[link]"),
+            ("CANARY_U5:CANARY_P5@CANARY_P6@1192.168.1.10/CANARY_AT", "192.168.1.10"),
+            ("adata:;base64,CANARY_DATA_PARAMS", "[link]"),
+            ("उदाहरण.भारत/CANARY_DEVANAGARI", "[link]"),
+            ("ตัวอย่าง.ไทย/CANARY_THAI", "[link]"),
+            ("cafe\u0301.test/CANARY_COMBINING", "[link]"),
+            ("пример1.рф/CANARY_MIXED_LABEL", "[link]"),  # noqa: RUF001 - a digit inside an IDN label
             ("git@host:CANARY_ORG\\repo.git", "[link]"),
             ("git@host:/srv/CANARY_ABSOLUTE.git", "[link]"),
             ("[repo](git@host:CANARY_ORG/repo.git)", "[repo]"),
@@ -1013,6 +1031,16 @@ class LinkProjectionTest(unittest.TestCase):
             "i.e.: see below",
             "notes on records.md",
             "a@b and c@d",
+            "今日はリリース作業を行いました。次は?明日、レビューをお願いします。",
+            "実験を行った．結果はA/Bの両方で改善した．詳細は付録を参照．",  # noqa: RUF001 - CJK prose
+            "我们完成了迁移。下一步:更新文档，然后发布。",  # noqa: RUF001 - CJK prose
+            "好的。为什么?",
+            "完了。テスト:確認",
+            "xwebcal:x",
+            "git@host:x.gitx",
+            "see webcal: later",
+            "1tel: call me",
+            "ping @team:design/ux",
         ):
             with self.subTest(text=text):
                 self.assertEqual(records.hosts_only(text), (text, ()))
@@ -1024,9 +1052,46 @@ class LinkProjectionTest(unittest.TestCase):
             ("参考docs.example.test/d/CANARY", "参考docs.example.test", "docs.example.test"),
             ("a-localhost:3000/CANARY", "a-localhost", "localhost"),
             ("user:CANARY@host:org/repo.git", "host", "host"),
+            ("参考docs.example.test\\CANARY", "参考[link]", None),
+            ("ü-app.рф/CANARY", "[link]", None),
+            ("例子。中国/CANARY，然后", "[link]，然后", None),  # noqa: RUF001 - CJK prose
+            ("完了。example。test/CANARY", "完了。[link]", None),
+            ("mail a@b then пример.рф/CANARY", "mail a@b then [link]", None),
+            ("foo..example.рф/CANARY", "foo..[link]", None),
+            ("u:p@secret-host:/srv/r.git", "[link][link]", None),
+            ("webcal:CANARY@example.test/x", "example.test", "example.test"),
         ):
             with self.subTest(text=text):
-                self.assertEqual(records.hosts_only(text), (expected, (host,)))
+                hosts = () if host is None else (host,)
+                self.assertEqual(records.hosts_only(text), (expected, hosts))
+
+
+class KnownLinkOffsetsTest(unittest.TestCase):
+    def test_linear_finder_matches_the_regex_search_at_every_offset(self) -> None:
+        labels = [
+            "a+b://x",
+            "1+b://x y",
+            "x.\u017f.com/",
+            "\u017f" + "a" * 62 + ".com/",
+            "a" * 63 + ".com/",
+            "a" * 64 + ".com/",
+            ".".join(["a"] * 126) + ".com/",
+            ".".join(["a"] * 127) + ".com/",
+            "\u0131example.com/ \u212a.test:80",
+            "-a.com/ --.com/ a..b.com/",
+            "a\u00e4.test/ \u017f-a.com/",
+            "w\u0131ww.a/ localhost:3/",
+        ]
+        for text in labels:
+            with self.subTest(text=text[:40]):
+                known = records._KnownLinks(text)
+                for offset in range(len(text) + 1):
+                    found = known.match(offset)
+                    expected = records._URL_START.search(text, offset)
+                    self.assertEqual(
+                        None if found is None else found.span(),
+                        None if expected is None else expected.span(),
+                    )
 
 
 class LinkProjectionTimingTest(unittest.TestCase):
@@ -1036,27 +1101,50 @@ class LinkProjectionTimingTest(unittest.TestCase):
     def test_adversarial_text_is_projected_in_linear_time(self) -> None:
         size = 250_000
         cases = {
-            name: unit * (size // len(unit)) + "!"
-            for name, unit in (
-                ("ascii and non-ascii letters", "aä"),
-                ("non-ascii letters and hyphens", "ä-a"),
-                ("scheme characters after plus signs", "a+"),
-                ("ideographic dots", "a。"),
-                ("full-width dotted labels", "ab\uff0e"),
-                ("non-ascii labels", "äb."),
-                ("dashes", "-"),
-                ("scp-like remotes", "a@b:"),
-                ("userinfo", "a@"),
-                ("cyrillic", "п"),
-                ("digits and dots", "1."),
-                ("glued data", "adata:"),
-                ("backslashes", "a.bc\\"),
-                ("brackets", "["),
+            name: head + unit * ((size - len(head)) // len(unit)) + tail
+            for name, head, unit, tail in (
+                ("ascii and non-ascii letters", "", "aä", "!"),
+                ("non-ascii letters and hyphens", "", "ä-a", "!"),
+                ("scheme characters after plus signs", "", "a+", "!"),
+                ("ideographic dots", "", "a。", "!"),
+                ("full-width dotted labels", "", "ab\uff0e", "!"),
+                ("non-ascii labels", "", "äb.", "!"),
+                ("dashes", "", "-", "!"),
+                ("scp-like remotes", "", "a@b:", "!"),
+                ("userinfo", "", "a@", "!"),
+                ("cyrillic", "", "п", "!"),
+                ("digits and dots", "", "1.", "!"),
+                ("glued data", "", "adata:", "!"),
+                ("backslashes", "", "a.bc\\", "!"),
+                ("brackets", "", "[", "!"),
+                ("markdown destination", "[x](", "aä", ")"),
+                ("markdown glued hosts", "", "[x](a-localhost/ ", "!"),
+                ("userinfo before many glued hosts", "@", " x-localhost/", "!"),
+                ("long s labels", "", "\u017f" * 63 + ".", "!"),
+                ("kelvin labels", "", "\u212a" * 63 + ".", "!"),
+                ("long s labels before a path", "", "\u017f" * 63 + ".", "com/"),
+                ("overlong long s labels before a path", "", "\u017f" * 64 + ".", "com/"),
+                ("repeated known links", "", "https://a.test/x ", "!"),
+                ("repeated added links", "", "a.рф/x ", "!"),
+                ("known links with no added form ahead", "", "//x ", "!"),
             )
         }
-        cases["markdown destination"] = "[x](" + "aä" * (size // 2) + ")"
         for name, text in cases.items():
             with self.subTest(name=name):
                 started = time.monotonic()
                 records.hosts_only(text)
                 self.assertLess(time.monotonic() - started, 1.0)
+
+    def test_an_added_link_before_a_known_one_scans_in_linear_time(self) -> None:
+        # Linear time quadruples from 250 KB to 1 MB; a rescan to the line end for each added
+        # link grows sixteenfold.
+        for unit, tail in (("a.рф/< //x ", "!"), ("x-localhost/< https://k.test/ ", ">")):
+            with self.subTest(unit=unit):
+                took = []
+                for size in (250_000, 1_000_000):
+                    text = unit * (size // len(unit)) + tail
+                    started = time.monotonic()
+                    records.hosts_only(text)
+                    took.append(time.monotonic() - started)
+                self.assertLess(took[0], 1.0)
+                self.assertLess(took[1], 8 * took[0])
