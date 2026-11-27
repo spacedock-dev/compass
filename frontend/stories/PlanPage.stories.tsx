@@ -1,5 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { type ReactNode, useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { createRouter } from '../src/router/router';
+import { fakeRouterEnvironment } from '../src/router/testing';
+import { ShellContext } from '../src/shell/context';
+import { createShell } from '../src/shell/createShell';
+import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
+import { fakeBackend } from '../test/storage_backends';
 import { planLimits } from '../test/plan-fixtures';
 import { PlanPage } from '../src/plan/PlanPage';
 import type { PlanModel } from '../src/plan/model';
@@ -189,10 +196,42 @@ const complete: PlanModel = {
   sources: [...sourceList, refusedSource],
 };
 
+/* The page's session links go through the shell's router, so each story draws it inside a shell that
+   sits on Plan and never starts its runtime. */
+function PlanShell({ children }: { readonly children: ReactNode }) {
+  const [shell] = useState(() =>
+    createShell({
+      env: createFakeEnvironment({ clock: createFakeClock() }),
+      router: createRouter(fakeRouterEnvironment('#n=plan').env),
+      provider: () => fakeBackend(),
+      events: { addEventListener: () => undefined, removeEventListener: () => undefined },
+      search: '',
+      doc: null,
+      reducedMotion: () => true,
+      fetch: async () => new Response(null, { status: 404 }),
+    }),
+  );
+  useEffect(
+    () => () => {
+      shell.runtime.dispose();
+      shell.display.dispose();
+    },
+    [shell],
+  );
+  return <ShellContext.Provider value={shell}>{children}</ShellContext.Provider>;
+}
+
 const meta = {
   title: 'Pages/Plan',
   component: PlanPage,
   parameters: { layout: 'fullscreen' },
+  decorators: [
+    (Story) => (
+      <PlanShell>
+        <Story />
+      </PlanShell>
+    ),
+  ],
 } satisfies Meta<typeof PlanPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -344,12 +383,12 @@ export const GoalWithNoDoneLanes: Story = {
   },
 };
 
-const shelfHref = '#n=session:Library%20pickup:codex:shelf%3Areview';
-const hoursHref = '#n=session:Library%20pickup:claude:hours-review';
-const rotaHref = '#n=session:Library%20pickup:codex:rota-review';
+const shelfHref = '#n=session:Library%20pickup:codex:shelf%3Areview&from=plan';
+const hoursHref = '#n=session:Library%20pickup:claude:hours-review&from=plan';
+const rotaHref = '#n=session:Library%20pickup:codex:rota-review&from=plan';
 
-const sundayHref = '#n=session:Library%20pickup:codex:sunday-cover';
-const schoolHref = '#n=session:Library%20pickup:claude:school-holidays';
+const sundayHref = '#n=session:Library%20pickup:codex:sunday-cover&from=plan';
+const schoolHref = '#n=session:Library%20pickup:claude:school-holidays&from=plan';
 const sessionIcons = {
   Working: ['working', '--status-working-ink'],
   'Waiting on you': ['waiting', '--status-waiting-ink'],

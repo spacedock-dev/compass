@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { expect } from 'storybook/test';
 import { describe, it } from 'vitest';
 import {
@@ -11,11 +11,12 @@ import {
 import { mountShell } from '../shell/testing';
 import { FALLBACK_POLL_MS } from '../transport/live';
 
+const shelfHref = '#n=session:Library%20pickup:codex:shelf%3Areview';
 const planReadFailed = 'Compass could not read the plan. It tries again on the next refresh.';
 
-function mountPlan(response: unknown = readyPlan) {
+function mountPlan(response: unknown = readyPlan, hash = '#n=plan') {
   const getResponses: Record<string, unknown> = { '/api/plan': response };
-  const page = mountShell({ hash: '#n=plan', data: planBoard, getResponses });
+  const page = mountShell({ hash, data: planBoard, getResponses });
   return { ...page, getResponses };
 }
 
@@ -100,8 +101,7 @@ describe('the Plan destination follows the published plan', () => {
       name: 'Open session Review the shelf layout, Waiting on you',
     });
     expect(links).toHaveLength(2);
-    for (const link of links)
-      expect(link).toHaveAttribute('href', '#n=session:Library%20pickup:codex:shelf%3Areview');
+    for (const link of links) expect(link).toHaveAttribute('href', `${shelfHref}&from=plan`);
     expect(screen.queryByRole('link', { name: /missing|weekend rota/i })).toBeNull();
     expect(screen.queryByText(/and \d+ more/)).toBeNull();
     expect(page.backend.requests.map(({ url }) => url.split('?')[0])).toEqual([
@@ -176,6 +176,40 @@ describe('the Plan destination follows the published plan', () => {
       }),
     ).toBeVisible();
     expect(goal.queryByText('parked')).toBeNull();
+  });
+
+  it('opens a session from Plan and returns to Plan by the crumb and by Escape', async () => {
+    const page = mountPlan();
+    await page.settle();
+    const [link] = screen.getAllByRole('link', {
+      name: 'Open session Review the shelf layout, Waiting on you',
+    });
+    if (!link) throw new Error('The lane needs its session link.');
+    expect(link).toHaveAttribute('href', `${shelfHref}&from=plan`);
+    await act(async () => fireEvent.click(link));
+    await page.settle();
+    expect(page.router.getRoute()).toMatchObject({ view: 'session', from: 'plan' });
+    const crumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(crumb.getByRole('link', { name: 'Plan' })).toHaveAttribute('href', '#n=plan');
+    expect(primary().getByRole('link', { name: 'Plan' })).toHaveAttribute('aria-current', 'page');
+    await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
+    await page.settle();
+    expect(screen.getByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+  });
+
+  it('sends a session opened from Plan back to Sessions when there is no plan', async () => {
+    const page = mountPlan(unconfiguredPlan, `${shelfHref}&from=plan`);
+    await page.settle();
+    const crumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
+    expect(crumb.getByRole('link', { name: 'Sessions' })).toHaveAttribute('href', '#n=sessions');
+    expect(crumb.queryByRole('link', { name: 'Plan' })).toBeNull();
+    expect(primary().getByRole('link', { name: 'Sessions' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    await act(async () => fireEvent.keyDown(document.body, { key: 'Escape' }));
+    await page.settle();
+    expect(screen.getByRole('heading', { name: 'All sessions', level: 2 })).toBeVisible();
   });
 
   it('draws only the diagram caption and hosts from a hostile diagram', async () => {

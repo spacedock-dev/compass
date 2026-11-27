@@ -184,7 +184,9 @@ keeps what is shown. The board shows Sessions for a Plan bookmark only once the 
 no plan; before the first answer the Plan destination draws nothing, and a first read that failed
 says so there. A changed reply reaches the screen through the same paint as a poll, so it waits
 behind [an open option list](#an-open-option-list) and a reader's own toggle like the board does.
-The Plan view joins session keys to the displayed board. Stable goal, lane, ask and session keys preserve surviving links and their focus
+The Plan view joins session keys to the displayed board. A session opened from Plan carries
+`from=plan` in its fragment, so its tab, crumb and Escape return to Plan while a plan is shown, and
+to Sessions when there is none. Stable goal, lane, ask and session keys preserve surviving links and their focus
 through a refresh. Document scroll follows the same rules as the other destinations.
 
 ## Disclosure write precedence

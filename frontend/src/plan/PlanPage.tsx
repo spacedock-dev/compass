@@ -1,9 +1,9 @@
 import { type ReactNode, useId } from 'react';
 import { PLAN_WORDS, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
 import { cn } from '../lib/utils';
-import { fragmentForRoute } from '../router/grammar';
+import { fragmentForRoute, type SessionRoute } from '../router/grammar';
+import { RouteAnchor } from '../sessions/RouteAnchor';
 import { Badge } from '../ui/badge';
-import { buttonVariants } from '../ui/button';
 import { Card } from '../ui/card';
 import { Icon, SESSION_TILE_ICONS } from '../ui/icons';
 import { titleLink } from '../ui/link';
@@ -110,17 +110,16 @@ function RepoDate({ date }: { readonly date: PlanRepoDate }) {
 }
 
 function PlanSessionRef({
-  href,
+  route,
   name,
   state,
-}: Pick<PlanSessionReference, 'name' | 'state'> & { readonly href: string }) {
+}: Pick<PlanSessionReference, 'name' | 'state'> & { readonly route: SessionRoute }) {
   const { word, ink } = sessionStates[state];
   return (
-    <a
-      href={href}
-      aria-label={`Open session ${name}, ${word}`}
+    <RouteAnchor
+      route={route}
+      label={`Open session ${name}, ${word}`}
       className={cn(
-        buttonVariants({ variant: 'native' }),
         titleLink,
         'inline-flex items-center justify-start gap-1.5 rounded-control text-label text-muted-foreground sm:justify-end',
       )}
@@ -129,8 +128,13 @@ function PlanSessionRef({
         <Icon name={SESSION_TILE_ICONS[word]} size={16} />
       </span>
       <span className="max-w-[28ch] truncate">{name}</span>
-    </a>
+    </RouteAnchor>
   );
+}
+
+/* A session opened from Plan names Plan as its origin, so its crumb and Escape come back here. */
+function fromPlan(key: SessionRoute): SessionRoute {
+  return { ...key, from: 'plan' };
 }
 
 function SessionReferences({
@@ -143,10 +147,14 @@ function SessionReferences({
   const remaining = sessions.length - shown.length;
   return (
     <div className="flex max-w-full flex-none flex-col items-start sm:items-end">
-      {shown.map(({ key, ...session }) => {
-        const href = fragmentForRoute(key);
-        return <PlanSessionRef key={href} href={href} {...session} />;
-      })}
+      {shown.map(({ key, name, state }) => (
+        <PlanSessionRef
+          key={fragmentForRoute(key)}
+          route={fromPlan(key)}
+          name={name}
+          state={state}
+        />
+      ))}
       {remaining > 0 && (
         <p className="m-0 text-label text-muted-foreground">and {remaining} more</p>
       )}
@@ -225,19 +233,15 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                 className="m-0 grid list-none gap-3 p-0"
               >
                 {waitingSessions.map(({ key, title, harnessLabel, request }, index) => {
-                  const href = fragmentForRoute(key);
                   const descriptorId = `${waitingId}-${index}-descriptor`;
                   const requestId = `${waitingId}-${index}-request`;
                   return (
-                    <li key={href}>
-                      <a
-                        href={href}
-                        aria-label={title}
-                        aria-describedby={`${descriptorId} ${requestId}`}
-                        className={cn(
-                          buttonVariants({ variant: 'native' }),
-                          'group grid gap-1 rounded-control text-foreground no-underline',
-                        )}
+                    <li key={fragmentForRoute(key)}>
+                      <RouteAnchor
+                        route={fromPlan(key)}
+                        label={title}
+                        extra={{ 'aria-describedby': `${descriptorId} ${requestId}` }}
+                        className="group grid gap-1 rounded-control text-foreground no-underline"
                       >
                         <span className="max-w-[var(--measure)] font-semibold underline-offset-[3px] group-hover:underline group-focus-visible:underline">
                           {title}
@@ -252,7 +256,7 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                         >
                           {request}
                         </span>
-                      </a>
+                      </RouteAnchor>
                     </li>
                   );
                 })}

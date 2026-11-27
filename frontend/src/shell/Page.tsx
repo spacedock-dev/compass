@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { planShown } from '../api/plan';
 import { installChoiceRelease } from '../controls/displayGate';
 import { startNotifications } from '../notify';
 import { SHOWN } from '../language/glossary';
@@ -20,7 +21,7 @@ import { RoutedView } from './views';
    document listener, and one on the window runs after it, so "close this" comes before "leave this
    view" without either knowing about the other. */
 function useShellKeyboard(): void {
-  const { router } = useShell();
+  const { router, display } = useShell();
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof Element ? event.target : null;
@@ -37,6 +38,7 @@ function useShellKeyboard(): void {
           defaultPrevented: event.defaultPrevented,
         },
         router.getRoute(),
+        { plan: planShown(display.getSnapshot().plan) },
       );
       if (!move) return;
       event.preventDefault();
@@ -44,7 +46,7 @@ function useShellKeyboard(): void {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [router]);
+  }, [router, display]);
 }
 
 export function Page() {

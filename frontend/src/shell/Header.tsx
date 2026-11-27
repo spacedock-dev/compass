@@ -22,8 +22,8 @@ const PRIMARY = [
 ] as const;
 
 /* The view a route sits under: a session sits under the view it was opened from, a project under Projects. */
-function currentView(route: Route): TopLevelView {
-  if (route.view === 'session') return sessionHome(route);
+function currentView(route: Route, plan: boolean): TopLevelView {
+  if (route.view === 'session') return sessionHome(route, { plan });
   return route.view === 'project' ? 'projects' : route.view;
 }
 
@@ -39,8 +39,8 @@ function PrimaryNavigation({
   readonly open: boolean;
 }) {
   const { controls } = useShell();
-  const here = currentView(route);
   const hasPlan = useDisplayed((snapshot) => planShown(snapshot.plan));
+  const here = currentView(route, hasPlan);
   /* The current item is the focus lane's fallback for a control that stands only while something is
      wrong (Retry now), so removing it hands focus to a place the reader can see. */
   const currentRef = useFocusKey<HTMLAnchorElement>(controls.focusLane, 'primary-current');
@@ -165,7 +165,7 @@ export function Header({ route }: { readonly route: Route }) {
       <div className="next-board-compact">
         <Button
           type="button"
-          aria-current={currentView(route) === 'attention' ? 'page' : undefined}
+          aria-current={currentView(route, false) === 'attention' ? 'page' : undefined}
           className="gap-1 px-2 text-label font-semibold"
           onClick={() => router.navigate({ view: 'attention' })}
         >

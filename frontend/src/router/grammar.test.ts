@@ -206,7 +206,7 @@ describe('every released fragment parses to its route and prints back canonicall
       },
       canonical: '#n=session:recce:claude:one&from=attention',
     },
-    ...['sessions', 'attention', 'intent', 'projects', 'project'].map((from) => ({
+    ...['sessions', 'attention', 'intent', 'projects', 'project', 'help', 'plan'].map((from) => ({
       name: `origin ${from} is in the closed set`,
       fragment: `#n=session:recce:claude:one&from=${from}`,
       route: { view: 'session', project: 'recce', harness: 'claude', session: 'one', from },

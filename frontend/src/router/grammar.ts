@@ -29,6 +29,7 @@ export const SESSION_ORIGINS = [
   'projects',
   'project',
   'help',
+  'plan',
 ] as const;
 export type SessionOrigin = (typeof SESSION_ORIGINS)[number];
 
@@ -222,10 +223,15 @@ export function routeOrigin(route: RouteInput | null | undefined): SessionOrigin
 }
 
 /* The view a session page sits under, by where the reader came from: its tab, the root of its
-   crumb and the place Escape returns to are all this one. */
-export function sessionHome(route: RouteInput | null | undefined): TopLevelView {
+   crumb and the place Escape returns to are all this one. Plan is a home only while a plan is
+   shown, since its destination is hidden otherwise; the caller says which. */
+export function sessionHome(
+  route: RouteInput | null | undefined,
+  options: { readonly plan?: boolean } = {},
+): TopLevelView {
   const from = route?.from;
   if (from === 'project' || from === 'projects') return 'projects';
+  if (from === 'plan') return options.plan ? 'plan' : 'sessions';
   return from === 'attention' || from === 'intent' || from === 'help' ? from : 'sessions';
 }
 
