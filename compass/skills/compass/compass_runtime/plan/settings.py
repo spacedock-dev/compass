@@ -116,9 +116,10 @@ def _tracker(value: object) -> Tracker:
     columns = strings(status, 8, min_items=1) if isinstance(status, list) else (string(status),)
     title = string(raw["title_column"])
     lane = string(raw["lane_column"]) if "lane_column" in raw else None
-    if lane is not None and not lane.strip():
-        raise SettingsError
     named = (*columns, title) if lane is None else (*columns, title, lane)
+    # Table cells are stripped before matching, so a padded name could never match a header.
+    if any(column != column.strip() for column in named):
+        raise SettingsError
     if len({grammar.folded(column) for column in named}) != len(named):
         raise SettingsError
     return Tracker(

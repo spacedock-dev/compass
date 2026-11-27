@@ -192,13 +192,41 @@ class PlanSettingsTest(unittest.TestCase):
         declared = self.fixture()
         declared["tracker"]["lane_column"] = "Lane"
         self.assertEqual(self.loaded(declared).tracker.lane_column, "Lane")
-        for value in ("", " ", "Item", "item", "STATE", ["Lane"], 7, None, "L" * 129, "La\nne"):
+        for value in (
+            "",
+            " ",
+            "Item",
+            "item",
+            "STATE",
+            ["Lane"],
+            7,
+            None,
+            "L" * 129,
+            "La\nne",
+            " Lane ",
+            "Lane ",
+            " Item ",
+            " Status ",
+        ):
             with self.subTest(value=value):
                 doc = self.fixture()
                 doc["tracker"]["lane_column"] = value
                 loaded = self.load(doc)
                 self.assertEqual(loaded.reason, "malformed settings")
                 self.assertIsNone(loaded.settings)
+
+    def test_tracker_column_names_cannot_carry_padding(self) -> None:
+        # Table cells are stripped before matching, so a padded name could never match one.
+        for key, value in (
+            ("title_column", " Item "),
+            ("title_column", " "),
+            ("status_column", " Status"),
+            ("status_column", ["Status", "State "]),
+        ):
+            with self.subTest(key=key, value=value):
+                doc = self.fixture()
+                doc["tracker"][key] = value
+                self.assertEqual(self.load(doc).reason, "malformed settings")
 
     def test_private_identity_refuses_at_load_and_before_source_open(self) -> None:
         folder = self.private / "nested"

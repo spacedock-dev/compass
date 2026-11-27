@@ -60,7 +60,7 @@ class Item:
     title: str
     status: str
     origin: Origin
-    lane: str | None = None
+    lane: str | None = field(default=None, repr=False)
     # Lane IDs inside a lane cell that is not exactly one ID. They only make a lane ambiguous.
     mentions: tuple[str, ...] = field(default=(), repr=False)
 

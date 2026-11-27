@@ -38,7 +38,6 @@ _DIRECTIVE = re.compile(
 )
 _FLOW = re.compile(r"(flowchart|graph) +(?:LR|RL|TB|TD|BT)")
 _TRAILING_DATE = re.compile(r" +[0-9]{4}-[0-9]{2}-[0-9]{2}$")
-_LANE_TOKEN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 
 
 class ParseError(ValueError):
@@ -432,13 +431,13 @@ def _lane_names(cell: str | None, spec: settings.WordGrammar) -> tuple[str | Non
     if cell is None:
         return None, ()
     word = _undecorated(cell.strip(), spec)
-    text = grammar.folded(word) if spec.case == "fold" else word
-    if grammar.is_safe_lane_id(text):
-        return text, ()
-    # Fail closed: "hull, paint" or "hull." still counts against each lane it could name, so
-    # another row naming that lane cannot set its state alone.
-    tokens = (token for token in _LANE_TOKEN.findall(text) if grammar.is_safe_lane_id(token))
-    return None, tuple(dict.fromkeys(tokens))
+    fold = spec.case == "fold"
+    lane = grammar.admit_lane_id(word, fold=fold) if len(cell) <= MAX_TEXT_CHARS else None
+    if lane is not None:
+        return lane, ()
+    # Fail closed: "hull, paint", "hull." or an overlong cell still counts against each lane it
+    # could name, so another row naming that lane cannot set its state alone.
+    return None, grammar.lane_mentions(word, fold=fold)
 
 
 def _undecorated(word: str, spec: settings.WordGrammar) -> str:

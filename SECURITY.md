@@ -1178,10 +1178,13 @@ when both inputs were available, including brief references to missing goals. Di
 can show up to 32 characters of ordinary unknown tracker and inventory status words. For
 other unknown values it shows `Status not recognised`.
 
-An optional tracker lane column names the lane a row belongs to. Compass strips the declared
-decorations from that cell and folds its case when the tracker folds status words. A cell that
-fits the lane ID rule names that lane. Any other cell names no lane, but each lane-ID-shaped
-word in it makes that lane ambiguous, so the lane is not measured. Once the column is declared, every tracker table must have
+An optional tracker lane column names the lane a row belongs to. Tracker column names with
+leading or trailing spaces refuse the settings file. Compass strips the declared decorations from
+a lane cell and folds its case when the tracker folds status words. A cell of at most 512
+characters that fits the lane ID rule names that lane, and credential redaction checks it both
+before and after folding, because some credential shapes are case-sensitive. Any other cell names
+no lane. Each lane-ID-shaped word in it, read after credentials are masked, makes that lane
+ambiguous, so the lane is not measured. Once the column is declared, every tracker table must have
 it exactly once; a table that lacks or repeats it makes the tracker source malformed. The lane
 cell itself is never published.
 
@@ -1258,7 +1261,7 @@ A configured reply has `state: ready` and the following fields.
 | Field | Published contents |
 |---|---|
 | `goals` | `id`, `title`, `doneWhen`, `lanes` (stable lane IDs) and `proposal` (`Proposed, not merged` for draft-only goals, null otherwise). |
-| `lanes` | `id` (the admitted brief slug), `title`, `doneWhen`, `state`, `date` and `sessions` (board session keys or null). `state` is one of the six board groups or `Status not recognised`, taken from the one tracker row that names the lane. It is null when the settings declare no lane column, no row or more than one row names the lane, the only row is on a draft branch, or a declared tracker file could not be read. |
+| `lanes` | `id` (the admitted brief slug), `title`, `doneWhen`, `state`, `date` and `sessions` (board session keys or null). `state` is one of the six board groups or `Status not recognised`, taken from the one tracker row that names the lane. It is null when the settings declare no lane column, no row or more than one row names the lane, the only row is on a draft branch, or a declared primary tracker file could not be read. |
 | `asks` | `id`, `text`, `at` (the log time or null), `timeLabel` (`from the log` when timestamped, otherwise null), `source` and `lane` (its `id` and `title`, or null). |
 | `design` | `title`, `summary` (always null), `decided`, `source` and `date`. |
 | `tracker`, `inventory` | `title`, `group` (including the closed fallback `Status not recognised`), `source` and `date`. |
@@ -1271,7 +1274,8 @@ A date contains `label` and `at`. Unavailable dates are null. Compass applies it
 redaction to source text and replaces link candidates with their host before capping text. It
 masks the rest of each link token through the next whitespace, including tails attached to
 Markdown links, and drops destinations with no usable host. The lane ID rule applies to brief
-slugs, log lane references, lane-folder settings keys and published lane references. Each ID must
+slugs, log lane references, tracker lane cells, lane-folder settings keys and published lane
+references. Each ID must
 fit the slug grammar and pass through credential redaction unchanged. The cap keeps redaction
 markers intact. It is 512 characters per text field and
 8,192 for a diagram body, with up to 32 distinct hosts per diagram. The JSON excludes source

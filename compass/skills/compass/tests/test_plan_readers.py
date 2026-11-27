@@ -810,6 +810,62 @@ class PlanLaneStateTest(PlanRepoTestCase):
             {"hull": None, "paint": None, "mast": None, "keel": None},
         )
 
+    def test_credential_shaped_lane_cells_never_become_lane_ids(self) -> None:
+        # Synthetic shapes, built here so no credential-shaped literal sits in the source.
+        cells = (
+            "AKIA" + "IOSFODNN7EXAMPLE",
+            "`" + "AIza" + "Q" * 35 + "`",
+            "xoxb-" + "1" * 20,
+            "XOXB-" + "1" * 20,
+        )
+        rows = "".join(f"| Row {n} | {cell} | fixed |\n" for n, cell in enumerate(cells))
+        self.write_sources({"tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n" + rows})
+        for cell in cells:
+            (self.briefs / f"{cell.strip('`').lower()}.md").write_text(
+                "## Goal\nSample lane\n", encoding="utf-8"
+            )
+        result = readers.read_plan(self.configure())
+        self.assertEqual([row.lane for row in result.model.tracker], [None] * 4)
+        mentioned = {lane for row in result.model.tracker for lane in row.mentions}
+        for cell in cells:
+            with self.subTest(cell=cell):
+                self.assertNotIn(cell.strip("`").lower(), mentioned)
+                self.assertNotIn(cell.strip("`").lower(), repr(result.model.tracker))
+        self.assertEqual({lane.state for lane in result.model.lanes}, {None})
+
+    def test_exact_case_lane_cells_must_match_the_slug(self) -> None:
+        for cell, expected in (("Hull", None), ("hull", "done")):
+            with self.subTest(cell=cell):
+                self.write_sources(
+                    {
+                        "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                        f"| Cut the hull | {cell} | fixed |\n"
+                    }
+                )
+                config = self.configure(tracker={"lane_column": "Lane", "case": "exact"})
+                self.assertEqual(self.states(config)["hull"], expected)
+
+    def test_two_rows_with_the_same_status_still_leave_the_lane_unmeasured(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                "| Rig the mast | mast | fixed |\n| Rig it again | mast | fixed |\n"
+            }
+        )
+        self.assertIsNone(self.states(self.configure())["mast"])
+
+    def test_an_overlong_lane_cell_names_no_lane_and_still_counts_against_it(self) -> None:
+        cell = "`" + " " * 510 + "hull`"
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                f"| Cut the hull | {cell} | fixed |\n"
+            }
+        )
+        result = readers.read_plan(self.configure())
+        self.assertIsNone(result.model.tracker[0].lane)
+        self.assertIsNone({lane.slug: lane.state for lane in result.model.lanes}["hull"])
+
     def test_a_draft_only_row_does_not_set_a_lane_state(self) -> None:
         self.write_sources({"tracker": LANE_TRACKER})
         git(self.repo, "switch", "-qc", "draft/plan")
