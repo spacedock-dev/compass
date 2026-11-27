@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
-import stat
 import time
 from collections import defaultdict
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from compass_runtime import records
+from compass_runtime import io, records
 
 from . import model, readers, settings
 
@@ -40,7 +37,12 @@ _DIAGRAM_HOSTS = 32
 
 
 def _cap(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + records.CUT_MARK
+    if len(text) <= limit:
+        return text
+    cut = limit - len(records.CUT_MARK)
+    marker = records.SECRET_MARKER
+    start = text.find(marker, max(0, cut - len(marker) + 1), cut + len(marker) - 1)
+    return text[: start if start != -1 else cut] + records.CUT_MARK
 
 
 def _text(value: str | None) -> str | None:
@@ -59,7 +61,7 @@ def _date(value: model.ItemDate | None) -> dict[str, str | None] | None:
 def _source(source: model.Source) -> dict[str, str | None]:
     return {
         "label": _text(source.label),
-        "kind": source.kind,
+        "kind": source.display_kind,
         "state": "ok" if source.reason is None else "refused",
         "reason": source.reason,
     }
@@ -88,44 +90,30 @@ def _diagram(diagram: model.Diagram) -> dict[str, Any]:
     }
 
 
-def _ancestry(cwd: str) -> frozenset[tuple[int, int]]:
-    if not os.path.isabs(cwd):
-        return frozenset()
-    try:
-        folder = Path(os.path.realpath(cwd, strict=True))
-        identities = set()
-        for parent in (folder, *folder.parents):
-            info = parent.stat()
-            if not stat.S_ISDIR(info.st_mode) or not info.st_ino:
-                return frozenset()
-            identities.add((info.st_dev, info.st_ino))
-        return frozenset(identities)
-    except (OSError, ValueError):
-        return frozenset()
-
-
 def _lane_sessions(
-    lanes: tuple[model.Lane, ...], config: RuntimeConfig, state: RuntimeState
+    lanes: tuple[model.Lane, ...],
+    config: RuntimeConfig,
+    state: RuntimeState,
+    policy: io.PlanPathPolicy,
 ) -> dict[str, list[str]]:
     folders: dict[tuple[int, int], list[str]] = defaultdict(list)
     for lane in lanes:
         if lane.folder is not None:
             folders[lane.folder.device, lane.folder.inode].append(lane.slug)
-    matched: dict[str, list[str]] = defaultdict(list)
-    if not folders:
-        return matched
-
     # The folder sidecar is bound to the same snapshot as the board rows.
     published = state.snapshot.session_folders((config.window_hours, False))
     if published is None:
         published = state.snapshot.session_folders((config.window_hours, True))
+    if published is None or not folders:
+        return {}
 
+    matched: dict[str, list[str]] = {slug: [] for slugs in folders.values() for slug in slugs}
     ancestry: dict[str, frozenset[tuple[int, int]]] = {}
-    for harness, sid, cwd in published or ():
+    for harness, sid, cwd in published:
         if _text(harness) != harness or _text(sid) != sid:
             continue
         if cwd not in ancestry:
-            ancestry[cwd] = _ancestry(cwd)
+            ancestry[cwd] = io.plan_session_ancestry(cwd, policy)
         matches = [slug for identity in ancestry[cwd] for slug in folders.get(identity, ())]
         if len(matches) == 1:
             # Same wire key as the board's sessionKey helper.
@@ -145,6 +133,7 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
                 "title": _text(goal.title),
                 "doneWhen": _text(goal.done),
                 "lanes": list(goal.lanes),
+                "proposal": "Proposed, not merged" if goal.origin.source.draft else None,
             }
             for goal in plan.goals
         ],
@@ -155,7 +144,7 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
                 "doneWhen": _text(lane.done),
                 "state": None,
                 "date": _date(lane.date),
-                "sessions": matched.get(lane.slug, []),
+                "sessions": matched.get(lane.slug),
             }
             for lane in plan.lanes
         ],
@@ -164,7 +153,7 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
                 "id": _text(ask.id),
                 "text": _text(ask.text),
                 "at": _text(ask.timestamp),
-                "timeLabel": "from the log",
+                "timeLabel": ask.date.label if ask.date is not None else None,
                 "source": _text(ask.source),
                 "lane": {"id": ask.lane, "title": lane_titles[ask.lane]}
                 if ask.lane is not None and ask.lane in lane_titles
@@ -192,7 +181,9 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
 
 
 def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
-    loaded = settings.load(config.state_home, git_enabled=config.git_probe_enabled)
+    loaded = settings.load(
+        config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
+    )
     if loaded.settings is None:
         if loaded.reason == settings.NOT_CONFIGURED:
             return {"state": "not-configured"}
@@ -205,4 +196,4 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
         state=state,
         git_deadline=time.monotonic() + timeout,
     ).model
-    return _project(plan, _lane_sessions(plan.lanes, config, state))
+    return _project(plan, _lane_sessions(plan.lanes, config, state, loaded.settings.sources.policy))

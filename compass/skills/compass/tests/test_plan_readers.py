@@ -92,9 +92,153 @@ class PlanRepoTestCase(unittest.TestCase):
         assert loaded.settings is not None
         return loaded.settings
 
+    def only_goals(self, path: str = "plan/goals.md", **overrides: Any) -> settings.Settings:
+        self.configure(**overrides)
+        file = self.home / settings.FILENAME
+        doc = json.loads(file.read_bytes())
+        doc["repos"][0]["files"] = {"goals": [path]}
+        file.write_text(json.dumps(doc), encoding="utf-8")
+        loaded = settings.load(str(self.home))
+        assert loaded.settings is not None
+        return loaded.settings
+
 
 @unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
 class PlanReadersTest(PlanRepoTestCase):
+    def assert_private_without_tree_read(self, config: settings.Settings) -> None:
+        with mock.patch.object(git_status.PlanTreeReader, "_run", autospec=True) as run:
+            self.assertEqual(readers.read_plan(config).model.sources[0].reason, "private")
+        run.assert_not_called()
+
+    def test_private_child_is_refused_before_git_tree_access(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Synthetic private goal\n"})
+        alias = self.root / "alias"
+        alias.symlink_to(self.repo / "plan", target_is_directory=True)
+        config = self.only_goals(private={"roots": [str(alias)]})
+        self.assertEqual(config.sources.declarations()[0].reason, "private")
+        self.assert_private_without_tree_read(config)
+        (self.repo / "plan").rename(self.root / "detached")
+        self.assert_private_without_tree_read(config)
+
+    def test_marker_file_in_tree_file_parent_is_refused(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Synthetic private goal\n"})
+        config = self.only_goals()
+        self.assertIsNone(config.sources.declarations()[0].reason)
+        (self.repo / "plan" / ".restricted").touch()
+        self.assert_private_without_tree_read(config)
+        self.assertEqual(self.only_goals().sources.declarations()[0].reason, "private")
+
+    def test_repo_name_marker_refuses_tree_path_without_checkout_parent(self) -> None:
+        config = self.only_goals("restricted/deep/goals.md")
+        self.assertEqual(config.sources.declarations()[0].reason, "private")
+        self.assert_private_without_tree_read(config)
+
+    def test_repo_becoming_private_is_refused_at_read(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Synthetic private goal\n"})
+        config = self.only_goals()
+        marker = self.repo / ".restricted"
+        marker.touch()
+        self.assert_private_without_tree_read(config)
+        marker.unlink()
+        find_tip = git_status.PlanTreeReader.tip
+
+        def mark_after_tip(tree: git_status.PlanTreeReader, ref: str) -> str:
+            tip = find_tip(tree, ref)
+            marker.touch()
+            return tip
+
+        with (
+            mock.patch.object(git_status.PlanTreeReader, "tip", mark_after_tip),
+            mock.patch.object(git_status.PlanTreeReader, "check_markers", create=True) as metadata,
+            mock.patch.object(git_status.PlanTreeReader, "tree_file", return_value=b"") as blob,
+        ):
+            self.assertEqual(readers.read_plan(config).model.sources[0].reason, "private")
+        metadata.assert_not_called()
+        blob.assert_not_called()
+
+    def test_missing_parent_refuses_when_checkout_privacy_cannot_be_checked(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Synthetic checkout goal\n"})
+        (self.repo / "plan").rename(self.root / "detached")
+        config = self.only_goals()
+        self.assertEqual(config.sources.declarations()[0].reason, "missing")
+        with mock.patch.object(git_status.PlanTreeReader, "_run") as run:
+            self.assertEqual(readers.read_plan(config).model.sources[0].reason, "missing")
+        run.assert_not_called()
+
+    def test_target_ref_marker_refuses_before_blob(self) -> None:
+        calls: list[tuple[str, ...]] = []
+        run = git_status.PlanTreeReader._run
+
+        def record(tree: git_status.PlanTreeReader, args: tuple[str, ...], at: float) -> bytes:
+            calls.append(args)
+            return run(tree, args, at)
+
+        for marker in (".restricted", "plan/.restricted"):
+            with self.subTest(marker=marker):
+                self.write_sources({"goals": f"## Goals\n- G1: Private at {marker}\n"})
+                git(self.repo, "switch", "-qc", "marked")
+                (self.repo / marker).touch()
+                git(self.repo, "add", marker)
+                git(self.repo, "commit", "-qm", "Mark the branch private")
+                git(self.repo, "switch", "main")
+                git(self.repo, "branch", "-f", "target", "marked")
+                git(self.repo, "branch", "-D", "marked")
+                config = self.only_goals()
+                file = self.home / settings.FILENAME
+                doc = json.loads(file.read_bytes())
+                doc["repos"][0]["ref"] = "target"
+                doc["repos"][0].pop("draft_ref")
+                file.write_text(json.dumps(doc))
+                loaded = settings.load(str(self.home))
+                assert loaded.settings is not None
+                self.assertIsNone(config.sources.declarations()[0].reason)
+                calls.clear()
+                with mock.patch.object(git_status.PlanTreeReader, "_run", record):
+                    result = readers.read_plan(loaded.settings).model
+                self.assertEqual(result.sources[0].reason, "private")
+                self.assertEqual(result.goals, ())
+                self.assertFalse(
+                    any(call[0] == "cat-file" or "plan/goals.md" in call for call in calls)
+                )
+
+    def test_repo_cwd_identity_is_held_through_git_dispatch(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
+        substitute = self.root / "other"
+        substitute.mkdir()
+        config = self.only_goals(private={"roots": [str(substitute)]})
+        admitted = self.repo.stat()
+        disallowed = substitute.stat()
+        original = git_status.plan_reader
+        started = []
+
+        def record(argv: tuple[str, ...], *, cwd: str, check: bool, **kwargs: Any) -> Any:
+            info = os.stat(cwd)
+            started.append((info.st_dev, info.st_ino))
+            return subprocess.run(argv, cwd=cwd, check=check, **kwargs)
+
+        def factory(*args: Any, **kwargs: Any) -> git_status.PlanTreeReader:
+            self.repo.rename(self.root / "original")
+            substitute.rename(self.repo)
+            return original(*args, **kwargs, runner=record)
+
+        with mock.patch.object(git_status, "plan_reader", side_effect=factory):
+            result = readers.read_plan(config).model
+        self.assertNotEqual(admitted.st_ino, disallowed.st_ino)
+        self.assertNotIn((disallowed.st_dev, disallowed.st_ino), started)
+        # Either the original read succeeds, or the replaced path is refused.
+        self.assertEqual(
+            [row.title for row in result.goals], ["Admitted repo"] if result.goals else []
+        )
+        if not result.goals:
+            self.assertIn(result.sources[0].reason, ("private", io.PlanRefusal.CHANGED))
+
+    def test_unknown_goal_reference_is_a_measured_mismatch(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Sample goal\n"})
+        (self.briefs / "hull.md").write_text("## Goal\nSample lane\n\n*Serves*: G9\n")
+        result = readers.read_plan(self.only_goals())
+        self.assertEqual(result.diagnostics.goal_lane_mismatches, 1)
+        self.assertEqual(result.model.lanes[0].serves, ())
+
     def test_stand_in_reads_each_declared_source(self) -> None:
         self.write_sources(STAND_IN)
         (self.briefs / "hull.md").write_text(
@@ -157,7 +301,7 @@ class PlanReadersTest(PlanRepoTestCase):
             [("hull:1", "Can it float?", "hull", "Coordination", None)],
         )
         self.assertEqual(model.log_rejected, 0)
-        self.assertTrue(all(s.reason is None for s in model.sources))
+        self.assertTrue(all(s.reason is None for s in model.sources if not s.draft))
 
     def test_variant_uses_declared_grammars(self) -> None:
         self.write_sources(VARIANT)
@@ -237,7 +381,8 @@ class PlanReadersTest(PlanRepoTestCase):
         model = readers.read_plan(loaded.settings).model
         self.assertEqual([g.id for g in model.goals], ["G1", "G2"])
         self.assertEqual(
-            [s.reason for s in model.sources if s.kind == "goals"], [None, "not in branch"]
+            [s.reason for s in model.sources if s.kind == "goals" and not s.draft],
+            [None, "not in branch"],
         )
         self.assertNotIn("Older blob", repr(model))
         self.assertNotIn("Unrelated branch", repr(model))
@@ -266,7 +411,7 @@ class PlanReadersTest(PlanRepoTestCase):
         )
         self.assertIsNone(model.log_rejected)
         self.assertEqual(
-            {s.kind: s.reason for s in model.sources},
+            {s.kind: s.reason for s in model.sources if not s.draft},
             {
                 "goals": None,
                 "decisions": None,
@@ -409,6 +554,13 @@ class PlanReadersTest(PlanRepoTestCase):
         with self.assertRaises(git_status.PlanGitError):
             reader.tree_file(tip, "../outside", max_bytes=1024)
         self.assertFalse(any("cat-file" in call.args[0] for call in runner.call_args_list))
+        entry = f"100644 blob {tip} 2\tplan/other.md\0".encode()
+        mismatched = mock.Mock(return_value=subprocess.CompletedProcess([], 0, entry))
+        reader = git_status.plan_reader(str(self.repo), timeout_sec=5, runner=mismatched)
+        with self.assertRaises(git_status.PlanGitError) as error:
+            reader.tree_file(tip, "plan/design.md", max_bytes=10)
+        self.assertEqual(error.exception.reason, "unreadable")
+        self.assertEqual([call.args[0][6] for call in mismatched.call_args_list], ["ls-tree"])
         self.assertEqual(
             self.configure().sources.tree_source("Example", "main", "plan/gone").reason,
             sources.NOT_NAMED,

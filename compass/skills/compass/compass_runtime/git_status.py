@@ -54,6 +54,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import threading
 import time
 from array import array
@@ -568,18 +569,42 @@ def _run_read(
     *,
     deadline: float,
     runner: Callable[..., Any],
+    directory: int | None = None,
 ) -> bytes | None:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(args, 0)
+    command = (resolved, *_SAFE_READ, *args)
+    inherit: dict[str, Any] = {}
+    if directory is not None:
+        # Set the cwd in an isolated child. A pathname can be swapped at dispatch,
+        # and a preexec_fn is unsafe in the board's threaded server.
+        command = (
+            sys.executable,
+            "-I",
+            "-S",
+            "-c",
+            (
+                "import os, sys\n"
+                "fd = int(sys.argv[1])\n"
+                "os.fchdir(fd)\n"
+                "os.close(fd)\n"
+                "os.execv(sys.argv[2], sys.argv[2:])"
+            ),
+            str(directory),
+            *command,
+        )
+        cwd = "/"
+        inherit["pass_fds"] = (directory,)
     result = runner(
-        (resolved, *_SAFE_READ, *args),
+        command,
         cwd=cwd,
         capture_output=True,
         stdin=subprocess.DEVNULL,
         timeout=remaining,
         check=False,
         env=dict(environ),
+        **inherit,
     )
     if getattr(result, "returncode", 1) != 0:
         return None
@@ -662,7 +687,7 @@ class PlanGitError(Exception):
 
 _PLAN_REF = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}")
 _PLAN_TREE_PART = re.compile(r"[A-Za-z0-9._ -]{1,128}")
-_BLAME_LINE = re.compile(rb"([0-9a-f]{40}(?:[0-9a-f]{24})?) +([0-9]{1,9})\) ")
+_BLAME_NUMBER = re.compile(rb"(?<!\S)([0-9]{1,9})\) ")
 _MAX_UTC_TIMESTAMP = 253402300799
 # 64 full SHA-256 IDs fit in Windows' command line even with the fixed flags.
 _PLAN_LOG_BATCH = 64
@@ -678,6 +703,7 @@ class PlanTreeReader:
     _resolved: str | None
     _runner: Callable[..., Any]
     request_deadline: float | None = None
+    directory: int | None = None
 
     def _run(self, args: tuple[str, ...], deadline: float) -> bytes:
         if self.request_deadline is not None:
@@ -686,6 +712,10 @@ class PlanTreeReader:
             raise PlanGitError("git timed out")
         if self._resolved is None:
             raise PlanGitError("git unavailable")
+        if self.directory is not None and (
+            not os.path.isabs(sys.executable) or getattr(sys, "frozen", False)
+        ):
+            raise PlanGitError("guarded git dispatch unavailable")
         try:
             result = _run_read(
                 args,
@@ -694,6 +724,7 @@ class PlanTreeReader:
                 self._resolved,
                 deadline=deadline,
                 runner=self._runner,
+                directory=self.directory,
             )
         except subprocess.TimeoutExpired:
             raise PlanGitError("git timed out") from None
@@ -764,6 +795,19 @@ class PlanTreeReader:
             raise PlanGitError("unreadable")
         return data
 
+    def check_markers(self, tip: str, path: str, markers: tuple[str, ...]) -> None:
+        if not markers:
+            return
+        self._check_path(tip, path)
+        candidates = list(markers)
+        parent = ""
+        for part in path.split("/")[:-1]:
+            parent += part + "/"
+            candidates.extend(parent + marker for marker in markers)
+        deadline = time.monotonic() + self.timeout_sec
+        if self._run(("ls-tree", "-z", tip, "--", *candidates), deadline):
+            raise PlanGitError("private")
+
     def blame(self, tip: str, path: str, *, line_count: int) -> array[int]:
         """Return committer times in tip line order for an already admitted blob."""
         self._check_path(tip, path)
@@ -774,6 +818,10 @@ class PlanTreeReader:
             (
                 "-c",
                 "blame.ignoreRevsFile=",
+                "-c",
+                "color.ui=never",
+                "-c",
+                "blame.coloring=none",
                 "blame",
                 "-s",
                 "-l",
@@ -793,10 +841,16 @@ class PlanTreeReader:
             raise PlanGitError("unreadable")
         commits = []
         for number, line in enumerate(lines, 1):
-            match = _BLAME_LINE.match(line)
-            if match is None or int(match[2]) != number:
+            oid, separator, rest = line.partition(b" ")
+            # With a rename, Git inserts a padded original filename before the
+            # line number. The filename may contain spaces and is discarded.
+            if (
+                not separator
+                or not _OBJECT_ID.fullmatch(oid.decode("ascii", "replace"))
+                or not any(int(match[1]) == number for match in _BLAME_NUMBER.finditer(rest))
+            ):
                 raise PlanGitError("unreadable")
-            commits.append(match[1].decode("ascii"))
+            commits.append(oid.decode("ascii"))
         times = self.commit_times(commits, deadline=deadline)
         return array("Q", (times[oid] for oid in commits))
 

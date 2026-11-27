@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,8 @@ from .grammar import SettingsError, folded, string
 from .model import FolderIdentity
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from .grammar import Template
 
 NOT_NAMED = "not named in settings"
@@ -85,6 +88,9 @@ class Repository:
     draft_ref: str | None
     files: tuple[tuple[str, str], ...]
     reason: str | None = None
+    identity: tuple[int, int] | None = None
+    private_prefixes: tuple[tuple[str, ...], ...] = ()
+    parent_refusals: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -118,7 +124,13 @@ class Sources:
     git_enabled: bool
 
     def _repo_source(
-        self, repo: Repository, kind: str, path: str, *, recheck: bool = False
+        self,
+        repo: Repository,
+        kind: str,
+        path: str,
+        *,
+        recheck: bool = False,
+        directory: int | None = None,
     ) -> Source:
         source = Source(kind, path)
         if not self.git_enabled:
@@ -127,13 +139,34 @@ class Sources:
             self.policy.marked_name(part) for part in tree_parts(path)[:-1]
         ):
             return replace(source, reason=io.PlanRefusal.PRIVATE)
-        reason = repo.reason
+        reason = repo.reason or dict(repo.parent_refusals).get(path)
         if recheck and reason is None:
-            reason = _directory_reason(repo.path, self.policy)
+            try:
+                if directory is None:
+                    with self.hold_repository(repo) as held:
+                        reason = _tree_parent_reason(repo, path, self.policy, held)
+                else:
+                    reason = _tree_parent_reason(repo, path, self.policy, directory)
+            except io.PlanReadError as exc:
+                reason = exc.reason
         return replace(source, reason=reason)
 
+    @contextmanager
+    def hold_repository(self, repo: Repository) -> Iterator[int]:
+        with io.hold_plan_directory(repo.path, self.policy) as directory:
+            info = os.fstat(directory)
+            if repo.identity != (info.st_dev, info.st_ino):
+                raise io.PlanReadError(io.PlanRefusal.CHANGED)
+            yield directory
+
     def tree_source(
-        self, repo_label: str, ref: str, path: str, *, kind: str | None = None
+        self,
+        repo_label: str,
+        ref: str,
+        path: str,
+        *,
+        kind: str | None = None,
+        directory: int | None = None,
     ) -> Source:
         """Admit this exact tuple before the Git reader may inspect the tree."""
         if not tree_parts(path):
@@ -142,7 +175,9 @@ class Sources:
             if repo.label == repo_label and ref in (repo.ref, repo.draft_ref):
                 for file_kind, declared in repo.files:
                     if declared == path and kind in (None, file_kind):
-                        return self._repo_source(repo, file_kind, path, recheck=True)
+                        return self._repo_source(
+                            repo, file_kind, path, recheck=True, directory=directory
+                        )
         return Source("repository file", path, NOT_NAMED)
 
     def declarations(self) -> tuple[Source, ...]:
@@ -155,6 +190,9 @@ class Sources:
             self.brief_folder,
             self.events,
         )
+
+    def declared_tree_source(self, repo: Repository, kind: str, path: str) -> Source:
+        return self._repo_source(repo, kind, path)
 
     def _brief_name_matches(self, name: str) -> bool:
         return (
@@ -212,12 +250,56 @@ def _directory_reason(path: str, policy: io.PlanPathPolicy) -> str | None:
     return None
 
 
+def _tree_parent_reason(
+    repo: Repository, path: str, policy: io.PlanPathPolicy, directory: int
+) -> str | None:
+    parents = tree_parts(path)[:-1]
+    if any(
+        tuple(map(folded, parents[: len(prefix)])) == prefix for prefix in repo.private_prefixes
+    ):
+        return io.PlanRefusal.PRIVATE
+    try:
+        # Recheck the held root even for a file at the top of the tree.
+        policy.check(directory, os.path.basename(repo.path), os.fstat(directory))
+        if parents:
+            with io.hold_plan_directory("/".join(parents), policy, parent_fd=directory):
+                pass
+    except io.PlanReadError as exc:
+        if exc.reason != io.PlanRefusal.MISSING or policy.private_ids or policy.marker_files:
+            return exc.reason
+    except OSError:
+        return io.PlanRefusal.UNREADABLE
+    return None
+
+
 def check_repositories(
-    repositories: tuple[Repository, ...], policy: io.PlanPathPolicy
+    repositories: tuple[Repository, ...],
+    policy: io.PlanPathPolicy,
+    prefixes: dict[tuple[int, int], set[tuple[str, ...]]],
 ) -> tuple[Repository, ...]:
-    return tuple(
-        replace(repo, reason=_directory_reason(repo.path, policy)) for repo in repositories
-    )
+    checked = []
+    for repo in repositories:
+        try:
+            with io.hold_plan_directory(repo.path, policy) as directory:
+                info = os.fstat(directory)
+                identity = (info.st_dev, info.st_ino)
+                admitted = replace(
+                    repo,
+                    identity=identity,
+                    private_prefixes=tuple(
+                        tuple(map(folded, prefix)) for prefix in prefixes.get(identity, ())
+                    ),
+                )
+                refused = tuple(
+                    (path, reason)
+                    for _, path in repo.files
+                    if (reason := _tree_parent_reason(admitted, path, policy, directory))
+                    is not None
+                )
+                checked.append(replace(admitted, parent_refusals=refused))
+        except io.PlanReadError as exc:
+            checked.append(replace(repo, reason=exc.reason))
+    return tuple(checked)
 
 
 def local_sources(

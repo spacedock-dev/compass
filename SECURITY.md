@@ -1170,28 +1170,41 @@ cover the target ancestry of those aliases too. The leaf must be an owned regula
 hard link. Compass checks its identity again after opening and reads under the byte cap.
 Platforms without the guarded traversal refuse the read.
 
-`--no-plan` skips plan settings and sources for the run. `--diagnose` reports the settings path,
+`--no-plan` skips plan settings, sources and working-folder capture for the run. `--diagnose` reports the settings path,
 each source by kind and position, and its refusal reason if any. It reports counts for private
 roots and markers, rejected log lines when the log was read, and goal and lane link mismatches
-when both inputs were available. Unknown tracker and inventory status words of up to 32 characters
-appear only in diagnostics.
+when both inputs were available, including brief references to missing goals. Diagnostics
+can show up to 32 characters of ordinary unknown tracker and inventory status words. For
+other unknown values it shows `Status not recognised`.
 
 ### Plan reads of committed files
 
-Compass checks the declared repository directory before launching Git and verifies its root with
-`rev-parse --show-prefix`. It resolves one exact `refs/heads/<name>` to a commit using
+Compass checks the declared repository and each tree path's parent directories at settings load
+and at read time. It checks held directory identities, name markers and marker files. A declared
+private root below the repository also covers its relative tree prefix if it later disappears
+from the checkout. When private roots or marker files are configured, a missing checkout parent
+refuses the read.
+
+Git starts in the held repository directory. If Compass cannot preserve that identity through
+dispatch, the Git source is refused. Compass verifies the repository root with
+`rev-parse --show-prefix` and resolves one exact `refs/heads/<name>` to a commit using
 `for-each-ref`. Tags, remote refs and symbolic branch aliases cannot supply the tip.
 
-For each allowed path, `ls-tree -l -z <commit> -- <path>` returns the mode, object ID and size.
+For each allowed path, `ls-tree -z` checks for configured marker filenames in the target
+commit's parent directories, including the repository root. A marker entry refuses the source
+before any file content read. For a path that passes, `ls-tree -l -z <commit> -- <path>`
+returns the mode, object ID and size.
 Compass uses `cat-file blob <id>` only for the exact named entry, with a regular mode and a size
 of at most 256 KiB. Only content at the admitted tips reaches the plan reader. A source that is
 unavailable or malformed contributes no rows. A failure leaves other sources readable.
 
-For Markdown dates, Compass runs `-c blame.ignoreRevsFile= blame -s -l --first-parent --root
+For Markdown dates, Compass runs `-c blame.ignoreRevsFile= -c color.ui=never -c blame.coloring=none
+blame -s -l --first-parent --root
 --ignore-revs-file '' --no-textconv <tip> -- <path>` after the file passes those checks. The empty
 `--ignore-revs-file` argument clears configured ignore lists on Git versions where the config
 override alone leaves them in place. Short blame prints full commit IDs, line numbers and the
-current tip's lines. Compass discards the lines in the Git reader. Git compares older versions
+current tip's lines, with an original filename column when it follows a rename. Compass
+discards filenames and line text in the Git reader. Git compares older versions
 internally and returns no older content, authors or commit messages.
 
 For those IDs and for the tip of a draft branch with proposed items, Compass reads only commit
@@ -1203,7 +1216,10 @@ still checks admission and reads the current file on a cache hit. Shallow reposi
 attribute a line to the oldest locally available commit. Deepening a shallow repository at the
 same tip may leave that date cached until eviction or restart.
 
-An item unique to an admitted local draft branch takes that tip's date. JSON inventory rows
+Compass reports whether it could compare each eligible draft source, including comparisons
+with zero proposals. An unreadable primary file cannot establish a proposal for that path.
+An item unique to an admitted local draft branch takes that tip's date. Published goals carry
+the proposal label only. JSON inventory rows
 have no line attribution. The lane briefs and log items use times from admitted log lines.
 An untimestamped line contributes no time.
 
@@ -1229,26 +1245,29 @@ A configured reply has `state: ready` and the following fields.
 
 | Field | Published contents |
 |---|---|
-| `goals` | `id`, `title`, `doneWhen` and `lanes` (stable lane IDs). |
-| `lanes` | `id` (the brief slug), `title`, `doneWhen`, `state` (null because the brief does not supply one), `date` and `sessions` (board session keys). |
-| `asks` | `id`, `text`, `at` (the log time or null), `timeLabel`, `source` and `lane` (its `id` and `title`, or null). |
-| `design` | `title`, `summary` (null because the parser admits headings), `decided`, `source` and `date`. |
+| `goals` | `id`, `title`, `doneWhen`, `lanes` (stable lane IDs) and `proposal` (`Proposed, not merged` for draft-only goals, null otherwise). |
+| `lanes` | `id` (the admitted brief slug), `title`, `doneWhen`, `state` (always null), `date` and `sessions` (board session keys or null). |
+| `asks` | `id`, `text`, `at` (the log time or null), `timeLabel` (`from the log` when timestamped, otherwise null), `source` and `lane` (its `id` and `title`, or null). |
+| `design` | `title`, `summary` (always null), `decided`, `source` and `date`. |
 | `tracker`, `inventory` | `title`, `group` (including the closed fallback `Status not recognised`), `source` and `date`. |
 | `diagrams` | `title`, `caption`, `kind`, `source`, `date`, `linkHosts` and `body`. |
-| `sources` | `label`, `kind`, `state` and a closed `reason` when a source was refused. |
+| `sources` | `label`, `kind`, `state` and a closed `reason` when a source was refused. Includes draft comparisons and refused lane folders. |
 | `logRejected` | The count of rejected log lines, or null if the log could not be read. |
 | `limits` | Compass cannot detect health information or confidential text typed into these sources. |
 
 A date contains `label` and `at`. Unavailable dates are null. Compass applies its credential
 redaction to source text, then replaces links with their host only before capping text. It
-drops link destinations with no usable host. The cap is 512 characters per text field and
+drops link destinations with no usable host and refuses brief slugs that match credential
+redaction. The cap keeps redaction markers intact. It is 512 characters per text field and
 8,192 for a diagram body, with up to 32 distinct hosts per diagram. The JSON excludes source
 paths, refs, commit IDs, line numbers and raw status words that the grammar did not recognise.
 
 The session join uses working folders held in memory with the current board snapshot. Compass
-compares the device and inode of each folder and its ancestors to the declared lane folders.
-Compass links a session when exactly one lane folder appears in that ancestry. The JSON
-excludes the working folders. A cold snapshot or a row without folder evidence yields no link.
+checks each session folder's ancestry under the declared privacy rules before comparing the
+device and inode to the declared lane folders. It links a session when exactly one lane folder
+appears in the admitted ancestry. The JSON excludes the working folders. `sessions` is null
+for a cold snapshot or a lane with no admitted folder, and `[]` when the comparison ran and
+found zero matching sessions.
 
 Plan text and its source diagnostics stay out of the board's session rows, event stream and
 [local history](#local-history-the-session-history-store). Fetching the plan does not collect

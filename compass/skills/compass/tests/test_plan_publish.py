@@ -14,18 +14,20 @@ from typing import Any
 from unittest import mock
 
 from compass_runtime import (
+    diagnostics,
     events,
     git_status,
     history,
     http_api,
     sessions,
 )
-from compass_runtime.plan import settings, sources
+from compass_runtime import io as runtime_io
+from compass_runtime.plan import publish, settings, sources
 
 from .support import make_config
 from .test_history import stub_application
 from .test_plan_readers import STAND_IN, VARIANT, PlanRepoTestCase
-from .test_project_script_checks import GIT
+from .test_project_script_checks import GIT, git
 from .test_sessions import DECLARED_SESSION_FIELDS
 
 READY_FIELDS = {
@@ -185,12 +187,28 @@ class PlanPublicationTest(PlanRepoTestCase):
         )
 
     def test_canary_link_forms_publish_only_hosts_in_every_source_kind(self) -> None:
+        credential = "xoxb-225556655-example-token"
         links = (
             ("https://key.example.test/p?key=CANARY_KEY", "key.example.test"),
             ("https://code.example.test/p?code=CANARY_CODE", "code.example.test"),
             ("https://hook.example.test/webhooks/CANARY_HOOK", "hook.example.test"),
             ("https://magic.example.test/magic/CANARY_MAGIC", "magic.example.test"),
             ("https://share.example.test/share/CANARY_SHARE", "share.example.test"),
+            ("bare.example.test/share/CANARY_BARE", "bare.example.test"),
+            ("bare.example.test?code=CANARY_BARE_QUERY", "bare.example.test"),
+            ("!www.prefix.example.test/CANARY_PUNCT", "www.prefix.example.test"),
+            ("_www.prefix.example.test/CANARY_UNDERSCORE", "www.prefix.example.test"),
+            ("-www.prefix.example.test/CANARY_HYPHEN", "www.prefix.example.test"),
+            ("!mailto:CANARY_OPAQUE@example.test", "[link]"),
+            ("_tel:CANARY_OPAQUE_UNDERSCORE", "[link]"),
+            ("-data:CANARY_OPAQUE_HYPHEN", "[link]"),
+            ("https://quote.example.test/?q='CANARY_QUOTED TAIL'", "quote.example.test"),
+            ("https://quote.example.test/?q=`CANARY_BACKTICK TAIL`", "quote.example.test"),
+            ("https://quote.example.test/?q=value'_CANARY_SUFFIX'", "quote.example.test"),
+            ("[guide](https://md.example.test/p(CANARY_NESTED)tail)", "md.example.test"),
+            ("[guide](../guide(CANARY_RELATIVE).md)", "[guide]"),
+            ("[ref]: ./CANARY_REFERENCE.md", "[ref]"),
+            (f"Authorization: Bearer {credential}", "REDACTED"),
         )
         self.write_sources(
             {
@@ -199,6 +217,9 @@ class PlanPublicationTest(PlanRepoTestCase):
                 "design": "".join(f"### Decision: {link}\n" for link, _ in links),
                 "tracker": "| Item | Status |\n| --- | --- |\n"
                 + "".join(f"| {link} | fixed |\n" for link, _ in links),
+                "diagrams": "## Sample\n```mermaid\nflowchart LR\n"
+                + "\n".join(link for link, _ in links)
+                + "\n```\n",
             }
         )
         self.configure()
@@ -206,15 +227,204 @@ class PlanPublicationTest(PlanRepoTestCase):
             "".join(f"ask hull:{i} {link}\n" for i, (link, _) in enumerate(links)), encoding="utf-8"
         )
         payload, body = self.payload()
-        hosts = [host for _, host in links]
-        self.assertEqual([row["title"] for row in payload["goals"]], hosts)
-        self.assertEqual(
-            [row["title"] for row in payload["design"]], [f"Decision: {host}" for host in hosts]
-        )
-        self.assertEqual([row["title"] for row in payload["tracker"]], hosts)
-        self.assertEqual([row["text"] for row in payload["asks"]], hosts)
+        diagram = payload["diagrams"][0]["body"].splitlines()[1:]
+        for index, (link, expected) in enumerate(links):
+            with self.subTest(link=link):
+                for actual in (
+                    payload["goals"][index]["title"],
+                    payload["design"][index]["title"],
+                    payload["tracker"][index]["title"],
+                    payload["asks"][index]["text"],
+                    diagram[index],
+                ):
+                    self.assertIn(expected, actual)
+                    self.assertNotIn("CANARY_", actual)
+                    self.assertNotIn(credential, actual)
         self.assertNotIn(b"CANARY_", body)
         self.assertNotIn(b"https://", body)
+        self.assertNotIn(credential.encode(), body)
+
+    def test_common_markdown_destinations_are_stripped(self) -> None:
+        self.write_sources(
+            {
+                "goals": "## Goals\n- G1: [Guide](./guide(v2).md) followed by words\n",
+                "diagrams": "## Sample\n```\n[guide]: ./offline-guide.md\n```\n",
+            }
+        )
+        self.configure()
+        plan, _ = self.payload()
+        self.assertEqual(plan["goals"][0]["title"], "[Guide] followed by words")
+        self.assertNotIn("./offline-guide.md", plan["diagrams"][0]["body"])
+
+    def test_lane_ids_follow_the_same_credential_redaction_as_text(self) -> None:
+        credential = "xoxb-225556655-example-token"
+        self.write_sources({"goals": f"## Goals\n- G1: Sample\n**Lanes:** {credential}, hull\n"})
+        (self.briefs / f"{credential}.md").write_text("*Serves*: G1\n")
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n\n*Serves*: G1\n")
+        self.log.write_text(f"ask {credential}:1 Sample question\n")
+        self.only_goals()
+        plan, body = self.payload()
+        self.assertEqual([lane["id"] for lane in plan["lanes"]], ["hull"])
+        self.assertEqual(plan["goals"][0]["lanes"], ["hull"])
+        self.assertIsNone(plan["asks"][0]["lane"])
+        self.assertNotIn(credential.encode(), body)
+
+    def test_caps_keep_redaction_markers_whole(self) -> None:
+        from compass_runtime import records  # noqa: PLC0415
+
+        for limit in (512, 8192):
+            with self.subTest(limit=limit):
+                marker = records.SECRET_MARKER
+                for remaining in range(1, len(marker)):
+                    text = "x" * (limit - 1 - remaining) + marker + " suffix"
+                    capped = publish._cap(text, limit)
+                    self.assertLessEqual(len(capped), limit)
+                    self.assertNotIn(marker[:2], capped.removesuffix(marker))
+
+    def test_private_child_session_never_joins_public_parent(self) -> None:
+        child = self.hull / "sealed"
+        child.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(child, target_is_directory=True)
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")
+        for private in (
+            {"roots": [str(alias)]},
+            {"markers": [{"value": "sealed", "mode": "component"}]},
+            {"marker_files": [".restricted"]},
+        ):
+            with self.subTest(private=private):
+                if "marker_files" in private:
+                    (child / ".restricted").touch()
+                self.configure(private=private)
+                app = self.application()
+                app.snapshot.publish(
+                    (app.config.window_hours, False),
+                    b"{}",
+                    folders=(
+                        ("claude", "private", str(child)),
+                        ("claude", "alias", str(alias)),
+                        ("claude", "public", str(self.hull)),
+                    ),
+                )
+                self.assertEqual(
+                    self.payload(app)[0]["lanes"][0]["sessions"], ['session:["claude","public"]']
+                )
+
+    def test_unmeasured_join_differs_from_warm_zero(self) -> None:
+        for slug in ("hull", "none", "refused"):
+            (self.briefs / f"{slug}.md").write_text("## Goal\nSample lane\n")
+        refused = self.root / "refused"
+        refused.mkdir()
+        (refused / ".restricted").touch()
+        self.configure(briefs={"lane_folders": {"hull": str(self.hull), "refused": str(refused)}})
+        app = self.application()
+        cold = {row["id"]: row["sessions"] for row in self.payload(app)[0]["lanes"]}
+        app.snapshot.publish((app.config.window_hours, False), b"{}", folders=())
+        warm = {row["id"]: row["sessions"] for row in self.payload(app)[0]["lanes"]}
+        self.assertEqual(cold, {"hull": None, "none": None, "refused": None})
+        self.assertEqual(warm, {"hull": [], "none": None, "refused": None})
+
+    def test_refused_lane_folder_has_a_path_free_reason(self) -> None:
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")
+        (self.hull / ".restricted").touch()
+        self.configure()
+        app = self.application()
+        plan, body = self.payload(app)
+        self.assertIn(
+            {"kind": "lane folder", "label": "hull", "state": "refused", "reason": "private"},
+            plan["sources"],
+        )
+        self.assertNotIn(os.fsencode(self.hull), body)
+        report = diagnostics._plan_report(app.state)
+        self.assertIn({"kind": "lane folder", "reason": "private"}, report["sources"])
+        self.assertNotIn(str(self.hull), json.dumps(report))
+
+    def test_draft_unavailable_differs_from_measured_no_proposals(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Primary goal\n"})
+        self.only_goals()
+        git(self.repo, "branch", "draft/plan")
+        measured, _ = self.payload()
+        git(self.repo, "branch", "-D", "draft/plan")
+        unavailable, body = self.payload()
+        self.assertIn(
+            {"kind": "draft goals", "label": "Example", "state": "ok", "reason": None},
+            measured["sources"],
+        )
+        self.assertIn(
+            {
+                "kind": "draft goals",
+                "label": "Example",
+                "state": "refused",
+                "reason": "branch missing",
+            },
+            unavailable["sources"],
+        )
+        self.assertEqual(unavailable["goals"], measured["goals"])
+        self.assertNotIn(b"draft/plan", body)
+
+    def test_draft_goal_has_proposal_status_without_progress_date(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: Primary goal\n"})
+        git(self.repo, "switch", "-qc", "draft/plan")
+        self.write_sources({"goals": "## Goals\n- G1: Primary goal\n- G2: Draft goal\n"})
+        git(self.repo, "switch", "main")
+        self.only_goals()
+        goals = self.payload()[0]["goals"]
+        self.assertEqual([g["proposal"] for g in goals], [None, "Proposed, not merged"])
+        self.assertTrue(all("date" not in goal and "at" not in goal for goal in goals))
+
+    def test_untimestamped_ask_has_no_time_label(self) -> None:
+        self.configure()
+        self.log.write_text("ask hull:one Question\n")
+        ask = self.payload()[0]["asks"][0]
+        self.assertIsNone(ask["at"])
+        self.assertIsNone(ask["timeLabel"])
+
+    def test_diagnostics_only_echo_status_words(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Status |\n| --- | --- |\n"
+                "| Sample | https://example.test/a |\n"
+                "| Other | unusual seabird |\n"
+            }
+        )
+        self.configure(tracker={"tail_separators": []})
+        report = diagnostics._plan_report(self.application().state)
+        self.assertEqual(
+            [row["word"] for row in report["unknown_statuses"]],
+            ["Status not recognised", "unusual seabird"],
+        )
+
+    def test_disabled_payload_opens_nothing(self) -> None:
+        self.configure()
+        app = self.application(plan_enabled=False)
+        with mock.patch.object(
+            runtime_io, "read_plan_settings", wraps=runtime_io.read_plan_settings
+        ) as read:
+            self.assertEqual(
+                publish.payload(app.config, app.state),
+                {"state": "refused", "reason": "plan is off"},
+            )
+        read.assert_not_called()
+
+    def test_disabled_collection_captures_no_folders(self) -> None:
+        def captured_folders(enabled: bool) -> Any:
+            app = self.application(
+                [{"sid": "one", "state": "working", "last_activity": 4_900.0}],
+                plan_enabled=enabled,
+            )
+            board = app.collect(show_all=False)
+
+            def collect(*, show_all: bool) -> Any:
+                self.assertFalse(show_all)
+                sessions.apply_project_identity(app.config, board["sessions"][0], str(self.hull))
+                return board
+
+            with mock.patch.object(app, "collect", side_effect=collect):
+                app.collect_json(show_all=False)
+            return app.snapshot.session_folders((app.config.window_hours, False))
+
+        self.assertEqual(captured_folders(False), ())
+        self.assertEqual(captured_folders(True), (("claude", "one", str(self.hull)),))
 
     def test_diagram_body_source_labels_and_links_are_filtered_before_the_cap(self) -> None:
         from compass_runtime import records  # noqa: PLC0415
@@ -318,19 +528,19 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(lanes["hull"]["sessions"], ['session:["claude","one"]'])
         self.assertEqual(lanes["paint"]["sessions"], ['session:["goose","three"]'])
         self.assertEqual(lanes["nested"]["sessions"], [])
-        self.assertEqual(lanes["empty"]["sessions"], [])
+        self.assertIsNone(lanes["empty"]["sessions"])
         self.assertEqual(lanes["hull"]["title"], lanes["paint"]["title"])
         self.assertEqual(
             [(row["source"], row["lane"], row["timeLabel"], row["at"]) for row in payload["asks"]],
             [
-                ("Coordination", {"id": "paint", "title": "Same lane title"}, "from the log", None),
+                ("Coordination", {"id": "paint", "title": "Same lane title"}, None, None),
                 (
                     "Coordination",
                     {"id": "hull", "title": "Same lane title"},
                     "from the log",
                     "2026-01-02T03:04:05Z",
                 ),
-                ("Coordination", None, "from the log", None),
+                ("Coordination", None, None, None),
             ],
         )
         self.assertNotIn(os.fsencode(self.root), body)

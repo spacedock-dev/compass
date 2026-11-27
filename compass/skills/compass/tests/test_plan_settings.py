@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unicodedata
@@ -13,7 +14,9 @@ from typing import Any
 from unittest import mock
 
 from compass_runtime import io
-from compass_runtime.plan import settings
+from compass_runtime.plan import grammar, settings
+
+from .test_project_script_checks import GIT
 
 FIXTURES = Path(__file__).parent / "fixtures" / "plan"
 
@@ -30,6 +33,7 @@ class PlanSettingsTest(unittest.TestCase):
         self.private = self.root / "hide-this"
         for folder in (self.home, self.lanes, self.repo, self.private):
             folder.mkdir()
+        (self.repo / "plan").mkdir()
         self.log = self.root / "events.log"
         self.log.write_bytes(b"ask lane:one Check on this")
         self.path = self.home / "compass-plan.json"
@@ -63,10 +67,14 @@ class PlanSettingsTest(unittest.TestCase):
         self.assertIsNone(disabled.settings)
 
     def test_settings_refuse_bad_json_and_bounds_as_a_whole(self) -> None:
+        valid = json.dumps(self.fixture()).encode()
+        self.path.write_bytes(valid)
+        self.assertIsNotNone(settings.load(str(self.home)).settings)
+        version = b'"version": 1'
+        self.assertIn(version, valid)
         for raw, reason in (
-            (b'{"version":1,"version":1}', "malformed settings"),
-            (b'{"version":NaN}', "malformed settings"),
-            (b'{"version":0}', "malformed settings"),
+            (valid.replace(version, b'"version": 2, "version": 1'), "malformed settings"),
+            (valid.replace(version, b'"version": 2'), "malformed settings"),
             (b" " * 65537, "over the byte cap"),
             (b"\xff", "malformed settings"),
         ):
@@ -75,6 +83,31 @@ class PlanSettingsTest(unittest.TestCase):
                 loaded = settings.load(str(self.home))
                 self.assertEqual(loaded.reason, reason)
                 self.assertIsNone(loaded.settings)
+
+        # Even with strict schema types, the JSON parser itself must refuse NaN.
+        self.path.write_bytes(valid.replace(version, b'"version": NaN'))
+        with mock.patch.object(settings, "keys", wraps=grammar.keys) as validate:
+            self.assertEqual(settings.load(str(self.home)).reason, "malformed settings")
+        validate.assert_not_called()
+
+    @unittest.skipIf(GIT is None, "Needs Git")
+    def test_bare_repo_and_special_briefs_stop_before_open(self) -> None:
+        bare = self.root / "bare"
+        subprocess.run([GIT or "git", "init", "--bare", "-q", str(bare)], check=True)
+        inside = bare / settings.FILENAME
+        inside.write_text(json.dumps(self.fixture()))
+        with mock.patch.object(io, "open_plan_source") as opened:
+            self.assertEqual(settings.load(str(bare)).reason, "settings are inside a repository")
+        opened.assert_not_called()
+
+        os.mkfifo(self.lanes / "fifo.md")
+        (self.lanes / "folder.md").mkdir()
+        sources = self.loaded(self.fixture()).sources
+        self.assertEqual(sources.brief_names().names, ("fifo.md", "folder.md"))
+        with mock.patch.object(io, "open_plan_source") as opened:
+            for name in sources.brief_names().names:
+                self.assertEqual(sources.read_brief(name).reason, "not an owned regular file")
+        opened.assert_not_called()
 
     def test_schema_refuses_unknown_or_inconsistent_grammar_before_metadata(self) -> None:
         for section, key, value in (

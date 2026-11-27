@@ -1494,16 +1494,17 @@ def _redaction_spans(
     return found
 
 
-# Match a whole candidate before parsing it, so even a malformed authority or a
-# credential that redaction marked inside the URL cannot leave the path behind.
-_URL_CANDIDATE = re.compile(
-    r"""(?ix)(?<![\w.+-])(?:[a-z][a-z0-9+.-]*:[/\\]+|[/\\]{2}|www\.|
-    (?:mailto|data|tel|urn|javascript|blob):)[^\s<>"'`]*"""
+# Scheme and www links can start immediately after punctuation or Markdown
+# emphasis. A bare domain needs a destination separator to count as a link.
+_URL_START = re.compile(
+    r"""(?ix)
+    (?<![^\W_])(?:[a-z][a-z0-9+.-]{0,63}:[/\\]+|[/\\]{2}|www\.|
+    (?:mailto|data|tel|urn|javascript|blob|magnet):)
+    |(?P<domain>(?<![\w.@-])(?:[a-z0-9-]{1,63}\.){1,127}[a-z]{2,63})(?=[/?])
+    """
 )
-_MARKDOWN_LINK_TARGET = re.compile(
-    r"""\]\(\s*(?:<(?P<angle>[^<>\r\n]*)>|(?P<bare>[^()\s<>]+))"""
-    r"""(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)"""
-)
+_URL_END = re.compile(r"""[ \t\r\n<>"'`]""")
+_MARKDOWN_DESTINATION = re.compile(r"\]\([ \t]*|(?P<ref>\[[^\[\]\r\n]{1,999}\]):[ \t]*")
 _URL_UNNAMED: Final = "[link]"
 
 
@@ -1511,7 +1512,8 @@ def link_host(target: str) -> str | None:
     """Name a link's host without a scheme, port, userinfo, path, query or fragment."""
     if "\\" in target:
         return None
-    if target.lower().startswith("www."):
+    start = _URL_START.match(target)
+    if start is not None and (start["domain"] or target.lower().startswith("www.")):
         target = "//" + target
     try:
         parts = urlsplit(target)
@@ -1535,21 +1537,97 @@ def hosts_only(text: str) -> tuple[str, tuple[str, ...]]:
         hosts[host] = None
         return host
 
-    def markdown(match: re.Match[str]) -> str:
-        # Close the label and drop hostless destinations, including relative files.
-        host = replace(match["angle"] if match["angle"] is not None else match["bare"])
-        return "]" if host == _URL_UNNAMED else f"] ({host})"
+    pieces: list[str] = []
+    previous = 0
+    while (match := _MARKDOWN_DESTINATION.search(text, previous)) is not None:
+        start = match.end()
+        end = _markdown_destination_end(text, start, reference=match["ref"] is not None)
+        destination = text[start:end].lstrip()
+        if destination.startswith("<"):
+            target = destination[1:].partition(">")[0]
+        else:
+            target = destination.split(maxsplit=1)[0] if destination else ""
+        host = replace(target)
+        label = match["ref"] or "]"
+        pieces.extend((text[previous : match.start()], label))
+        if host != _URL_UNNAMED:
+            pieces.append(f" ({host})")
+        previous = end + 1 if match["ref"] is None and text[end : end + 1] == ")" else end
+    pieces.append(text[previous:])
+    text = "".join(pieces)
 
-    def bare(match: re.Match[str]) -> str:
-        candidate = match[0]
+    pieces = []
+    previous = 0
+    while (match := _URL_START.search(text, previous)) is not None:
+        end = _bare_destination_end(text, match)
+        candidate = text[match.start() : end]
         target = candidate.rstrip(".,;)}]")
         # A bare IPv6 literal includes its closing bracket.
         if "[" in target and "]" not in target:
             target += "]"
-        return replace(target) + candidate[len(target) :]
+        pieces.extend((text[previous : match.start()], replace(target), candidate[len(target) :]))
+        previous = end
+    pieces.append(text[previous:])
+    return "".join(pieces), tuple(hosts)
 
-    text = _MARKDOWN_LINK_TARGET.sub(markdown, text)
-    return _URL_CANDIDATE.sub(bare, text), tuple(hosts)
+
+def _markdown_destination_end(text: str, start: int, *, reference: bool) -> int:
+    line_end = text.find("\n", start)
+    if line_end == -1:
+        line_end = len(text)
+    if reference:
+        return line_end
+    depth = 1
+    quoted = ""
+    escaped = False
+    for index in range(start, line_end):
+        char = text[index]
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif quoted:
+            if char == quoted:
+                quoted = ""
+        elif char in "\"'`<":
+            quoted = ">" if char == "<" else char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return line_end
+
+
+def _bare_destination_end(text: str, match: re.Match[str]) -> int:
+    start = match.end()
+    line_end = text.find("\n", start)
+    if line_end == -1:
+        line_end = len(text)
+    opener = text[match.start() - 1] if match.start() else ""
+    while (stop := _URL_END.search(text, start, line_end)) is not None:
+        index = stop.start()
+        char = text[index]
+        if char in "\"'`":
+            following = text[index + 1 : min(index + 2, line_end)]
+            if (
+                text[index - 1] != "="
+                and following in " \t\r)>]},;"
+                and (not following or char == opener or text.find("?", match.start(), index) == -1)
+            ):
+                return index
+            # A quoted value can contain spaces. If it never closes, drop the
+            # rest of the line instead of treating the quote as a safe boundary.
+            close = text.find(char, index + 1, line_end)
+        elif char == "<":
+            close = text.find(">", index + 1, line_end)
+        else:
+            return index
+        if close == -1:
+            return line_end
+        start = close + 1
+    return line_end
 
 
 def redact_clip(text: str, limit: int) -> str:

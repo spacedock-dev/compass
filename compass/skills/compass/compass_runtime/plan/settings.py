@@ -629,7 +629,8 @@ def _repo_ids(repos: tuple[sources.Repository, ...]) -> frozenset[tuple[int, int
 def _make_settings(declared: _Declarations, path: str, *, git_enabled: bool) -> Loaded:
     try:
         ids = io.plan_private_identities(declared.roots)
-    except OSError:
+        prefixes = io.plan_private_prefixes(declared.roots, ids) if git_enabled else {}
+    except (OSError, io.PlanReadError):
         return Loaded(path, reason=PRIVATE_UNREADABLE)
     try:
         io.inspect_plan_directory(
@@ -640,7 +641,11 @@ def _make_settings(declared: _Declarations, path: str, *, git_enabled: bool) -> 
     policy = io.PlanPathPolicy(ids, declared.privacy.marked, declared.privacy.marker_files)
     brief, log = declared.briefs, declared.log
     brief_src, log_src = sources.local_sources(brief.folder, log.path, log.max_bytes, policy)
-    repos = sources.check_repositories(declared.repos, policy) if git_enabled else declared.repos
+    repos = (
+        sources.check_repositories(declared.repos, policy, prefixes)
+        if git_enabled
+        else declared.repos
+    )
     allowed = sources.Sources(
         repos,
         brief_src,

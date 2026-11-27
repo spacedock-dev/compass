@@ -904,8 +904,10 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    formats. To link sessions to a lane, add its brief slug and working folder under
    `briefs.lane_folders`. Declare private roots and markers for locations Compass should skip.
 3. Run the dashboard launcher with `--diagnose` and check the plan settings section for refused
-   sources. The running dashboard reports whether the settings loaded and which sources it
-   read. See [what the local plan route publishes](SECURITY.md#published-plan-fields).
+   sources. It reports missing or unreadable draft sources and refused lane folders by kind
+   and reason. If you configure private roots or marker files, keep the declared Git file's
+   parent directories present in the checkout so Compass can check them. See
+   [what the local plan route publishes](SECURITY.md#published-plan-fields).
 
 ## Turn a feature off
 
@@ -920,7 +922,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-spacedock` | Reading Spacedock workflow state out of a project; saved stage conditions remain readable but suspended |
 | `--no-tripwires` | Workflow stage conditions and every read or write of their saved store |
 | `--no-git` | The end-of-session git probe, project check-script reads and plan reads from Git |
-| `--no-plan` | Reading plan settings and sources. `/api/plan` answers 404 |
+| `--no-plan` | Reading plan settings and sources, and capturing working folders for the plan. `/api/plan` answers 404 |
 | `--no-ci-read` | Reading a pull request's or merge request's CI checks from GitHub or GitLab when you press Check progress. No `gh` or `glab` command runs, and Read pull request status in Settings is held off |
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
 | `--no-annotations` | Saved goals, expected outcome lines, readings and local group labels. Nothing is shown or saved, and the page offers no field |
