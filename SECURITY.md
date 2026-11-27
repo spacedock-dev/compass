@@ -603,6 +603,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, switching off Read pull request status in Settings, and the refusals every press meets first (`--no-observer-model`, Pause all AI use, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
 | The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), plus `merge-base --is-ancestor` for a merged pull request, inside an admitted progress check that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
 | The native long-source Git identity probes | `reading_source_collect` supplies the subprocess runner to the existing `ci_read.probe_session` / `git_status.identity` owner: fixed `rev-parse --verify --quiet HEAD` and `config --get remote.origin.url`, with hooks/fsmonitor disabled and optional locks off, in at most four admitted native directories. Each keeps the configured Git timeout (10 seconds by default); the full pair must fit remaining preparation time, with live checkpoints before and after each call. Elapsed work and retained inputs share the source account; Git I/O is not counted as native transcript bytes. Nothing leaves the machine from these probes. | `--no-git`, source cancellation/currentness and preparation/graph limits. Network CI acquisition remains separately governed by `--no-ci-read`. | `test_launch_and_send_pins.TheNativeLongGitIdentityTest.test_native_ci_probe_uses_only_fixed_git_identity_argv`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_caps_disabled_missing_identity_and_default_are_explicit`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_requires_remaining_timeout_and_checks_cancel_between_git_calls`; `test_reading_source_ci.FrozenCiBindingTest.test_current_input_graph_and_elapsed_probe_work_remain_in_original_allowance` |
+| Plan files and dates | The resolved Git executable reads declared files at local branch tips and supplies first-parent line attribution and committer timestamps. Nothing leaves the machine. [Plan reads of committed files](#plan-reads-of-committed-files) lists the commands and bounds. | `--no-git` or `--no-plan` | `test_plan_dates.PlanDatesTest.test_no_git_and_no_plan_start_no_plan_commands` and `test_git_status.PlanTreeGitTest.test_plan_history_uses_only_short_blame_and_no_walk_commit_times` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
 | A native notification | On macOS, `/usr/bin/osascript` with text Compass composes. Other platforms have no native notifier. Nothing leaves the machine. | `--quiet-hours` holds it back inside a window you name. No switch turns it off outright. | None: the program is meant to launch. `test_notifications.NoNativeNotificationTest` only keeps this repository's own test run from launching one. |
@@ -1183,8 +1184,28 @@ Compass checks the declared repository directory before launching Git and verifi
 
 For each allowed path, `ls-tree -l -z <commit> -- <path>` returns the mode, object ID and size.
 Compass uses `cat-file blob <id>` only for the exact named entry, with a regular mode and a size
-of at most 256 KiB. It never reads working-tree content, older blobs or commit messages. A source
-that is unavailable or malformed contributes no rows. A failure leaves other sources readable.
+of at most 256 KiB. Only content at the admitted tips reaches the plan reader. A source that is
+unavailable or malformed contributes no rows. A failure leaves other sources readable.
+
+For Markdown dates, Compass runs `-c blame.ignoreRevsFile= blame -s -l --first-parent --root
+--ignore-revs-file '' --no-textconv <tip> -- <path>` after the file passes those checks. The empty
+`--ignore-revs-file` argument clears configured ignore lists on Git versions where the config
+override alone leaves them in place. Short blame prints full commit IDs, line numbers and the
+current tip's lines. Compass discards the lines in the Git reader. Git compares older versions
+internally and returns no older content, authors or commit messages.
+
+For those IDs and for the tip of a draft branch with proposed items, Compass reads only commit
+IDs and committer timestamps using `log --no-walk=unsorted --format='%H %ct' --no-patch
+--no-show-signature --no-decorate --no-notes <ids> --`. Each call takes up to 64 validated IDs.
+Blame and its timestamp lookups share a deadline. A failed attribution leaves the item undated.
+The per-file cache holds only line timestamps, keyed by repository, ref, tip and path. Compass
+still checks admission and reads the current file on a cache hit. Shallow repositories can
+attribute a line to the oldest locally available commit. Deepening a shallow repository at the
+same tip may leave that date cached until eviction or restart.
+
+An item unique to an admitted local draft branch takes that tip's date. JSON inventory rows
+have no line attribution. The lane briefs and log items use times from admitted log lines.
+An untimestamped line contributes no time.
 
 Each command uses the resolved executable, disables fsmonitor and hooks, and passes
 `--no-optional-locks`. Compass strips inherited `GIT_*` variables and sets
@@ -1192,7 +1213,7 @@ Each command uses the resolved executable, disables fsmonitor and hooks, and pas
 `GIT_NO_LAZY_FETCH=1`. An empty `GIT_ALLOW_PROTOCOL` also prevents transport on older Git versions.
 `GIT_CEILING_DIRECTORIES` stops discovery at the declared repository's parent. Tip resolution and
 each file read have their own deadline. `--no-git` stops these commands while leaving the brief
-and log readers available.
+and log readers available. `--no-plan` disables the entire plan read.
 
 ## Reaching a session's terminal (the focus command)
 

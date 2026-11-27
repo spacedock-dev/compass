@@ -14,6 +14,7 @@ from compass_runtime import stream as runtime_stream
 
 if TYPE_CHECKING:
     from _thread import LockType
+    from array import array
 
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.row_progress import Memo
@@ -68,6 +69,8 @@ class RuntimeState:
     last_session_state: dict[str, str] = field(default_factory=dict)
     hook_generation: dict[str, int] = field(default_factory=dict)
     store_errors: dict[str, str] = field(default_factory=dict)
+    # Plan file dates use the same lock and a smaller cap because they hold a time per line.
+    plan_blame_cache: dict[tuple[str, str, str, str], array[int]] = field(default_factory=dict)
     metadata_cache: dict[str, dict[str, Any]] = field(default_factory=dict)
     claude_transcript_collisions: frozenset[str] = frozenset()
     claude_title_cache: dict[str, tuple[int, int, str | None]] = field(default_factory=dict)

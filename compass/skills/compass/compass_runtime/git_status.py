@@ -1,7 +1,7 @@
 """The end-of-session git probe: one bounded command, two scalars, no pathnames.
 
-The committed-file read (`read_committed`) is the second command family here: four read-only
-commands that return a few named files as a commit held them.
+The committed-file readers return a few named files as a commit held them. The plan reader
+also reads first-parent line attribution and committer timestamps from local history.
 
 This is the only place in the runtime that runs a program inside a directory the
 user chose, and `SECURITY.md`'s "Repository git reads (the end-of-session probe)"
@@ -43,7 +43,7 @@ find a hook under on any supported platform, but the suppression itself was
 observed here, and `tests/test_git_status.py` skips where the mechanism cannot be
 armed rather than passing vacuously.
 
-What leaves this module is `GitStatus` or `None`, and `None` means not probed
+What the status probe returns is `GitStatus` or `None`, and `None` means not probed
 rather than clean. Porcelain names paths; those pathnames are counted and dropped
 here, and no caller is ever given a way to reach them.
 """
@@ -56,13 +56,14 @@ import stat
 import subprocess
 import threading
 import time
+from array import array
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
 from . import rooted_path
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
 # Bound 1 of [DEC-3](SECURITY.md#repository-git-reads-the-end-of-session-probe), as amended. A
 # tuple rather than a list so a caller cannot
@@ -661,11 +662,15 @@ class PlanGitError(Exception):
 
 _PLAN_REF = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]{0,254}")
 _PLAN_TREE_PART = re.compile(r"[A-Za-z0-9._ -]{1,128}")
+_BLAME_LINE = re.compile(rb"([0-9a-f]{40}(?:[0-9a-f]{24})?) +([0-9]{1,9})\) ")
+_MAX_UTC_TIMESTAMP = 253402300799
+# 64 full SHA-256 IDs fit in Windows' command line even with the fixed flags.
+_PLAN_LOG_BATCH = 64
 
 
 @dataclass(frozen=True)
 class PlanTreeReader:
-    """Read blobs from a pinned tip. The caller admits each repository, ref and path."""
+    """Read admitted tip blobs and their line attribution from a local repository."""
 
     cwd: str
     timeout_sec: float
@@ -719,7 +724,8 @@ class PlanTreeReader:
             raise PlanGitError("branch missing")
         return oid
 
-    def tree_file(self, tip: str, path: str, *, max_bytes: int) -> bytes:
+    @staticmethod
+    def _check_path(tip: str, path: str) -> None:
         if (
             _OBJECT_ID.fullmatch(tip) is None
             or len(path) > 1024
@@ -731,6 +737,9 @@ class PlanTreeReader:
             )
         ):
             raise PlanGitError("outside declared root")
+
+    def tree_file(self, tip: str, path: str, *, max_bytes: int) -> bytes:
+        self._check_path(tip, path)
         deadline = time.monotonic() + self.timeout_sec
         listing = self._run(("ls-tree", "-l", "-z", tip, "--", path), deadline)
         if not listing:
@@ -749,6 +758,82 @@ class PlanTreeReader:
         if len(data) != int(size):
             raise PlanGitError("unreadable")
         return data
+
+    def blame(self, tip: str, path: str, *, line_count: int) -> array[int]:
+        """Return committer times in tip line order for an already admitted blob."""
+        self._check_path(tip, path)
+        deadline = time.monotonic() + self.timeout_sec
+        # The empty CLI argument clears configured ignore files on Git versions where
+        # an empty config value only appends to the list.
+        output = self._run(
+            (
+                "-c",
+                "blame.ignoreRevsFile=",
+                "blame",
+                "-s",
+                "-l",
+                "--first-parent",
+                "--root",
+                "--ignore-revs-file",
+                "",
+                "--no-textconv",
+                tip,
+                "--",
+                path,
+            ),
+            deadline,
+        )
+        lines = output.removesuffix(b"\n").split(b"\n")
+        if len(lines) != line_count:
+            raise PlanGitError("unreadable")
+        commits = []
+        for number, line in enumerate(lines, 1):
+            match = _BLAME_LINE.match(line)
+            if match is None or int(match[2]) != number:
+                raise PlanGitError("unreadable")
+            commits.append(match[1].decode("ascii"))
+        times = self.commit_times(commits, deadline=deadline)
+        return array("Q", (times[oid] for oid in commits))
+
+    def commit_times(
+        self, commits: Iterable[str], *, deadline: float | None = None
+    ) -> dict[str, int]:
+        """Read only the committer times of full object IDs."""
+        if deadline is None:
+            deadline = time.monotonic() + self.timeout_sec
+        oids = list(dict.fromkeys(commits))
+        if any(_OBJECT_ID.fullmatch(oid) is None for oid in oids):
+            raise PlanGitError("unreadable")
+        times: dict[str, int] = {}
+        for start in range(0, len(oids), _PLAN_LOG_BATCH):
+            batch = oids[start : start + _PLAN_LOG_BATCH]
+            output = self._run(
+                (
+                    "log",
+                    "--no-walk=unsorted",
+                    "--format=%H %ct",
+                    "--no-patch",
+                    "--no-show-signature",
+                    "--no-decorate",
+                    "--no-notes",
+                    *batch,
+                    "--",
+                ),
+                deadline,
+            )
+            remaining = {oid.encode("ascii"): oid for oid in batch}
+            for line in output.splitlines():
+                oid_bytes, _, timestamp = line.partition(b" ")
+                oid = remaining.pop(oid_bytes, None)
+                if oid is None or not timestamp.isdigit() or len(timestamp) > 12:
+                    raise PlanGitError("unreadable")
+                value = int(timestamp)
+                if value > _MAX_UTC_TIMESTAMP:
+                    raise PlanGitError("unreadable")
+                times[oid] = value
+            if remaining:
+                raise PlanGitError("unreadable")
+        return times
 
 
 def plan_reader(

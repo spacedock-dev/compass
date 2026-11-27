@@ -1344,6 +1344,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.io",
             # The report is cleaned line by line before it prints.
             "compass_runtime.terminal_sessions",
+            "compass_runtime.state",
         },
         # `records` arrived with the redact-then-slice fix. Every collector that
         # bounds a prompt with a slice has to redact BEFORE it, or the sweep in
@@ -2348,6 +2349,11 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # Compass home and resolves a session's directory to its project through `sessions`.
         "compass_runtime.reader_checks": {"compass_runtime.config", "compass_runtime.sessions"},
         "compass_runtime.plan": set(),
+        "compass_runtime.plan.dates": {
+            "compass_runtime.git_status",
+            "compass_runtime.plan.model",
+            "compass_runtime.state",
+        },
         "compass_runtime.plan.grammar": set(),
         "compass_runtime.plan.markdown": {
             "compass_runtime.plan.grammar",
@@ -2357,11 +2363,13 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.plan.model": set(),
         "compass_runtime.plan.readers": {
             "compass_runtime.git_status",
+            "compass_runtime.plan.dates",
             "compass_runtime.plan.grammar",
             "compass_runtime.plan.markdown",
             "compass_runtime.plan.model",
             "compass_runtime.plan.settings",
             "compass_runtime.plan.sources",
+            "compass_runtime.state",
         },
         "compass_runtime.plan.settings": {
             "compass_runtime.io",

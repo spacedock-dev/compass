@@ -16,7 +16,7 @@ from unittest import mock
 from compass_runtime import git_status, io
 from compass_runtime.plan import readers, settings, sources
 
-from .test_project_script_checks import GIT, git
+from .test_project_script_checks import BEFORE_THE_SESSION, GIT, git
 
 FIXTURES = Path(__file__).parent / "fixtures" / "plan"
 
@@ -50,8 +50,7 @@ VARIANT = {
 }
 
 
-@unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
-class PlanReadersTest(unittest.TestCase):
+class PlanRepoTestCase(unittest.TestCase):
     def setUp(self) -> None:
         temp = tempfile.TemporaryDirectory(dir="/tmp" if sys.platform == "darwin" else None)
         self.addCleanup(temp.cleanup)
@@ -66,12 +65,14 @@ class PlanReadersTest(unittest.TestCase):
         git(self.repo, "init", "-q", "-b", "main")
         self.log.write_bytes(b"")
 
-    def write_sources(self, data: dict[str, str]) -> None:
+    def write_sources(
+        self, data: dict[str, str], *commit_args: str, when: str = BEFORE_THE_SESSION
+    ) -> None:
         (self.repo / "plan").mkdir(exist_ok=True)
         for name, text in data.items():
             (self.repo / "plan" / f"{name}.md").write_text(text, encoding="utf-8")
         git(self.repo, "add", "plan")
-        git(self.repo, "commit", "-qm", "Synthetic snapshot")
+        git(self.repo, "commit", "-qm", "Synthetic snapshot", *commit_args, when=when)
 
     def configure(self, fixture: str = "stand-in", **overrides: Any) -> settings.Settings:
         doc = json.loads((FIXTURES / f"{fixture}.json").read_text(encoding="utf-8"))
@@ -91,6 +92,9 @@ class PlanReadersTest(unittest.TestCase):
         assert loaded.settings is not None
         return loaded.settings
 
+
+@unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
+class PlanReadersTest(PlanRepoTestCase):
     def test_stand_in_reads_each_declared_source(self) -> None:
         self.write_sources(STAND_IN)
         (self.briefs / "hull.md").write_text(

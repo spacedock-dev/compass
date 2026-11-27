@@ -87,7 +87,7 @@ RUNNERS = {
     (
         "compass_runtime/git_status.py",
         "plan_reader",
-    ): "Uses the rooted Git executable and the fixed local-ref and object-read commands.",
+    ): "Uses the rooted Git executable for fixed local-ref, object, blame and timestamp reads.",
     (
         "compass_runtime/git_status.py",
         "identity",
