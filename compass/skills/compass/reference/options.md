@@ -46,6 +46,7 @@ These older rules cannot protect a dashboard in another namespace sharing the st
 | `--no-ask` | For this run, do not let a session ask the reader a question: the register, poll and answer routes refuse and the page offers no control. The rollback switch for the ask lane. |
 | `--no-focus` | For this run, do not raise a session's terminal: no focus command runs, no terminal identity is recorded, and the page is handed no capability to ask with, so it offers no raise control. `--no-events` turns it off as well. The rollback switch for the terminal raise. |
 | `--no-history` | For this run, keep no local history of what the server observed: nothing is written and an existing store is not read back, so the board opens with no memory of earlier sessions. |
+| `--no-plan` | Skip reading the Plan board's settings and sources for this run. |
 | `--no-reach` | For this run, disable outbound reach nudges: no webhook URL is resolved and no off-machine nudge is posted. |
 | `--reach-url URL` | HTTPS webhook URL for off-machine reach nudges when sessions need input or finish unread while away from the desk. HTTP is refused to protect the credential in the URL. Overrides `COMPASS_REACH_URL` and `~/.compass/reach_url`. |
 | `--no-quiet-hours` | For this run, disable quiet hours notification suppression: notifications fire regardless of local time or configured window. |

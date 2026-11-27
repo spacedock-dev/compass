@@ -1,0 +1,387 @@
+"""Plan declarations and the no-content-open boundary."""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+import tempfile
+import unicodedata
+import unittest
+from pathlib import Path
+from typing import Any
+from unittest import mock
+
+from compass_runtime import io
+from compass_runtime.plan import settings
+
+FIXTURES = Path(__file__).parent / "fixtures" / "plan"
+
+
+@unittest.skipIf(os.name == "nt", "Plan reads require POSIX directory descriptors")
+class PlanSettingsTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temp = tempfile.TemporaryDirectory(dir="/tmp" if sys.platform == "darwin" else None)
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.home = self.root / "state"
+        self.lanes = self.root / "lanes"
+        self.repo = self.root / "repo"
+        self.private = self.root / "hide-this"
+        for folder in (self.home, self.lanes, self.repo, self.private):
+            folder.mkdir()
+        self.log = self.root / "events.log"
+        self.log.write_bytes(b"ask lane:one Check on this")
+        self.path = self.home / "compass-plan.json"
+
+    def fixture(self, name: str = "stand-in") -> dict[str, Any]:
+        fixture: dict[str, Any] = json.loads(
+            (FIXTURES / f"{name}.json").read_text(encoding="utf-8")
+        )
+        fixture["repos"][0]["path"] = str(self.repo)
+        fixture["briefs"]["folder"] = str(self.lanes)
+        fixture["private"]["roots"] = [str(self.private)]
+        fixture["log"]["path"] = str(self.log)
+        return fixture
+
+    def load(self, doc: dict[str, Any], *, git_enabled: bool = True) -> settings.Loaded:
+        self.path.write_text(json.dumps(doc), encoding="utf-8")
+        return settings.load(str(self.home), git_enabled=git_enabled)
+
+    def loaded(self, doc: dict[str, Any], *, git_enabled: bool = True) -> settings.Settings:
+        result = self.load(doc, git_enabled=git_enabled)
+        self.assertIsNone(result.reason)
+        assert result.settings is not None
+        return result.settings
+
+    def test_absent_file_and_disabled_flag(self) -> None:
+        self.assertEqual(settings.load(str(self.home)).reason, "no settings file")
+        with mock.patch.object(io, "read_plan_settings") as read:
+            disabled = settings.load(str(self.home), enabled=False)
+        read.assert_not_called()
+        self.assertEqual(disabled.reason, "plan is off")
+        self.assertIsNone(disabled.settings)
+
+    def test_settings_refuse_bad_json_and_bounds_as_a_whole(self) -> None:
+        for raw, reason in (
+            (b'{"version":1,"version":1}', "malformed settings"),
+            (b'{"version":NaN}', "malformed settings"),
+            (b'{"version":0}', "malformed settings"),
+            (b" " * 65537, "over the byte cap"),
+            (b"\xff", "malformed settings"),
+        ):
+            with self.subTest(reason=reason, preview=raw[:20]):
+                self.path.write_bytes(raw)
+                loaded = settings.load(str(self.home))
+                self.assertEqual(loaded.reason, reason)
+                self.assertIsNone(loaded.settings)
+
+    def test_schema_refuses_unknown_or_inconsistent_grammar_before_metadata(self) -> None:
+        for section, key, value in (
+            ("tracker", "words", {"open": "made_up"}),
+            ("briefs", "filename", [{"name": "x", "kind": "regex", "max_chars": 64}]),
+            ("briefs", "filename", [{"name": "lane", "kind": "text", "max_chars": 64}]),
+            ("log", "templates", [["answer ", {"name": "id", "kind": "id", "max_chars": 900}]]),
+            (
+                "log",
+                "templates",
+                [["answer ", {"name": "id", "kind": "id", "max_chars": 64}, " trailing"]],
+            ),
+            ("log", "answer_key", "unknown"),
+            ("log", "lane", {"source": "field"}),
+            ("log", "max_bytes", 10**8),
+            ("private", "markers", [{"value": "", "mode": "substring"}]),
+            ("private", "marker_files", ["../marker"]),
+            ("goals", "unknown", True),
+        ):
+            with self.subTest(section=section, key=key, value=value):
+                doc = self.fixture()
+                doc[section][key] = value
+                with mock.patch.object(io, "plan_private_identities") as identities:
+                    loaded = self.load(doc)
+                identities.assert_not_called()
+                self.assertEqual(loaded.reason, "malformed settings")
+                self.assertIsNone(loaded.settings)
+
+    def test_variants_and_bounded_full_line_matching(self) -> None:
+        base = self.loaded(self.fixture())
+        self.assertFalse(base.summary_enabled)
+        self.assertEqual(
+            base.log.match("2026-11-27T00:00:00.123456789Z ask lane:one Check on this"),
+            {
+                "ts": "2026-11-27T00:00:00.123456789Z",
+                "verb": "ask",
+                "id": "lane:one",
+                "text": "Check on this",
+            },
+        )
+        self.assertEqual(base.log.match("answer lane:one"), {"verb": "answer", "id": "lane:one"})
+        self.assertEqual(base.briefs.filename.match("one-lane.md"), {"lane": "one-lane"})
+        for line in (
+            "unknown lane:one",
+            "ask lane:one",
+            "answer lane:one more",
+            "ask lane:one bad\rline",
+            "ask lane:one bad\u202eline",
+            "ask lane:one " + "x" * 201,
+            "2026-11-27T00:00:00.1234567890Z ask lane:one Question",
+        ):
+            with self.subTest(line=line):
+                self.assertIsNone(base.log.match(line))
+        variant = self.loaded(self.fixture("variant"))
+        self.assertTrue(variant.summary_enabled)
+        self.assertIsNone(variant.briefs.filename.match("one-lane.md"))
+        self.assertEqual(variant.briefs.filename.match("one-lane.brief.md"), {"lane": "one-lane"})
+        self.assertEqual(
+            variant.log.match("2026-11-27T00:00:00.123456+00:00 DONE blue one"),
+            {"ts": "2026-11-27T00:00:00.123456+00:00", "verb": "DONE", "lane": "blue", "id": "one"},
+        )
+        self.assertIsNone(variant.log.match("2026-11-27T00:00:00Z DONE blue one extra"))
+        self.assertIsNone(variant.log.match("2026-11-27T00:00:00Z ASK blue one"))
+        self.assertEqual(
+            variant.goals.templates[0].match("P42. A goal"), {"n": "42", "title": "A goal"}
+        )
+        self.assertEqual(variant.inventory.form, "checklist")
+
+    def test_stand_in_accepts_both_table_headers_and_numbered_goal_ids(self) -> None:
+        doc = self.fixture()
+        doc["tracker"]["status_column"] = ["Status", "State"]
+        doc["goals"]["templates"][0][1]["kind"] = "numbered_goal_id"
+        plan = self.loaded(doc)
+        self.assertEqual(plan.tracker.status_columns, ("Status", "State"))
+        self.assertEqual(
+            plan.goals.templates[0].match("- P42a: A goal"), {"id": "P42a", "title": "A goal"}
+        )
+
+    def test_private_identity_refuses_at_load_and_before_source_open(self) -> None:
+        folder = self.private / "nested"
+        folder.mkdir()
+        log = folder / "log"
+        log.touch()
+        alias = self.root / "alias"
+        alias.symlink_to(self.private, target_is_directory=True)
+        doc = self.fixture()
+        doc["private"]["roots"] = [str(alias)]
+        doc["log"]["path"] = str(log)
+        plan = self.loaded(doc)
+        self.assertEqual(plan.sources.events.reason, "private")
+        with mock.patch.object(io, "open_plan_source") as opened:
+            self.assertEqual(plan.sources.read_log().reason, "private")
+        opened.assert_not_called()
+        doc["log"]["path"] = str(alias / "nested" / "log")
+        self.assertEqual(self.loaded(doc).sources.events.reason, "symbolic link")
+
+    def test_case_normalisation_and_platform_alias_preserve_private_identity(self) -> None:
+        private = self.root / "Café"
+        private.mkdir()
+        log = private / "event.log"
+        log.touch()
+        for alias in (
+            self.root / "CAFÉ",
+            self.root / unicodedata.normalize("NFD", private.name),
+            Path(str(private).removeprefix("/private")),
+        ):
+            with self.subTest(alias=alias):
+                if alias == private:
+                    continue
+                doc = self.fixture()
+                doc["private"]["roots"] = [str(private)]
+                doc["log"]["path"] = str(alias / log.name)
+                expected = "private" if alias.exists() else "missing"
+                self.assertEqual(self.loaded(doc).sources.events.reason, expected)
+
+    def test_private_guard_is_rechecked_when_a_parent_is_replaced(self) -> None:
+        plan = self.loaded(self.fixture())
+        self.lanes.rmdir()
+        self.private.rename(self.lanes)
+        (self.lanes / "one.md").touch()
+        with mock.patch.object(io, "open_plan_source") as opened:
+            self.assertEqual(plan.sources.read_brief("one.md").reason, "private")
+        opened.assert_not_called()
+
+    def test_markers_on_brief_ancestors_are_checked_before_open(self) -> None:
+        for mark, mode, folder_name in (
+            ("café", "component", "CAFÉ"),
+            ("café", "component", "Cafe\u0301"),
+            ("sealed", "token", "lane_SEALED.old"),
+            ("sealed", "substring", "lanesealed"),
+        ):
+            with self.subTest(mark=mark, mode=mode, folder_name=folder_name):
+                folder = self.lanes / folder_name
+                folder.mkdir(exist_ok=True)
+                (folder / "one.md").touch()
+                doc = self.fixture()
+                doc["private"]["markers"] = [{"value": mark, "mode": mode}]
+                doc["briefs"]["folder"] = str(folder)
+                plan = self.loaded(doc)
+                self.assertEqual(plan.sources.brief_folder.reason, "private")
+                with mock.patch.object(io, "open_plan_source") as opened:
+                    self.assertEqual(plan.sources.read_brief("one.md").reason, "private")
+                opened.assert_not_called()
+
+    def test_marker_filename_at_read_does_not_open_marker_or_brief(self) -> None:
+        plan = self.loaded(self.fixture())
+        (self.root / ".restricted").touch()
+        (self.lanes / "one.md").touch()
+        with mock.patch.object(io, "open_plan_source") as opened:
+            self.assertEqual(plan.sources.read_brief("one.md").reason, "private")
+        opened.assert_not_called()
+
+    @unittest.expectedFailure
+    def test_homoglyph_marker_is_not_a_privacy_match(self) -> None:
+        folder = self.lanes / "h\u0456dden"  # Cyrillic letter i
+        folder.mkdir()
+        doc = self.fixture()
+        doc["private"]["markers"] = [{"value": "hidden", "mode": "component"}]
+        doc["briefs"]["folder"] = str(folder)
+        self.assertEqual(self.loaded(doc).sources.brief_folder.reason, "private")
+
+    def test_briefs_only_open_direct_matching_regular_files(self) -> None:
+        (self.lanes / "one.md").write_bytes(b"Goal: Fixture")
+        (self.lanes / "sibling.txt").touch()
+        (self.lanes / "nested").mkdir()
+        (self.lanes / "nested" / "two.md").touch()
+        (self.lanes / "link.md").symlink_to(self.log)
+        os.link(self.log, self.lanes / "hard.md")
+        plan = self.loaded(self.fixture())
+        with mock.patch.object(io, "open_plan_source") as opened:
+            for name, reason in (
+                ("sibling.txt", "not named in settings"),
+                ("../events.log", "outside declared root"),
+                (str(self.log), "outside declared root"),
+                ("nested/two.md", "outside declared root"),
+                ("link.md", "symbolic link"),
+                ("hard.md", "hard link"),
+            ):
+                with self.subTest(name=name):
+                    self.assertEqual(plan.sources.read_brief(name).reason, reason)
+        opened.assert_not_called()
+        self.assertEqual(plan.sources.read_brief("one.md").data, b"Goal: Fixture")
+        listing = plan.sources.brief_names()
+        self.assertIsNone(listing.reason)
+        self.assertEqual(listing.names, ("hard.md", "link.md", "one.md"))
+
+    def test_leaf_is_rechecked_by_the_open_primitive(self) -> None:
+        plan = self.loaded(self.fixture())
+        self.log.unlink()
+        self.log.symlink_to(self.path)
+        original_open = os.open
+        with mock.patch("compass_runtime.io.os.open", wraps=original_open) as opened:
+            self.assertEqual(plan.sources.read_log().reason, "symbolic link")
+        self.assertFalse(any(call.args[0] == self.log.name for call in opened.call_args_list))
+
+    def test_open_refuses_a_leaf_swapped_after_metadata(self) -> None:
+        plan = self.loaded(self.fixture())
+        replacement = self.root / "replacement"
+        replacement.write_bytes(b"Different file")
+        original_open = os.open
+
+        def move_then_open(name: str, *args: Any, **kwargs: Any) -> int:
+            if name == self.log.name:
+                replacement.replace(self.log)
+            return original_open(name, *args, **kwargs)
+
+        with mock.patch("compass_runtime.io.os.open", side_effect=move_then_open):
+            read = plan.sources.read_log()
+        self.assertIsNone(read.data)
+        self.assertEqual(read.reason, "file changed before it could be read")
+
+    def test_brief_listing_refuses_an_overfull_folder_without_opening_briefs(self) -> None:
+        doc = self.fixture()
+        doc["briefs"]["max_files"] = 1
+        (self.lanes / "one.md").touch()
+        (self.lanes / "two.md").touch()
+        plan = self.loaded(doc)
+        with mock.patch.object(io, "open_plan_source") as opened:
+            listing = plan.sources.brief_names()
+        self.assertEqual(listing.names, ())
+        self.assertEqual(listing.reason, "over the brief folder entry cap")
+        opened.assert_not_called()
+
+    def test_repo_file_must_match_repo_ref_and_exact_tree_path(self) -> None:
+        plan = self.loaded(self.fixture())
+        sources = plan.sources
+        self.assertIsNone(sources.tree_source("Example", "main", "plan/goals.md").reason)
+        self.assertIsNone(sources.tree_source("Example", "draft/plan", "plan/goals.md").reason)
+        self.assertEqual(
+            sources.tree_source("Example", "main", "../goals.md").reason, "outside declared root"
+        )
+        self.assertEqual(
+            sources.tree_source("Example", "main", "plan/other.md").reason, "not named in settings"
+        )
+        self.assertEqual(
+            sources.tree_source("Example", "other", "plan/goals.md").reason, "not named in settings"
+        )
+        self.assertEqual(
+            sources.tree_source("Other", "main", "plan/goals.md").reason, "not named in settings"
+        )
+        disabled = self.loaded(self.fixture(), git_enabled=False)
+        self.assertEqual(
+            disabled.sources.tree_source("Example", "main", "plan/goals.md").reason,
+            "git reads are off",
+        )
+
+    def test_a_named_tree_file_can_supply_two_declared_formats(self) -> None:
+        doc = self.fixture()
+        doc["repos"][0]["files"]["diagrams"].append("plan/design.md")
+        allowed = self.loaded(doc).sources
+        for kind in ("decisions", "diagrams"):
+            with self.subTest(kind=kind):
+                source = allowed.tree_source("Example", "main", "plan/design.md", kind=kind)
+                self.assertIsNone(source.reason)
+                self.assertEqual(source.kind, kind)
+        self.assertEqual(
+            allowed.tree_source("Example", "main", "plan/design.md", kind="goals").reason,
+            "not named in settings",
+        )
+
+    def test_settings_links_and_checkouts_are_refused(self) -> None:
+        self.path.symlink_to(self.log)
+        self.assertEqual(settings.load(str(self.home)).reason, "symbolic link")
+        self.path.unlink()
+        os.link(self.log, self.path)
+        self.assertEqual(settings.load(str(self.home)).reason, "hard link")
+        self.path.unlink()
+        self.path.write_text(json.dumps(self.fixture()), encoding="utf-8")
+        (self.root / ".git").mkdir()
+        with mock.patch.object(io, "open_plan_source") as opened:
+            self.assertEqual(
+                settings.load(str(self.home)).reason, "settings are inside a repository"
+            )
+        opened.assert_not_called()
+
+    def test_compass_home_under_a_declared_repo_refuses_the_settings(self) -> None:
+        doc = self.fixture()
+        doc["repos"][0]["path"] = str(self.root)
+        self.assertEqual(self.load(doc).reason, "settings are inside a repository")
+
+    def test_unresolved_private_root_refuses_the_whole_settings_file(self) -> None:
+        doc = self.fixture()
+        doc["private"]["roots"] = [str(self.root / "missing")]
+        loaded = self.load(doc)
+        self.assertEqual(loaded.reason, "could not identify a private root")
+        self.assertIsNone(loaded.settings)
+
+    def test_an_unreadable_repository_does_not_refuse_other_sources(self) -> None:
+        doc = self.fixture()
+        locked = self.root / "locked"
+        locked.mkdir()
+        (locked / "repo").mkdir()
+        doc["repos"][0]["path"] = str(locked / "repo")
+        locked.chmod(0)
+        try:
+            plan = self.loaded(doc)
+            self.assertEqual(
+                plan.sources.tree_source("Example", "main", "plan/goals.md").reason, "unreadable"
+            )
+            self.assertEqual(plan.sources.read_log().data, b"ask lane:one Check on this")
+        finally:
+            locked.chmod(0o700)
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS standard ancestor alias")
+    def test_platform_alias_cannot_hide_private_parent_above_tmp(self) -> None:
+        self.assertTrue(self.root.is_relative_to("/private/tmp"))
+        doc = self.fixture()
+        doc["private"]["roots"] = ["/private"]
+        doc["log"]["path"] = str(self.log).removeprefix("/private")
+        self.assertEqual(self.loaded(doc).sources.events.reason, "private")

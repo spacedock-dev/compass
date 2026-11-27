@@ -255,6 +255,7 @@ class RuntimeConfig:
     # exactly as it did before the store existed. A store still written while
     # the feature is off is a security bug by that contract's own terms.
     history_enabled: bool
+    plan_enabled: bool
     # Whether a session may ask the reader a question and wait for the answer.
     # `--no-ask` is the rollback switch, and off means off in both directions:
     # the routes refuse, and the payload carries no `ask` flag, so the page
@@ -967,6 +968,7 @@ def build_runtime_config(
     quiet_hours_enabled: bool = True,
     quiet_hours: str | None = None,
     history_enabled: bool = True,
+    plan_enabled: bool = True,
     history_retention_sec: float = HISTORY_RETENTION_DEFAULT_DAYS * SECONDS_PER_DAY,
     history_max_bytes: int = HISTORY_MAX_BYTES_DEFAULT,
     update_check_disabled: bool = False,
@@ -1037,6 +1039,7 @@ def build_runtime_config(
         quiet_hours_enabled=quiet_hours_enabled,
         quiet_hours=quiet_hours,
         history_enabled=history_enabled,
+        plan_enabled=plan_enabled,
         # Ten minutes stays. The burn ordering (DRC-4011) wants the fastest
         # session "right now", and this window is the reason it cannot have it:
         # narrowing it would re-scale the summary tile, both sparklines and every

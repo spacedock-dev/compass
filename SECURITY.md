@@ -397,7 +397,8 @@ The posture rests on two invariants:
 
 Anything that weakens either invariant is a security bug: a bind reaching an address the operator did
 not ask for, a request admitted that the bind's own Host gate should have refused, file reads outside
-the documented store paths and the project-read contract below (however the path was derived),
+the documented store paths and the contracts below for project reads and
+[plan source admission](#plan-settings-and-source-admission) (however the path was derived),
 writes to harness stores, running any program inside a user's repository other than the probe
 described in Repository git reads (the end-of-session probe) and the two identity commands
 described in Pull request CI reads (at a progress check, and where a recorded CI poll needs
@@ -1134,6 +1135,39 @@ session's own command line is published as any check's is.
 The rulings, [the listing](docs/design-reading-a-session.md#amended-2026-10-27-owner-a-reader-may-list-a-projects-checks)
 and [what counts as a write](docs/design-reading-a-session.md#amended-2026-10-28-owner-a-read-of-a-listed-file-is-not-a-write),
 hold the rest.
+
+### Plan settings and source admission
+
+Compass looks for one hand-written JSON file, `compass-plan.json`, in the Compass home. It reads
+up to 64 KiB from an owned regular file with a single hard link. A Git checkout or bare repository
+in its ancestry refuses the read. Missing settings leave the plan unconfigured. Duplicate keys,
+unsupported versions, unknown fields and invalid declarations refuse the whole file. Compass
+leaves the settings file untouched. The agent summary setting defaults to off.
+
+The settings name each repository, its local branch, an optional draft branch and the exact tree
+paths for each file. They also name one event log and one flat lane-brief folder with a filename
+template. Source admission uses those entries alone. The log is capped at the configured limit,
+up to 1 MiB. Each brief is capped at 64 KiB. The folder scan checks at most 4,096 names and admits
+at most 200 matching names, subject to a lower configured cap. The templates use literal tokens
+and bounded named fields. The diagnostics command checks source metadata. Reading committed
+content, serving the Plan page and delivering session summaries require their respective readers.
+
+The local reader checks the device and inode of each parent directory against the declared
+private roots. It checks each directory name's NFC-normalised, casefolded text against the declared
+markers. A marker can match a whole name, a token split at hyphens, underscores, periods or spaces,
+or a substring. Homoglyphs remain distinct. A configured marker filename can also mark any parent
+directory through a filesystem lookup of that name. Compass checks for the marker's presence
+without reading it.
+
+The local reader uses held POSIX directory descriptors and refuses directory and file symlinks,
+apart from the root-owned macOS ancestor aliases for `/tmp`, `/var` and `/etc`. The identity checks
+cover the target ancestry of those aliases too. The leaf must be an owned regular file with one
+hard link. Compass checks its identity again after opening and reads under the byte cap.
+Platforms without the guarded traversal refuse the read.
+
+`--no-plan` skips plan settings and sources for the run. With `--no-git`, plan diagnostics mark
+repository sources as "git reads are off". `--diagnose` reports the settings path, each source by
+kind and position, and the reason for a refusal. It reports counts for private roots and markers.
 
 ## Reaching a session's terminal (the focus command)
 

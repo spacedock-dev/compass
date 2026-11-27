@@ -353,6 +353,44 @@ def _add_proxy_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_local_store_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help=(
+            "do not keep a local history of what this server observed for this "
+            "run: nothing is written and an existing store is not read back, so "
+            "the board opens with no memory of earlier sessions."
+        ),
+    )
+    parser.add_argument(
+        "--no-plan",
+        action="store_true",
+        help="do not read plan settings or sources for this run",
+    )
+    parser.add_argument(
+        "--no-dismiss",
+        action="store_true",
+        help=(
+            "do not read or write the dismissal store for this run: sessions "
+            "marked handled come back onto the board and the page offers no "
+            "control to clear them. The rollback switch for the dismissal store "
+            "Compass writes on your behalf"
+        ),
+    )
+    parser.add_argument(
+        "--no-annotations",
+        action="store_true",
+        help=(
+            "do not read or write the annotation store for this run: the goal "
+            "and expected output you typed against a session are neither shown "
+            "nor saved, and the page offers no field to type them in. The "
+            "rollback switch for the one store holding prose you composed "
+            "rather than anything a harness published"
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The CLI surface. argparse owns --help and its own usage errors."""
     # Abbreviations are off so a removed option stays refused: `--frontend` is a unique prefix of
@@ -473,7 +511,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "do not run the end-of-session git probe in any session's working "
             "repository (the dirty and changed fields then stay empty), and "
-            "do not read a project's own check scripts from git"
+            "do not read a project's own check scripts or plan sources from git"
         ),
     )
     parser.add_argument(
@@ -494,36 +532,7 @@ def build_parser() -> argparse.ArgumentParser:
             "capability to ask with. --no-events turns it off as well"
         ),
     )
-    parser.add_argument(
-        "--no-history",
-        action="store_true",
-        help=(
-            "do not keep a local history of what this server observed for this "
-            "run: nothing is written and an existing store is not read back, so "
-            "the board opens with no memory of earlier sessions."
-        ),
-    )
-    parser.add_argument(
-        "--no-dismiss",
-        action="store_true",
-        help=(
-            "do not read or write the dismissal store for this run: sessions "
-            "marked handled come back onto the board and the page offers no "
-            "control to clear them. The rollback switch for the dismissal store "
-            "Compass writes on your behalf"
-        ),
-    )
-    parser.add_argument(
-        "--no-annotations",
-        action="store_true",
-        help=(
-            "do not read or write the annotation store for this run: the goal "
-            "and expected output you typed against a session are neither shown "
-            "nor saved, and the page offers no field to type them in. The "
-            "rollback switch for the one store holding prose you composed "
-            "rather than anything a harness published"
-        ),
-    )
+    _add_local_store_options(parser)
     parser.add_argument(
         "--unasked-readings",
         action="store_true",
@@ -715,6 +724,7 @@ def build_runtime(
         quiet_hours_enabled=not getattr(args, "no_quiet_hours", False),
         quiet_hours=getattr(args, "quiet_hours", None),
         history_enabled=not args.no_history,
+        plan_enabled=not args.no_plan,
         history_retention_sec=args.history_days * runtime_config.SECONDS_PER_DAY,
         history_max_bytes=args.history_max_bytes,
         update_check_disabled=args.no_update_check,
@@ -854,6 +864,7 @@ def validate_frontend_args(parser: argparse.ArgumentParser, args: argparse.Names
         "no_reach",
         "no_ask",
         "no_history",
+        "no_plan",
     ):
         setattr(args, name, True)
 

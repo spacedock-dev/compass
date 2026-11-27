@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
 from compass_runtime import project_context, project_scripts, reader_checks, tripwires
+from compass_runtime.plan import settings as plan_settings
 from compass_runtime.terminal_sessions import printable_text
 
 if TYPE_CHECKING:
@@ -146,6 +147,11 @@ def diagnose(application: Application) -> dict[str, Any]:
         # The reader's own list of check commands: where it is, whether it could be read, and each
         # entry that was ignored with its program and why. Never an argument or a path.
         "reader_checks": reader_checks.report(config, project_context.listed_entry_refusal),
+        "plan": plan_settings.report(
+            plan_settings.load(
+                config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
+            )
+        ),
         "stores": {
             key: {
                 "primary": primary,
@@ -208,6 +214,26 @@ def render_diagnosis(report: dict[str, Any]) -> str:
     return printable_text(_diagnosis_text(report))
 
 
+def _plan_lines(report: dict[str, Any] | None) -> list[str]:
+    if report is None:
+        return []
+    lines = ["", "Plan settings", f"  file       {report['path']}"]
+    if report["reason"]:
+        lines.append(f"  [  --] {report['reason']}")
+        return lines
+    lines.extend(
+        [
+            f"  private roots: {report['private_roots']}",
+            f"  private name markers: {report['private_markers']}",
+            f"  private marker files: {report['private_marker_files']}",
+        ]
+    )
+    for index, source in enumerate(report["sources"], start=1):
+        detail = source["reason"] or "declared"
+        lines.append(f"  {index}. {source['kind']}: {detail}")
+    return lines
+
+
 def _diagnosis_text(report: dict[str, Any]) -> str:
     sqlite_info = report["sqlite"]
     lines = [
@@ -247,6 +273,7 @@ def _diagnosis_text(report: dict[str, Any]) -> str:
 
     lines.extend(_project_script_lines(report.get("project_scripts") or []))
     lines.extend(_reader_check_lines(report.get("reader_checks")))
+    lines.extend(_plan_lines(report.get("plan")))
 
     lines.append("")
     lines.append("Stores searched (in order)")

@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "repos": [
+    {
+      "label": "Example",
+      "path": "/example/repository",
+      "ref": "main",
+      "draft_ref": "draft/plan",
+      "files": {
+        "goals": [
+          "plan/goals.md"
+        ],
+        "decisions": [
+          "plan/design.md"
+        ],
+        "inventory": [
+          "plan/built.md"
+        ],
+        "tracker": [
+          "plan/tracker.md"
+        ],
+        "diagrams": [
+          "plan/diagrams.md"
+        ]
+      }
+    }
+  ],
+  "tracker": {
+    "form": "table",
+    "status_column": ["Status", "State"],
+    "title_column": "Item",
+    "case": "fold",
+    "strip": [
+      "emoji",
+      "**",
+      "`"
+    ],
+    "tail_separators": [
+      " (",
+      ";",
+      ":",
+      " — "
+    ],
+    "words": {
+      "open": "not_started",
+      "fixed": "done",
+      "driving": "running",
+      "delivered": "done"
+    }
+  },
+  "briefs": {
+    "folder": "/example/lanes",
+    "filename": [
+      {
+        "name": "lane",
+        "kind": "slug",
+        "max_chars": 64
+      },
+      ".md"
+    ],
+    "max_files": 200,
+    "emphasis": [
+      "**",
+      "*",
+      "_"
+    ],
+    "separators": [
+      ",",
+      " "
+    ],
+    "max_ids": 8,
+    "labels": {
+      "goal": {
+        "label": "Goal",
+        "max_chars": 200,
+        "required": false,
+        "continuation": "paragraph",
+        "form": "either",
+        "heading_level": 2
+      },
+      "done": {
+        "label": "Done",
+        "max_chars": 300,
+        "required": false,
+        "continuation": "paragraph",
+        "form": "heading",
+        "heading_level": 2
+      },
+      "serves": {
+        "label": "Serves",
+        "max_chars": 128,
+        "required": false,
+        "continuation": "line",
+        "form": "label"
+      }
+    }
+  },
+  "log": {
+    "path": "/example/events.log",
+    "max_bytes": 1048576,
+    "max_line_bytes": 512,
+    "timestamps": [
+      "seconds_z",
+      "fraction_z",
+      "offset",
+      "fraction_offset"
+    ],
+    "templates": [
+      [{"name": "ts", "kind": "timestamp", "max_chars": 35}, " ", "ask", " ", {"name": "id", "kind": "id", "max_chars": 64}, " ", {"name": "text", "kind": "text", "max_chars": 200}],
+      [{"name": "ts", "kind": "timestamp", "max_chars": 35}, " ", "answer", " ", {"name": "id", "kind": "id", "max_chars": 64}],
+      [{"name": "ts", "kind": "timestamp", "max_chars": 35}, " ", "note", " ", {"name": "id", "kind": "id", "max_chars": 64}, " ", {"name": "text", "kind": "text", "max_chars": 200}],
+      ["ask", " ", {"name": "id", "kind": "id", "max_chars": 64}, " ", {"name": "text", "kind": "text", "max_chars": 200}],
+      ["answer", " ", {"name": "id", "kind": "id", "max_chars": 64}],
+      ["note", " ", {"name": "id", "kind": "id", "max_chars": 64}, " ", {"name": "text", "kind": "text", "max_chars": 200}]
+    ],
+    "verbs": {
+      "ask": {
+        "role": "ask",
+        "text": "required"
+      },
+      "answer": {
+        "role": "answer",
+        "text": "forbidden"
+      },
+      "note": {
+        "role": "event",
+        "text": "required"
+      }
+    },
+    "answer_key": "id",
+    "lane": {
+      "source": "id_part",
+      "separator": ":",
+      "part": 0
+    }
+  },
+  "private": {
+    "roots": [
+      "/example/private"
+    ],
+    "markers": [
+      {
+        "value": "restricted",
+        "mode": "component"
+      }
+    ],
+    "marker_files": [
+      ".restricted"
+    ]
+  },
+  "diagrams": {
+    "fences": [
+      "mermaid",
+      "text"
+    ],
+    "types": [
+      "flowchart",
+      "graph",
+      "sequenceDiagram",
+      "stateDiagram-v2",
+      "ascii"
+    ],
+    "caption": "heading",
+    "bare_fence": true,
+    "max_blocks": 20,
+    "max_lines": 200,
+    "max_bytes": 16384
+  },
+  "goals": {
+    "section": "Goals",
+    "section_level": 2,
+    "form": "list",
+    "templates": [
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, ": ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " : ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " · ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, "· ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " — ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, "— ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " - ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["- ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, "- ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, ": ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " : ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " · ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, "· ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " — ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, "— ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, " - ", {"name": "title", "kind": "text", "max_chars": 200}],
+      ["* ", {"name": "id", "kind": "numbered_goal_id", "max_chars": 8}, "- ", {"name": "title", "kind": "text", "max_chars": 200}]
+    ],
+    "done_label": "Done when",
+    "emphasis": [
+      "**",
+      "*",
+      "_"
+    ],
+    "max_done_chars": 300,
+    "done_form": "either",
+    "done_continuation": "paragraph",
+    "done_heading_level": 4
+  },
+  "decisions": {
+    "form": "either",
+    "heading_level": 3,
+    "decided": [
+      {
+        "value": "Decision:",
+        "position": "prefix"
+      },
+      {
+        "value": "decided,",
+        "position": "suffix",
+        "trailing_date": true
+      },
+      {
+        "value": "owner ruling",
+        "position": "anywhere"
+      }
+    ],
+    "proposed": [
+      {
+        "value": "Decided:",
+        "position": "prefix"
+      }
+    ],
+    "case": "fold",
+    "optional_comma": true
+  },
+  "inventory": {
+    "form": "table",
+    "state_locator": "State",
+    "title_column": "Item",
+    "words": {
+      "shipped": "built",
+      "partial": "partial",
+      "new": "not_built"
+    },
+    "case": "fold",
+    "strip": [
+      "emoji",
+      "**",
+      "`"
+    ],
+    "tail_separators": [
+      " ("
+    ]
+  }
+}

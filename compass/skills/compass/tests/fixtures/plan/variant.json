@@ -1,0 +1,186 @@
+{
+  "version": 1,
+  "repos": [
+    {
+      "label": "Example",
+      "path": "/example/repository",
+      "ref": "main",
+      "draft_ref": "draft/plan",
+      "files": {
+        "goals": [
+          "plan/goals.md"
+        ],
+        "decisions": [
+          "plan/design.md"
+        ],
+        "inventory": [
+          "plan/built.md"
+        ],
+        "tracker": [
+          "plan/tracker.md"
+        ],
+        "diagrams": [
+          "plan/diagrams.md"
+        ]
+      }
+    }
+  ],
+  "tracker": {
+    "form": "table",
+    "status_column": "State",
+    "title_column": "Item",
+    "case": "fold",
+    "strip": [
+      "emoji"
+    ],
+    "tail_separators": [
+      " — "
+    ],
+    "words": {
+      "delivered": "done",
+      "driving": "running"
+    }
+  },
+  "briefs": {
+    "folder": "/example/lanes",
+    "filename": [
+      {
+        "name": "lane",
+        "kind": "slug",
+        "max_chars": 64
+      },
+      ".brief.md"
+    ],
+    "max_files": 200,
+    "emphasis": [
+      "**",
+      "*",
+      "_"
+    ],
+    "separators": [
+      ",",
+      " "
+    ],
+    "max_ids": 8,
+    "labels": {
+      "goal": {
+        "label": "Objective",
+        "max_chars": 200,
+        "required": false,
+        "continuation": "paragraph",
+        "form": "label"
+      },
+      "done": {
+        "label": "Exit",
+        "max_chars": 300,
+        "required": false,
+        "continuation": "paragraph",
+        "form": "label"
+      },
+      "serves": {
+        "label": "Goals",
+        "max_chars": 128,
+        "required": false,
+        "continuation": "paragraph",
+        "form": "label"
+      }
+    }
+  },
+  "log": {
+    "path": "/example/events.log",
+    "max_bytes": 1048576,
+    "max_line_bytes": 512,
+    "timestamps": [
+      "seconds_z",
+      "fraction_z",
+      "offset",
+      "fraction_offset"
+    ],
+    "templates": [
+      [{"name": "ts", "kind": "timestamp", "max_chars": 35}, " ", {"name": "verb", "kind": "word", "max_chars": 16}, " ", {"name": "lane", "kind": "slug", "max_chars": 64}, " ", {"name": "id", "kind": "id", "max_chars": 64}, " ", {"name": "text", "kind": "text", "max_chars": 200}],
+      [{"name": "ts", "kind": "timestamp", "max_chars": 35}, " ", {"name": "verb", "kind": "word", "max_chars": 16}, " ", {"name": "lane", "kind": "slug", "max_chars": 64}, " ", {"name": "id", "kind": "id", "max_chars": 64}]
+    ],
+    "verbs": {
+      "ASK": {
+        "role": "ask",
+        "text": "required"
+      },
+      "DONE": {
+        "role": "answer",
+        "text": "forbidden"
+      }
+    },
+    "answer_key": "id",
+    "lane": {
+      "source": "field"
+    }
+  },
+  "private": {
+    "roots": [
+      "/example/private"
+    ],
+    "markers": [
+      {
+        "value": "private",
+        "mode": "token"
+      }
+    ],
+    "marker_files": [
+      ".private"
+    ]
+  },
+  "diagrams": {
+    "fences": [
+      "mermaid"
+    ],
+    "types": [
+      "flowchart",
+      "sequenceDiagram"
+    ],
+    "caption": "label:Figure",
+    "max_blocks": 20,
+    "max_lines": 200,
+    "max_bytes": 16384
+  },
+  "goals": {
+    "section": "Goals",
+    "section_level": 2,
+    "form": "heading",
+    "templates": [
+      ["P", {"name": "n", "kind": "integer", "max_chars": 5}, ". ", {"name": "title", "kind": "text", "max_chars": 200}]
+    ],
+    "done_label": "Done when",
+    "emphasis": [
+      "**",
+      "*",
+      "_"
+    ],
+    "max_done_chars": 300,
+    "done_form": "either",
+    "done_continuation": "paragraph",
+    "done_heading_level": 4,
+    "heading_level": 3
+  },
+  "decisions": {
+    "form": "either",
+    "heading_level": 3,
+    "decided": [
+      {
+        "value": "decided,",
+        "position": "suffix"
+      }
+    ],
+    "proposed": [],
+    "case": "fold",
+    "optional_comma": true
+  },
+  "inventory": {
+    "form": "checklist",
+    "state_locator": "checkbox",
+    "checked": "built",
+    "unchecked": "not_built"
+  },
+  "summary": {
+    "enabled": true
+  }
+}

@@ -14,6 +14,7 @@ import stat
 import sys
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 from urllib.parse import quote
 
@@ -669,6 +670,7 @@ def _directory_child(
     mode: int,
     links: list[int],
     follow_links: bool,
+    directory_check: Callable[[int, str, os.stat_result], None] | None = None,
 ) -> int:
     child = os.path.join(walked, part)
     # Without O_DIRECTORY, nonblocking open plus fstat still refuses a planted FIFO.
@@ -704,6 +706,8 @@ def _directory_child(
             and os.stat(part, dir_fd=fd, follow_symlinks=False).st_uid == 0
         )
         if not follow_links and not trusted:
+            if directory_check is not None:
+                raise OSError(errno.ELOOP, "Refusing a plan directory symlink", child) from None
             raise
         links[0] += 1
         if links[0] > 40:
@@ -716,6 +720,7 @@ def _directory_child(
             links=links,
             require_owner=not trusted,
             follow_links=follow_links,
+            directory_check=directory_check,
         )
 
 
@@ -728,6 +733,7 @@ def _directory_fd(
     require_owner: bool = True,
     follow_links: bool = True,
     parent_fd: int | None = None,
+    directory_check: Callable[[int, str, os.stat_result], None] | None = None,
 ) -> int:
     """Walk held directories and bound link traversal, preserving platform ancestor aliases."""
     links = [0] if links is None else links
@@ -743,16 +749,27 @@ def _directory_fd(
     walked = "" if relative else "/"
     private = relative and require_owner
     try:
+        if directory_check is not None:
+            directory_check(fd, walked, os.fstat(fd))
         for part in absolute.split("/"):
             if not part:
                 continue
             child = _directory_child(
-                fd, part, walked, create=create, mode=mode, links=links, follow_links=follow_links
+                fd,
+                part,
+                walked,
+                create=create,
+                mode=mode,
+                links=links,
+                follow_links=follow_links,
+                directory_check=directory_check,
             )
             os.close(fd)
             fd = child
             walked = os.path.join(walked, part)
             info = os.fstat(fd)
+            if directory_check is not None:
+                directory_check(fd, part, info)
             if private:
                 _check_directory(info, walked)
             private = private or _owned(info)
@@ -761,6 +778,208 @@ def _directory_fd(
         os.close(fd)
         raise
     return fd
+
+
+class PlanRefusal(StrEnum):
+    MISSING = "missing"
+    UNREADABLE = "unreadable"
+    NOT_REGULAR = "not an owned regular file"
+    SYMLINK = "symbolic link"
+    HARD_LINK = "hard link"
+    PRIVATE = "private"
+    TOO_LARGE = "over the byte cap"
+    TOO_MANY = "over the brief folder entry cap"
+    INSIDE_REPO = "settings are inside a repository"
+    UNSUPPORTED = "guarded plan reads are unavailable on this platform"
+    CHANGED = "file changed before it could be read"
+
+
+class PlanReadError(Exception):
+    def __init__(self, reason: PlanRefusal) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _plan_refusal(exc: OSError) -> PlanReadError:
+    reasons = {errno.ENOENT: PlanRefusal.MISSING, errno.ELOOP: PlanRefusal.SYMLINK}
+    return PlanReadError(reasons.get(exc.errno or 0, PlanRefusal.UNREADABLE))
+
+
+def _identity(info: os.stat_result) -> tuple[int, int]:
+    return info.st_dev, info.st_ino
+
+
+def plan_private_identities(roots: tuple[str, ...]) -> frozenset[tuple[int, int]]:
+    """A private declaration may name an alias. Only metadata is needed to identify it."""
+    identities = set()
+    for root in roots:
+        info = os.stat(root)
+        if not stat.S_ISDIR(info.st_mode) or not info.st_ino:
+            raise OSError(errno.ENOTDIR, "Cannot identify private directory")
+        identities.add(_identity(info))
+    return frozenset(identities)
+
+
+def plan_directory_identities(paths: tuple[str, ...]) -> frozenset[tuple[int, int]]:
+    identities = set()
+    for path in paths:
+        try:
+            info = os.stat(path)
+        except OSError:
+            # An unavailable repo is a source refusal. The settings traversal separately
+            # checks for repository metadata in its own ancestry before opening the file.
+            continue
+        if stat.S_ISDIR(info.st_mode):
+            identities.add(_identity(info))
+    return frozenset(identities)
+
+
+@dataclass(frozen=True)
+class PlanPathPolicy:
+    private_ids: frozenset[tuple[int, int]] = frozenset()
+    marked_name: Callable[[str], bool] | None = None
+    marker_files: tuple[str, ...] = ()
+    settings_file: bool = False
+    repo_ids: frozenset[tuple[int, int]] = frozenset()
+
+    def check(self, directory: int, name: str, info: os.stat_result) -> None:
+        identity = _identity(info)
+        if identity in self.repo_ids:
+            raise PlanReadError(PlanRefusal.INSIDE_REPO)
+        if identity in self.private_ids or (self.marked_name and self.marked_name(name)):
+            raise PlanReadError(PlanRefusal.PRIVATE)
+        if self.settings_file and _git_directory_at(directory):
+            raise PlanReadError(PlanRefusal.INSIDE_REPO)
+        if any(_present_at(directory, marker) for marker in self.marker_files):
+            raise PlanReadError(PlanRefusal.PRIVATE)
+
+
+def _present_at(directory: int, name: str) -> bool:
+    try:
+        os.stat(name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    return True
+
+
+def _git_directory_at(directory: int) -> bool:
+    # Linked worktrees use a .git file. Bare repositories keep these entries at their root.
+    return _present_at(directory, ".git") or all(
+        _present_at(directory, name) for name in ("HEAD", "objects", "refs")
+    )
+
+
+def _plan_directory_fd(path: str, policy: PlanPathPolicy) -> int:
+    if os.name == "nt":
+        raise PlanReadError(PlanRefusal.UNSUPPORTED)
+    return _directory_fd(path, follow_links=False, directory_check=policy.check)
+
+
+def inspect_plan_directory(path: str, policy: PlanPathPolicy) -> tuple[int, int]:
+    try:
+        directory = _plan_directory_fd(path, policy)
+        try:
+            return _identity(os.fstat(directory))
+        finally:
+            os.close(directory)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+
+
+def _check_plan_leaf(
+    info: os.stat_result, max_bytes: int, *, before: os.stat_result | None = None
+) -> None:
+    if stat.S_ISLNK(info.st_mode):
+        raise PlanReadError(PlanRefusal.SYMLINK)
+    if not stat.S_ISREG(info.st_mode) or _is_reparse(info) or not _owned(info):
+        raise PlanReadError(PlanRefusal.NOT_REGULAR)
+    if info.st_nlink != 1:
+        raise PlanReadError(PlanRefusal.HARD_LINK)
+    if info.st_size > max_bytes:
+        raise PlanReadError(PlanRefusal.TOO_LARGE)
+    if before is not None and _identity(before) != _identity(info):
+        raise PlanReadError(PlanRefusal.CHANGED)
+
+
+def _inspect_plan_leaf(directory: int, name: str, max_bytes: int) -> os.stat_result:
+    info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    _check_plan_leaf(info, max_bytes)
+    return info
+
+
+def inspect_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> None:
+    """Check a declared leaf by metadata for diagnostics and before any content open."""
+    try:
+        directory = _plan_directory_fd(os.path.dirname(path), policy)
+        try:
+            _inspect_plan_leaf(directory, os.path.basename(path), max_bytes)
+        finally:
+            os.close(directory)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+
+
+def open_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> int:
+    """Recheck under a held parent. A leaf swap cannot redirect the content read."""
+    try:
+        directory = _plan_directory_fd(os.path.dirname(path), policy)
+        try:
+            name = os.path.basename(path)
+            before = _inspect_plan_leaf(directory, name, max_bytes)
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            try:
+                _check_plan_leaf(os.fstat(fd), max_bytes, before=before)
+            except BaseException:
+                os.close(fd)
+                raise
+        finally:
+            os.close(directory)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+    return fd
+
+
+def read_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> bytes:
+    try:
+        with os.fdopen(open_plan_source(path, policy, max_bytes), "rb") as stream:
+            data = stream.read(max_bytes + 1)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+    if len(data) > max_bytes:
+        raise PlanReadError(PlanRefusal.TOO_LARGE)
+    return data
+
+
+def read_plan_settings(path: str, max_bytes: int) -> bytes:
+    try:
+        os.lstat(path)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+    policy = PlanPathPolicy(settings_file=True)
+    inspect_plan_source(path, policy, max_bytes)
+    return read_plan_source(path, policy, max_bytes)
+
+
+def list_plan_names(
+    path: str, policy: PlanPathPolicy, matches: Callable[[str], bool], max_files: int
+) -> tuple[str, ...]:
+    try:
+        directory = _plan_directory_fd(path, policy)
+        try:
+            names = []
+            with os.scandir(directory) as entries:
+                for index, entry in enumerate(entries, start=1):
+                    if index > 4096:
+                        raise PlanReadError(PlanRefusal.TOO_MANY)
+                    if matches(entry.name):
+                        names.append(entry.name)
+                        if len(names) > max_files:
+                            raise PlanReadError(PlanRefusal.TOO_MANY)
+        finally:
+            os.close(directory)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+    return tuple(sorted(names))
 
 
 def _owner_directory_fd(
