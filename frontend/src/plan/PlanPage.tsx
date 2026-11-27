@@ -1,9 +1,12 @@
 import { type ReactNode, useId } from 'react';
 import { PLAN_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
+import { cn } from '../lib/utils';
 import { fragmentForRoute } from '../router/grammar';
 import { Badge } from '../ui/badge';
+import { buttonVariants } from '../ui/button';
 import { Card } from '../ui/card';
-import { Icon } from '../ui/icons';
+import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
+import { titleLink } from '../ui/link';
 import type {
   PlanGoal,
   PlanLaneState,
@@ -15,11 +18,20 @@ import type {
 } from './model';
 
 const stateLabels = {
-  done: 'Done',
-  'in-progress': 'In progress',
   blocked: PLAN_WORDS.blocked,
+  'in-progress': 'In progress',
   planned: 'Planned',
+  done: 'Done',
 } satisfies Record<PlanLaneState, string>;
+
+const sessionStates = {
+  working: { word: SESSION_ROW_WORDS.working, ink: 'text-[var(--status-working-ink)]' },
+  waiting: { word: SESSION_ROW_WORDS.waitingOnYou, ink: 'text-[var(--status-waiting-ink)]' },
+  quiet: { word: SESSION_ROW_WORDS.quiet, ink: 'text-[var(--status-quiet-ink)]' },
+  ended: { word: SESSION_ROW_WORDS.ended, ink: 'text-[var(--status-ended-ink)]' },
+} as const;
+
+const rowLayout = 'flex min-w-0 flex-col items-start gap-x-6 gap-y-3 leading-6 sm:flex-row';
 
 const refusalReasons = {
   unreadable: 'The source could not be read.',
@@ -72,26 +84,45 @@ function RepoDate({ date }: { readonly date: PlanRepoDate }) {
   );
 }
 
-function SessionLinks({ sessions }: { readonly sessions: readonly PlanSessionReference[] }) {
-  if (sessions.length === 0) return null;
+function PlanSessionRef({
+  href,
+  name,
+  state,
+}: Pick<PlanSessionReference, 'name' | 'state'> & { readonly href: string }) {
+  const { word, ink } = sessionStates[state];
   return (
-    <span className="inline-flex flex-wrap gap-1">
-      {sessions.map(({ key, name }) => {
+    <a
+      href={href}
+      aria-label={`Open session ${name}, ${word}`}
+      className={cn(
+        buttonVariants({ variant: 'native' }),
+        titleLink,
+        'inline-flex items-center justify-end gap-1.5 rounded-control text-label text-muted-foreground',
+      )}
+    >
+      <span role="img" aria-label={word} className={cn('grid shrink-0 place-items-center', ink)}>
+        <Icon name={SESSION_STATE_ICONS[word]} size={16} />
+      </span>
+      <span className="max-w-[28ch] truncate">{name}</span>
+    </a>
+  );
+}
+
+function SessionReferences({ sessions }: { readonly sessions: readonly PlanSessionReference[] }) {
+  if (sessions.length === 0) return null;
+  const shown = sessions.slice(0, 3);
+  const remaining = sessions.length - shown.length;
+  return (
+    // Only the outside margins are negative, so stacked 44 px targets never overlap.
+    <div className="-my-2.5 flex max-w-full flex-none flex-col items-start sm:items-end">
+      {shown.map(({ key, ...session }) => {
         const href = fragmentForRoute(key);
-        const label = `Open session ${name}`;
-        return (
-          <a
-            key={href}
-            href={href}
-            aria-label={label}
-            title={label}
-            className="inline-grid size-8 place-items-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <Icon name="go-to-page" />
-          </a>
-        );
+        return <PlanSessionRef key={href} href={href} {...session} />;
       })}
-    </span>
+      {remaining > 0 && (
+        <p className="m-0 text-label text-muted-foreground">and {remaining} more</p>
+      )}
+    </div>
   );
 }
 
@@ -117,24 +148,29 @@ function WaitingOnYou({
               </h3>
               <ul role="list" aria-label="Open asks" className="m-0 grid list-none gap-3 p-0">
                 {asks.map(({ id, text, at, source, lane }) => (
-                  <li key={id} className="grid gap-1">
-                    <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
-                    <p className="m-0 flex flex-wrap items-center gap-x-2 text-label text-muted-foreground">
-                      <time dateTime={at}>
-                        {new Date(at).toLocaleString(undefined, {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        })}
-                      </time>
-                      <span>from the log</span>
-                      <span>
+                  <li key={id} className={rowLayout}>
+                    <div className="grid min-w-0 flex-1 gap-1">
+                      <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
+                      <p className="m-0 text-label leading-relaxed text-muted-foreground">
+                        Asked{' '}
+                        <time dateTime={at}>
+                          {new Date(at).toLocaleString(undefined, {
+                            dateStyle: 'medium',
+                            timeStyle: 'short',
+                          })}
+                        </time>
+                        {' · from the log · '}
                         {source}
-                        {lane && ` · ${PLAN_WORDS.lane.toLowerCase()} ${lane}`}
-                      </span>
-                      <SessionLinks
-                        sessions={lanes.find(({ title }) => title === lane)?.sessions ?? []}
-                      />
-                    </p>
+                      </p>
+                      {lane && (
+                        <p className="m-0 text-label leading-relaxed text-muted-foreground">
+                          {PLAN_WORDS.lane}: {lane}
+                        </p>
+                      )}
+                    </div>
+                    <SessionReferences
+                      sessions={lanes.find(({ title }) => title === lane)?.sessions ?? []}
+                    />
                   </li>
                 ))}
               </ul>
@@ -158,9 +194,12 @@ function WaitingOnYou({
                       <a
                         href={href}
                         aria-label={title}
-                        className="group grid gap-1 rounded-control text-foreground no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                        className={cn(
+                          buttonVariants({ variant: 'native' }),
+                          'group grid gap-1 rounded-control text-foreground no-underline',
+                        )}
                       >
-                        <span className="max-w-[var(--measure)] font-semibold underline decoration-[var(--line)] underline-offset-[3px] group-hover:decoration-current">
+                        <span className="max-w-[var(--measure)] font-semibold underline-offset-[3px] group-hover:underline group-focus-visible:underline">
                           {title}
                         </span>
                         <span className="text-label text-muted-foreground">
@@ -211,15 +250,24 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
           <p className="m-0 font-semibold">
             {done} of {total} {total === 1 ? 'lane is' : 'lanes are'} done
           </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3">
             {groups.map(({ state, label, lanes }) => (
-              <div key={state} className="min-w-0 rounded-control bg-muted px-3 py-2">
-                <h4 className="m-0 text-label font-semibold">{label}</h4>
-                <ul role="list" aria-label={label} className="m-0 mt-1 grid list-none gap-1 p-0">
+              <div
+                key={state}
+                className="grid min-w-0 gap-1 border-0 border-solid border-[var(--rule)] not-first:border-t not-first:pt-3"
+              >
+                <h4 className="m-0 text-label font-semibold text-muted-foreground">{label}</h4>
+                <ul role="list" aria-label={label} className="m-0 list-none p-0">
                   {lanes.map(({ id, title, sessions }) => (
-                    <li key={id} className="flex flex-wrap items-center gap-x-1">
-                      <span>{title}</span>
-                      <SessionLinks sessions={sessions} />
+                    <li
+                      key={id}
+                      className={cn(
+                        rowLayout,
+                        'border-0 border-solid border-[var(--rule)] py-3 first:pt-0 last:pb-0 not-first:border-t',
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 text-body">{title}</span>
+                      <SessionReferences sessions={sessions} />
                     </li>
                   ))}
                 </ul>

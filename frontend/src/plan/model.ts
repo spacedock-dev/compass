@@ -17,6 +17,8 @@ export type PlanLaneState = 'done' | 'in-progress' | 'blocked' | 'planned';
 export interface PlanSessionReference {
   readonly key: SessionRoute;
   readonly name: string;
+  // Synthetic here. The server will supply the matched session's state.
+  readonly state: 'working' | 'waiting' | 'quiet' | 'ended';
 }
 
 export interface PlanGoal {
