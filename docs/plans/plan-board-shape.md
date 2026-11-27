@@ -1,8 +1,11 @@
 # Plan: the plan board shape
 
-Status: ruled, not built. The owner ruled every decision below on 2026-11-27, so they are decisions
-and not proposals. The build milestone is written from this file. Delete it once the board ships and
-its contents have moved to `SECURITY.md`, `MANUAL.md` and the design records.
+Status: the board is built; the agent summary is not. The owner ruled every decision below on
+2026-11-27, so they are decisions and not proposals. The Plan page, its settings, readers, dates and
+the loopback-only `/api/plan` route have shipped, and their rules now live in `SECURITY.md`,
+`MANUAL.md`, `HOW_TO_USE.md` and the design records. What remains is
+[the agent summary](#the-agent-summary) and its SessionStart hook. Delete this file once that ships
+and its contents have moved to the same owners.
 
 The questions are in three GitHub issues: [what the board reads](https://github.com/spacedock-dev/compass/issues/1103),
 [how a new session gets its slice](https://github.com/spacedock-dev/compass/issues/1104) and
@@ -150,17 +153,21 @@ Decided in [#1104](https://github.com/spacedock-dev/compass/issues/1104), owner 
 
 ## SECURITY.md changes the build will make
 
-SECURITY.md is not edited now, because nothing is built. When the build lands, it adds, in outline:
+The board's build added these to SECURITY.md:
 
 - a read section for the plan settings file and the sources it names, following `reader_checks`;
 - the new git command family (`git blame --first-parent`, local refs only) and its flags;
 - the closed list of published plan fields, and the rule that URLs become hosts;
 - the loopback-only rule for plan routes and the statement that plan text never enters the history
   store;
+- the `--no-plan` switch;
+- the limit that Compass cannot detect health information or confidential text in the plan files.
+
+The agent summary still owes, when it lands:
+
 - a row on what can reach into a session: the opt-in summary, what it contains, and that it goes to
   the harness's model provider;
-- the `--no-plan` switch and the off-by-default summary hook;
-- the limit that Compass cannot detect health information or confidential text in the plan files.
+- the off-by-default summary hook.
 
 ## Test plan
 

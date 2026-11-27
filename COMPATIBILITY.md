@@ -75,6 +75,7 @@ runs the newest-CPython leg on Linux.
 | Terminal raise from the gate queue | yes (tmux, one attached client) | not yet | not yet | not yet |
 | Claude quota token read (the usage fetch) | Keychain via `security`; the first read can prompt | credential file | credential file | credential file (Linux-side home) |
 | Cursor quota token read (the usage fetch) | Keychain via `security`, service `cursor-access-token` | no (see below) | no (see below) | no (see below) |
+| Plan board (reads of the files `compass-plan.json` names) | yes | yes | no (refused: guarded plan reads are unavailable) | yes (Linux-side files) |
 
 Exactly one layer delivers a given popup: the server where it has a native backend, the page otherwise. `/api/data` reports which as `native_notify`. The split covers an arriving `ask_operator` question as well as a needs-input transition, which is why the ask rows above read the same way. It covers a session going quiet too, with one asymmetry the rows record and the sentence cannot: the native layer fires off Claude's own idle hook and so reaches only Claude, while the page has no hook and fires on any harness's row when it stops looking busy. Those are near the same moment and not the same event, so the wording differs by layer. Both layers are harness-independent: the server decides once per collected row, whatever harness produced it, so a Codex gate is delivered on macOS exactly as a Claude one is. That is new. The server used to fire only from Claude's collector, which left a gate on any other harness with no popup on macOS at all while the page stood down for it.
 
@@ -106,6 +107,14 @@ tmux bridge consumes registration capabilities only after POSIX ownership, mode 
 checks; Windows cannot pass those checks. The registration client reports this platform
 restriction. Shutdown can still remove its own registration file on every platform: a separate
 bounded regular-file read compares the server generation without trusting any capabilities.
+
+The plan board is unsupported on native Windows too. Its reads walk held POSIX directory
+descriptors and refuse symlinks and hard links, and Windows has no equivalent in this build. A
+`compass-plan.json` there is refused with the reason "guarded plan reads are unavailable on this
+platform", which `--diagnose` reports, and no plan file is read. The rest of the dashboard is
+unaffected.
+[Plan settings and source admission](SECURITY.md#plan-settings-and-source-admission) owns the
+read rules.
 
 Verified by hand: on macOS, a `--daemon` server delivers the native notification with no browser tab
 open at all, since the double-fork keeps the daemon in the user's own login session rather than
@@ -279,4 +288,13 @@ agy plugin validate ./compass
      it, and described how study screening keeps unmasked layout. The harness and platform
      matrices still apply. -->
 
-<!-- docs-synced-through: 1e3bf696 (2026-11-25) -->
+<!-- Reconciled 1e3bf696..42773b2f: the previous docs pass, two releases, board actions for readers
+     signed in through a login proxy, the recorded SessionStart hook payloads, and the plan board
+     build (settings, source readers, dates, the loopback-only /api/plan route, lane state, privacy
+     edges, tracker headers, link forms, the Plan page and its Sources list). This pass added the
+     plan board's Windows refusal to the platform matrix, the Plan route and API row to the bundled
+     references, and the Plan page to the README, the terminal guide, the walkthrough and the
+     promise map, and recorded which parts of the plan board plan remain. The harness matrix still
+     applies. -->
+
+<!-- docs-synced-through: 42773b2f (2026-11-27) -->

@@ -130,7 +130,10 @@ flowchart LR
 
 The server reads your agents' session records (transcripts, task files and SQLite databases) without
 changing them, and serves the dashboard to your browser. Everything the page loads ships with
-Compass, so opening it fetches nothing from the internet. The server listens only on `127.0.0.1`.
+Compass, so opening it fetches nothing from the internet. If you set up the plan board, the server
+also reads the plan files your settings name (committed ones through your local Git, with no
+fetch), and only a browser on the Compass computer can open Plan. Nothing from the plan leaves the
+machine. The server listens only on `127.0.0.1`.
 `--host 0.0.0.0` exposes it on every network interface with no password; read
 [SECURITY.md](../SECURITY.md#scope) first, and prefer an SSH tunnel.
 

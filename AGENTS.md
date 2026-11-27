@@ -57,6 +57,7 @@ compass/                           # plugin root: Claude Code, Codex, Antigravit
         │   ├── terminal_goal.py    # stdlib-only: fresh Intent goal reads and guarded terminal saves
         │   ├── terminal_project.py # stdlib-only: --project, ported from the board's project brief
         │   ├── collectors/         # one harness collector per file, one per supported harness
+        │   ├── plan/               # the plan board: settings, source admission, readers, dates, /api/plan
         │   └── web/                # the built React page, its integrity metadata and licenses, vendored
         │                           # terminal assets, fonts and the page loader (`page.py`)
         ├── agents/openai.yaml      # Codex presentation metadata

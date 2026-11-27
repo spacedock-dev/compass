@@ -283,6 +283,13 @@ the absence on every row, and the copy control is what remains. Compass does not
 for you. The one shape it is allowed is the session asking and Compass
 answering, as the [ask lane design](design-ask-lane.md) describes.
 
+If you keep your plan in files, the Plan page opens with Waiting on you: the open asks from your
+event log first, then the sessions waiting on a reply, followed by your goals and the lanes serving
+each one. It reads only the files you list in its settings, and only a browser on the Compass
+computer can open it. It shows how many of a goal's lanes are done and never forecasts a date. A
+lane's state comes from the one tracker row that names it, so a lane no row names, or two rows
+name, reads as not measured. [Set up the plan board](../HOW_TO_USE.md#set-up-the-plan-board).
+
 If you already run a Claude Code status line, `spacedock-compass --footer` can add how many other
 sessions are waiting on you. It counts by the same rule as the board's Needs you queue and
 `--sessions waiting`: questions an agent put to you through Compass count, and a waiting session
