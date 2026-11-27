@@ -260,7 +260,12 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
     def setUp(self) -> None:
         super().setUp()
         app = build_app()
-        app.config = dataclasses.replace(app.config, allowed_hosts=("board.example",))
+        app.config = dataclasses.replace(
+            app.config,
+            allowed_hosts=("board.example",),
+            login_proxy="exe.dev",
+            allowed_users=("reader@example.com",),
+        )
         self.coordinator = observation.Observation(app)
         self.httpd = make_server(application=app, observation=self.coordinator)
         self.httpd.bound_host = "0.0.0.0"
@@ -336,7 +341,21 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             ("X-Forwarded-Proto", "https"),
             ("X-Forwarded-Host", "board.example"),
         ]
-        headers = {"lan": named, "login-proxy": named + forwarded}.get(kind, headers)
+        # The board's own fetch sends same-origin fetch metadata, which a signed-in reader needs.
+        board_fetch = [("Sec-Fetch-Site", "same-origin")]
+        signed_in = [*board_fetch, ("X-ExeDev-Email", "reader@example.com")]
+        headers = {
+            "lan": named,
+            "login-proxy": named + forwarded,
+            "signed-in": named + forwarded + signed_in,
+            "signed-in-remote": named + signed_in,
+            "signed-in-unlisted": (
+                named + forwarded + board_fetch + [("X-ExeDev-Email", "other@example.com")]
+            ),
+            "signed-in-no-fetch-metadata": (
+                named + forwarded + [("X-ExeDev-Email", "reader@example.com")]
+            ),
+        }.get(kind, headers)
         if path == "/api/interaction/stream":
             headers += [
                 ("Upgrade", "websocket"),
@@ -349,7 +368,10 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
 
         def handler(instance: Any, request: Any, address: Any, server: Any) -> None:
             original(
-                instance, request, ("192.0.2.10", address[1]) if kind == "lan" else address, server
+                instance,
+                request,
+                ("192.0.2.10", address[1]) if kind in {"lan", "signed-in-remote"} else address,
+                server,
             )
 
         body = json.dumps(VALID_DISCARD).encode() if path == "/api/reading-long-discard" else b"[]"
@@ -492,6 +514,62 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
             with self.subTest(kind=kind):
                 self.request("POST", "/api/summary", kind)
                 self.assertNotIn(b"loopback-only", self.last_body)
+
+    def test_a_signed_in_reader_reaches_the_board_actions_and_nothing_else(self) -> None:
+        # The header admits exactly the routes behind the board's own buttons. Every other route,
+        # the desktop raise, the terminal, the status line's receipt and the terminal-only
+        # reads among them, answers exactly as it does for the same proxy without a reader.
+        reader = {
+            ("POST", path)
+            for path in (
+                "/api/correction",
+                "/api/correction/copied",
+                "/api/direction",
+                "/api/goal/find",
+                "/api/live-monitor",
+                "/api/reading",
+                "/api/reading-long-discard",
+                "/api/reading/cancel",
+                "/api/settings",
+                "/api/summary",
+                "/api/summary/cancel",
+                "/api/summary/delete",
+            )
+        } | {
+            ("GET", path)
+            for path in (
+                "/api/live-monitor",
+                "/api/reading-long-history",
+                "/api/reading-long-plan",
+                "/api/summary",
+            )
+        }
+        differences: list[str] = []
+        # exe.dev's proxy reaches the default loopback bind; a proxy elsewhere needs 0.0.0.0.
+        for bound in ("127.0.0.1", "0.0.0.0"):
+            self.httpd.bound_host = bound
+            for method, path in ROWS:
+                if path == "/api/stream":
+                    continue  # A stream answers 200 either way and never ends on its own.
+                without = self.request(method, path, "login-proxy")
+                with_reader = self.request(method, path, "signed-in")
+                differences.extend(
+                    f"{bound} {kind} {method} {path} differs from no reader"
+                    for kind in (
+                        "signed-in-remote",
+                        "signed-in-unlisted",
+                        "signed-in-no-fetch-metadata",
+                    )
+                    if self.request(method, path, kind) != without
+                )
+                if (method, path) in reader:
+                    if without != 403 or with_reader == 403:
+                        differences.append(f"{bound} {method} {path}: {without} -> {with_reader}")
+                elif with_reader != without:
+                    differences.append(
+                        f"{bound} {method} {path} changed: {without} -> {with_reader}"
+                    )
+        self.assertEqual([], differences, "\n".join(differences))
 
     def test_a_refused_board_action_names_admission_instead_of_a_restart(self) -> None:
         for kind in ("duplicate", "cross-port", "lan", "proxy"):

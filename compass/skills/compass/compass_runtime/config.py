@@ -194,6 +194,10 @@ class RuntimeConfig:
     launcher_path: Path
     host: str
     allowed_hosts: tuple[str, ...]
+    # The login proxy whose signed-in user header names a reader, and the readers it may name.
+    # Both empty unless the operator passed --login-proxy and --allow-user.
+    login_proxy: str
+    allowed_users: tuple[str, ...]
     port: int
     frontend_dev: DevelopmentFrontend | None
     window_hours: float
@@ -885,6 +889,50 @@ def normalize_allowed_host(value: str) -> str:
     return name
 
 
+# Each login proxy Compass can trust, and the one header it sets to the signed-in user's email.
+# A row is earned by a capture showing the proxy replaces any copy a client sends and refuses
+# an unauthenticated request before forwarding. exe.dev's:
+# docs/captures/exe-dev/login-proxy-headers-2026-11-26.jsonl
+LOGIN_PROXY_USER_HEADERS: Final = MappingProxyType({"exe.dev": "X-ExeDev-Email"})
+
+
+def normalize_login_proxy(value: str) -> str:
+    """One of the login proxies whose user header has been measured, case-insensitively."""
+    name = value.lower()
+    if name not in LOGIN_PROXY_USER_HEADERS:
+        raise ValueError("must be one of: " + ", ".join(sorted(LOGIN_PROXY_USER_HEADERS)))
+    return name
+
+
+def normalize_allowed_user(value: str) -> str:
+    """Validate one email address a login proxy may name, compared case-insensitively.
+
+    Deliberately narrower than RFC 5321: no quoted local part, no comment, no IP-literal domain,
+    and no space or comma, so a header value can never smuggle a second address past the
+    one-value check. A leading hyphen is refused because a daemon restart forwards the address
+    as its own argv token, where it would parse as an option. The domain follows the
+    --allow-host hostname rules.
+    """
+    local, separator, domain = value.lower().partition("@")
+    if (
+        not separator
+        or not value.isascii()
+        or len(value) > 254
+        or re.fullmatch(r"[a-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}", local, flags=re.ASCII) is None
+        or local.startswith((".", "-"))
+        or local.endswith(".")
+        or ".." in local
+    ):
+        raise ValueError(
+            "must be one email address such as name@example.com: ASCII, no spaces, quotes, "
+            "commas or angle brackets"
+        )
+    try:
+        return f"{local}@{normalize_allowed_host(domain)}"
+    except ValueError as exc:
+        raise ValueError(f"the part after @ {exc}") from exc
+
+
 def build_runtime_config(
     *,
     environ: Mapping[str, str],
@@ -894,6 +942,8 @@ def build_runtime_config(
     store_root_overrides: Mapping[str, str] | None = None,
     host: str = "127.0.0.1",
     allowed_hosts: tuple[str, ...] = (),
+    login_proxy: str = "",
+    allowed_users: tuple[str, ...] = (),
     port: int = 4553,
     window_hours: float = 24.0,
     spacedock_enabled: bool = True,
@@ -962,6 +1012,8 @@ def build_runtime_config(
         launcher_path=launcher_path,
         host=host,
         allowed_hosts=tuple(normalize_allowed_host(name) for name in allowed_hosts),
+        login_proxy=normalize_login_proxy(login_proxy) if login_proxy else "",
+        allowed_users=tuple(normalize_allowed_user(user) for user in allowed_users),
         port=port,
         frontend_dev=None,
         window_hours=window_hours,

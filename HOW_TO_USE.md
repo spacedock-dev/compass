@@ -610,6 +610,14 @@ machine: Summarize, Check progress, opening a later direction, corrections, Find
 monitor and saving Settings. Pressing one shows "This action works only on the computer running
 Compass, or through an ssh -L tunnel to it." Use the tunnel above for those.
 
+On an exe.dev VM the proxy runs on the VM itself and connects over loopback, so keep the default
+bind and name the VM with `--allow-host`; `--host 0.0.0.0` is not needed there. To let people the
+proxy has signed in run those actions too, add `--login-proxy exe.dev` and one `--allow-user` per
+email address. Everyone else, and anyone reaching the port some other way, still gets the
+refusal above. This relies on the VM staying private: if you share it publicly with
+`share set-public`, remove both flags. [MANUAL.md](MANUAL.md) has the rules for both flags, and
+[SECURITY.md](SECURITY.md#known-and-accepted) says what they trust.
+
 Both `--status` and `--stop` find a live instance by probing the port, so neither needs the home the
 dashboard was started with. Tested: a dashboard started under a scratch `COMPASS_HOME` was stopped
 by a `--stop` issued with no `COMPASS_HOME` at all, and its state file was cleaned up anyway, because

@@ -3073,7 +3073,8 @@ Prose shapes outside those named forms come back as typed: a password written in
 `token: value`, a JSON field and a `?token=` query are not masked, and only a value with a
 credential's own shape is redacted there. The text is read again from the bounded native transcript source, found by `observer.resolve_transcript`
 from the session's harness and id, and never from a path a client names. It is served to the same
-callers as `/api/data`: loopback only, same-origin, and refused to a document navigation and to a
+callers as `/api/data`: loopback only (or a reader signed in under `--login-proxy`, below),
+same-origin, and refused to a document navigation and to a
 same-site or cross-site fetch, as `POST /api/reading` is, and it answers 503 under
 `--no-annotations`. It writes nothing, stores nothing, reaches no model and sends nothing off the
 machine, and the text never enters session history: no published field carries it and the
@@ -3179,7 +3180,8 @@ adopted as the goal, does not open the evidence window of typed words, cannot be
 the assignment or an exact direction. Reader edits inside a copied correction are exempt from the
 later-direction floor: an edit made in Compass's box before copying is inside the digest, while an
 edit after pasting, a backspace that wipes the paste included, makes a different message that is
-the reader's own. The route is guarded as `POST /api/direction` is: loopback only, same-origin,
+the reader's own. The route is guarded as `POST /api/direction` is: loopback only (or a reader signed in under
+`--login-proxy`), same-origin,
 refused to a document navigation and to a same-site or cross-site fetch, and 503 under
 `--no-annotations`. Every accepted registration answers the same `{"ok": true}`, whether the session
 exists, whether its harness is read and whether that text was copied before, so the route says
@@ -5982,8 +5984,8 @@ somebody other than you. Two of the twenty-five store nothing durable of their o
 of a direction a session's user gave, which `/api/project-context` names by its first sentence, and
 `POST /api/correction` returns the goal and outcome lines a reader saved, composed as Steer back's
 correction, and, for a claim of the agent's the record contradicts or does not show, that one agent
-message's published title of at most 112 characters. Both answer only a loopback peer, so a
-non-default bind does not widen them. See the bounds for both under
+message's published title of at most 112 characters. Both answer only a loopback peer, or a
+reader signed in under `--login-proxy` (below), so a non-default bind alone does not widen them. See the bounds for both under
 [Check progress, Cancel and copied corrections](#analyze-drift-cancel-and-copied-corrections). `POST /api/usage/claude`
 also answers only a loopback peer. There is nothing to authenticate with on twenty-three of them, for the reason the
 ask-lane paragraph below gives: the page is served as fixed bytes with no per-run secret in them.
@@ -5994,7 +5996,7 @@ and Event ingress below is where it is stated. `POST /api/focus`'s capability bu
 injected into the served document, so anything that can load the board under a non-default bind can
 also ask for a raise, and `/api/data` names which rows would answer it. What that second gate
 actually separates is a page from a document navigation and from a local process that never fetched
-the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session; a terminal start can also adopt a drafted goal into the annotation store and record its disclosure notice after admission succeeds and its terminal receipt exists; it answers only a loopback peer that is not a document navigation, and `start` is the one action that begins to spend.
+the board, which is the exposure the focus section states. `POST /api/live-monitor` holds an in-memory lease for a Claude Code session; a terminal start can also adopt a drafted goal into the annotation store and record its disclosure notice after admission succeeds and its terminal receipt exists; it answers only a loopback peer, or a reader signed in under `--login-proxy`, that is not a document navigation, and `start` is the one action that begins to spend.
 
 What the non-default bind does *not* spend is the rebinding defense. The Host and Origin gate widens
 to addresses and, only with `--allow-host NAME`, the exact DNS names the operator explicitly
@@ -6011,17 +6013,49 @@ machine. Rebinding needs a name to rebind. Refusing untrusted names closes that 
 leaving literal-address access available to an operator opening a remote board.
 
 `--allow-host` is intended for that last setting: an authenticated HTTPS proxy whose public
-hostname is the only way to reach a VM. For example, start with
-`--daemon --host 0.0.0.0 --port 8000 --allow-host board.example.com`.
+hostname is the only way to reach a VM. When the proxy runs on the same machine and connects over
+loopback, as exe.dev's was measured to
+([capture](docs/captures/exe-dev/login-proxy-headers-2026-11-26.jsonl)), keep the default bind:
+`--daemon --port 8000 --allow-host board.example.com`. Only a proxy on another machine needs
+`--host 0.0.0.0`, which also opens the port on every other interface, including a container
+bridge on the same machine.
 Repeat the flag for another exact name. Names are case-insensitive and one trailing dot is
 stripped; only ASCII DNS labels are accepted (punycode for internationalized names). Invalid
 names, IP literals, wildcards and values containing a scheme, path or port are startup errors.
-The flag alone changes no listening address. On the default loopback bind it warns and admits
-no additional hosts; the allowlist also stays inactive on any other loopback bind, including
-all IPv4 addresses in `127.0.0.0/8`, `::1` and `localhost`. Daemon detach, Windows respawn and
-automatic starts from terminal operations retain every name and any explicit bind.
-Names alone still start on loopback; only an explicit `--host 0.0.0.0`
-opens remote access. A read starts nothing, and an existing dashboard keeps its own configuration.
+The flag alone changes no listening address. On a loopback bind, the default or any other
+address in `127.0.0.0/8`, `::1` or `localhost`, the names are admitted for whatever reaches that
+loopback, which is the local proxy and the machine's own processes. A loopback bind admits no
+remote address literal. Daemon detach, Windows respawn and automatic starts from terminal
+operations retain every name and any explicit bind. Names alone still start on loopback; only an
+explicit `--host 0.0.0.0` opens the port to other machines. A read starts nothing, and an existing
+dashboard keeps its own configuration.
+
+`--login-proxy exe.dev` with one or more `--allow-user EMAIL` lets a reader that proxy has signed
+in run the board's own actions (the loopback-only reader routes below) through an allowed name.
+It trusts one header, `X-ExeDev-Email`, and only because the capture shows the proxy replaces any
+copy a client sends, in either case, and refuses an unsigned request before it reaches the VM.
+That was measured on a private VM. A VM shared with `share set-public` passes unsigned requests
+through, and whether the proxy still removes a header a client sends on those was not measured,
+so the trust holds only while the VM stays private. Compass cannot tell the two apart: on a public
+VM, drop `--login-proxy` and `--allow-user`.
+A request qualifies only when all of these hold: the TCP peer is loopback, Host is an allowed name
+with an admitted port, the usual named Origin rules pass, `Sec-Fetch-Site` is `same-origin`
+(stricter than the loopback rule, because the proxy's sign-in cookie rides a link from another
+site, and on a browser without fetch metadata such a link to a GET route would otherwise pass for
+the board's own fetch; such a browser can read the board but not run its actions), exactly one user
+header is present, and its address, normalized as the flag's own value is, is on the list.
+`X-Forwarded-For` and `X-Real-IP` are never read for this, because the capture shows a client's
+own values reach Compass unchanged. A peer on any other interface is refused even with a matching
+header, because it could have written the header itself. A process on the Compass machine can
+send the header too; it already holds every loopback power, so this grants it nothing new. Each
+flag needs the others and a missing one is a usage error, so a reader list never sits unenforced.
+The list gates only those reader routes. Anyone the proxy lets reach an allowed name, on a private
+VM the people it is shared with, can still read `/api/data` and use the other board writes,
+`/api/shutdown` and `/api/answer` among them, exactly as the `--host` paragraph above describes for
+any allowed name. No other HTTP proxy or tunnel may forward to the Compass port beside the login
+proxy: it would also connect from loopback and pass its own remote client's user header through.
+Raising a terminal window, the terminal interaction and the status line's quota receipt stay
+direct loopback only, and model spending keeps its own consent, pause and daily limits.
 
 For an allowed name, Host may omit the port or explicitly use the listening port, 80 or 443.
 Ports in named Host and Origin authorities must be nonzero decimal numbers without leading
@@ -6069,10 +6103,12 @@ metadata, still gets a bare 403. The page shows its own copy of the sentence and
 
 Loopback-only routes require both a loopback TCP peer and a loopback Host authority: a
 `LOCAL_HOSTS` name (`localhost`, `127.0.0.1`, `::1`) or a loopback IP. An allowed DNS name never
-grants those powers, even when a local reverse proxy connects from `127.0.0.1`. They also refuse
-any request carrying `Forwarded`, `Via`, `X-Real-IP` or any `X-Forwarded-*` header, whatever its
-peer and Host, so a proxied request never reaches them. Compass reads those headers only to refuse;
-it never infers identity or authentication from them. The hook forwarders' destinations remain
+grants those powers, even when a local reverse proxy connects from `127.0.0.1`, except that the
+reader routes also admit a signed-in reader under `--login-proxy` and `--allow-user`, as above.
+Apart from that reader, they refuse any request carrying `Forwarded`, `Via`, `X-Real-IP` or any
+`X-Forwarded-*` header, whatever its peer and Host, so a proxied request never reaches them.
+Compass reads those headers only to refuse; it never infers identity or authentication from them.
+The one identity it reads is the measured login proxy's user header, as above. The hook forwarders' destinations remain
 loopback-only.
 
 A reverse proxy in front of `--allow-host` must forward the client's exact Host: the allowed name

@@ -1685,8 +1685,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
     def _host_admitted(self, host: str) -> bool:
         """Whether a host string is local enough for this server's bind.
 
-        A remote bind admits reachable IP literals and only the DNS names the
-        operator explicitly trusted. Never resolve a name to decide admission:
+        Any bind admits the DNS names the operator explicitly trusted, and a remote
+        bind also admits reachable IP literals. Never resolve a name to decide admission:
         that would admit an attacker's name as soon as its DNS rebinds here.
         """
         # Measured rebinding exposure: SECURITY.md's Known and accepted section.
@@ -1694,7 +1694,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return True
         bound = getattr(self.server, "bound_host", "127.0.0.1")
         if self._loopback_host(bound):
-            return False
+            # A login proxy on this machine reaches a loopback bind, so a trusted name needs no
+            # wider one. exe.dev's does: docs/captures/exe-dev/login-proxy-headers-2026-11-26.jsonl
+            return self._name_allowed(host)
         try:
             literal = ipaddress.ip_address(host)
         except ValueError:
@@ -1723,7 +1725,6 @@ class _RequestHandler(BaseHTTPRequestHandler):
         names = getattr(config, "allowed_hosts", ())
         return (
             isinstance(names, tuple)
-            and not self._loopback_host(getattr(self.server, "bound_host", "127.0.0.1"))
             and host.isascii()
             and host.lower().removesuffix(".") not in self.LOCAL_HOSTS
             and host.lower().removesuffix(".") in names
@@ -2081,6 +2082,57 @@ class _RequestHandler(BaseHTTPRequestHandler):
             self._direct_loopback() and site not in {"same-site", "cross-site"} and self._local_ok()
         )
 
+    def _signed_in_reader(self) -> bool:
+        """Whether a trusted login proxy on this machine names a reader the operator listed.
+
+        Only with `--login-proxy` and `--allow-user`, and only for a loopback peer whose Host is
+        an allowed name: the proxy connects from loopback, and a peer on any other interface
+        could set the header itself. Exactly one header value, compared whole after the CLI's
+        own normalization. Forwarding headers are never read here: the capture behind this,
+        docs/captures/exe-dev/login-proxy-headers-2026-11-26.jsonl, shows a client's
+        X-Forwarded-For and X-Real-IP reach Compass unchanged. A process on this machine can send
+        the header too, but it already holds every power a direct loopback reader has, so the
+        header gives it nothing new.
+        """
+        config = getattr(getattr(self.server, "application", None), "config", None)
+        header = runtime_config.LOGIN_PROXY_USER_HEADERS.get(getattr(config, "login_proxy", ""))
+        users = getattr(config, "allowed_users", ())
+        if (
+            header is None
+            or not users
+            or not ipaddress.ip_address(self.client_address[0]).is_loopback
+        ):
+            return False
+        authority = self.headers.get("Host") or ""
+        if not self._name_allowed(normalize_host(authority)) or (
+            self._allowed_authority(authority) is None
+        ):
+            return False
+        values = self.headers.get_all(header, [])
+        if len(values) != 1:
+            return False
+        try:
+            return runtime_config.normalize_allowed_user(values[0].strip(" \t")) in users
+        except ValueError:
+            return False
+
+    def _reader_resource_ok(self) -> bool:
+        """`_loopback_resource_ok`, or the same checks for a signed-in reader a login proxy names.
+
+        The reader routes: what the board's own buttons spend or open. The native desktop, the
+        terminal interaction and the status line's receipt stay `_loopback_resource_ok` alone,
+        because they act on this machine's screen and processes rather than on the board.
+
+        A signed-in reader must also send `Sec-Fetch-Site: same-origin`, not merely lack a
+        cross-site value: the proxy's sign-in cookie rides a top-level link from another site, and
+        on a browser without fetch metadata that link would otherwise pass for the board's own
+        fetch on the GET routes, where no Origin is sent and one of them can spend a model call.
+        """
+        site = (self.headers.get("Sec-Fetch-Site") or "").lower()
+        return self._loopback_resource_ok() or (
+            self._signed_in_reader() and site == "same-origin" and self._local_ok()
+        )
+
     def _proxied(self) -> bool:
         """Whether a proxy says it forwarded this request.
 
@@ -2093,8 +2145,8 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _resource_admitted(self) -> bool:
-        """`_loopback_resource_ok` for a POST, which a document navigation never carries."""
-        return not self._is_document_navigation() and self._loopback_resource_ok()
+        """`_reader_resource_ok` for a POST, which a document navigation never carries."""
+        return not self._is_document_navigation() and self._reader_resource_ok()
 
     def _refuse_resource(self) -> None:
         """Refuse a loopback-only POST, saying why when the request came from somewhere else.
@@ -2354,7 +2406,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
                 refresh
                 and parse_qs(url.query).get("observer_model") == ["1"]
                 and not self._is_document_navigation()
-                and self._loopback_resource_ok()
+                and self._reader_resource_ok()
                 and reading_policy.status(application.config, now=application.clock())["consent"]
             ),
         )
@@ -2476,7 +2528,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
 
     def _live_monitor_state(self, url: ParseResult) -> None:
         """Read one lease without collecting history or renewing any holder."""
-        if not self._loopback_resource_ok() or self._is_document_navigation():
+        if not self._reader_resource_ok() or self._is_document_navigation():
             self.send_error(403)
             return
         query = parse_qs(url.query)
@@ -2555,7 +2607,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         )
 
     def _summary_get(self, url: ParseResult) -> None:
-        if not self._loopback_resource_ok() or self._is_document_navigation():
+        if not self._reader_resource_ok() or self._is_document_navigation():
             self.send_error(403)
             return
         query = parse_qs(url.query)
@@ -3010,7 +3062,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         nothing; and every admitted body is answered with success, because a status line must
         never see a Compass error.
         """
-        if not self._resource_admitted():
+        if self._is_document_navigation() or not self._loopback_resource_ok():
             self._refuse_resource()
             return
         try:
@@ -3516,7 +3568,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         """
         # Admission precedes availability reads: a remote peer learns neither body validity
         # nor whether a reading provider or its store is enabled.
-        if self._is_document_navigation() or not self._loopback_resource_ok():
+        if self._is_document_navigation() or not self._reader_resource_ok():
             return 403
         config = self.server.application.config
         # Pause model calls also stops goal summaries, which need neither the
@@ -3549,7 +3601,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         return None
 
     def _reading_long_plan(self, url: ParseResult) -> None:
-        if self._is_document_navigation() or not self._loopback_resource_ok():
+        if self._is_document_navigation() or not self._reader_resource_ok():
             self._reject(403)
             return
         query = parse_qs(url.query, keep_blank_values=True)
@@ -3568,7 +3620,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
         self._send(json.dumps({"ok": True, "long_plan": preview}).encode(), "application/json")
 
     def _reading_long_history(self, url: ParseResult) -> None:
-        if self._is_document_navigation() or not self._loopback_resource_ok():
+        if self._is_document_navigation() or not self._reader_resource_ok():
             self._reject(403)
             return
         query = parse_qs(url.query, keep_blank_values=True)

@@ -1154,6 +1154,10 @@ def spawn_argv(config: RuntimeConfig, args: argparse.Namespace) -> list[str]:
         argv.extend(["--host", host])
     for name in config.allowed_hosts:
         argv.extend(["--allow-host", name])
+    if config.login_proxy:
+        argv.extend(["--login-proxy", config.login_proxy])
+    for user in config.allowed_users:
+        argv.extend(["--allow-user", user])
     return argv
 
 
