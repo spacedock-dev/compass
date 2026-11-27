@@ -454,7 +454,9 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
                   {source.name}
                 </span>
                 {source.status === 'ok' ? (
-                  <span className="text-label text-muted-foreground">Read</span>
+                  <span className="text-label text-muted-foreground">
+                    {source.read === undefined ? 'Read' : `${source.read} read`}
+                  </span>
                 ) : (
                   <>
                     <span className="text-label font-semibold text-muted-foreground">Refused</span>

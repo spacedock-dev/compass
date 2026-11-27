@@ -2,6 +2,8 @@ import { act, fireEvent, screen, within } from '@testing-library/react';
 import { expect } from 'storybook/test';
 import { describe, it, vi } from 'vitest';
 import {
+  crowdedSourceRows,
+  crowdedSources,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -295,7 +297,16 @@ describe('the Plan destination follows the published plan', () => {
   ])('says why a source was refused: %s', async (reason, sentence) => {
     const page = mountPlan({
       ...readyPlan,
-      sources: [{ label: 'Pickup tracker', kind: 'tracker', state: 'refused', reason }],
+      sources: [
+        {
+          label: 'Pickup tracker',
+          kind: 'tracker',
+          fileLabel: null,
+          position: null,
+          state: 'refused',
+          reason,
+        },
+      ],
     });
     await page.settle();
     const row = within(screen.getByRole('region', { name: 'Sources' })).getByRole('listitem');
@@ -304,6 +315,140 @@ describe('the Plan destination follows the published plan', () => {
     // The server's own words never reach the page; only the sentence does.
     expect(row.textContent).toBe(`Pickup trackerRefused${sentence}`);
   });
+
+  it('tells files of one kind apart, folds a missing draft branch and counts the lane briefs', async () => {
+    const page = mountPlan({ ...readyPlan, sources: crowdedSources });
+    await page.settle();
+    const rows = within(screen.getByRole('region', { name: 'Sources' })).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual(crowdedSourceRows);
+  });
+
+  it('names a draft file that was read by its label or its kind and place', async () => {
+    const file = (kind: string, position: number | null, fileLabel: string | null) => ({
+      label: 'Model ship',
+      kind,
+      fileLabel,
+      position,
+      state: 'ok',
+      reason: null,
+    });
+    const page = mountPlan({
+      ...readyPlan,
+      sources: [
+        file('inventory', 1, null),
+        file('inventory', 2, 'Spare parts'),
+        file('draft inventory', 1, null),
+        file('draft inventory', 2, 'Spare parts'),
+        // A newer server's place that is not a whole number drops only that row.
+        file('tracker', 1.5, null),
+        {
+          label: 'Lane briefs',
+          kind: 'lane briefs',
+          fileLabel: null,
+          position: null,
+          state: 'ok',
+          reason: null,
+        },
+      ],
+    });
+    await page.settle();
+    const rows = within(screen.getByRole('region', { name: 'Sources' })).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Model ship · inventory 1Read',
+      'Model ship · Spare partsRead',
+      'Model ship · draft · inventory 1Read',
+      'Model ship · draft · Spare partsRead',
+      'Lane briefsRead',
+    ]);
+  });
+
+  it.each([
+    [
+      'a draft file refused for another reason keeps its own row',
+      [
+        ['Model ship', 'inventory', 1, null],
+        ['Model ship', 'inventory', 2, null],
+        ['Model ship', 'draft inventory', 1, 'private'],
+        ['Model ship', 'draft inventory', 2, 'branch missing'],
+      ],
+      [
+        'Model ship · inventory 1Read',
+        'Model ship · inventory 2Read',
+        'Model ship · draft · inventory 1RefusedMarked private.',
+        'Model ship · draftRefusedThe branch is missing.',
+      ],
+    ],
+    [
+      'a missing primary branch keeps one row per file',
+      [
+        ['Model ship', 'inventory', 1, 'branch missing'],
+        ['Model ship', 'inventory', 2, 'branch missing'],
+      ],
+      [
+        'Model ship · inventory 1RefusedThe branch is missing.',
+        'Model ship · inventory 2RefusedThe branch is missing.',
+      ],
+    ],
+    [
+      'two repositories with a missing draft branch get a folded row each',
+      [
+        ['Model ship', 'goals', null, null],
+        ['Model ship', 'draft goals', null, 'branch missing'],
+        ['Lamp', 'goals', null, null],
+        ['Lamp', 'draft goals', null, 'branch missing'],
+        ['Lamp', 'draft tracker', null, 'branch missing'],
+      ],
+      [
+        'Model ship · goalsRead',
+        'Model ship · draftRefusedThe branch is missing.',
+        'Lamp · goalsRead',
+        'Lamp · draftRefusedThe branch is missing.',
+      ],
+    ],
+    [
+      'a refused brief shows when no brief was read',
+      [
+        ['Lane briefs', 'lane briefs', null, null],
+        ['mast', 'lane brief', null, 'malformed'],
+      ],
+      ['Lane briefs0 read', 'Lane brief · mastRefusedThe source did not have the expected format.'],
+    ],
+    [
+      'refused briefs without a lane name are counted by reason',
+      [
+        ['Lane briefs', 'lane briefs', null, null],
+        ['deck', 'lane brief', null, null],
+        ['', 'lane brief', null, 'unsafe lane identifier'],
+        ['', 'lane brief', null, 'malformed'],
+        ['', 'lane brief', null, 'malformed'],
+      ],
+      [
+        'Lane briefs1 read',
+        'Lane briefRefusedThe lane name has characters Compass does not accept.',
+        '2 lane briefsRefusedThe source did not have the expected format.',
+      ],
+    ],
+  ] as const)(
+    'groups sources only where they say one thing: %s',
+    async (_case, published, rows) => {
+      const page = mountPlan({
+        ...readyPlan,
+        sources: published.map(([label, kind, position, reason]) => ({
+          label,
+          kind,
+          fileLabel: null,
+          position,
+          state: reason === null ? 'ok' : 'refused',
+          reason,
+        })),
+      });
+      await page.settle();
+      const items = within(screen.getByRole('region', { name: 'Sources' })).getAllByRole(
+        'listitem',
+      );
+      expect(items.map((row) => row.textContent)).toEqual(rows);
+    },
+  );
 
   it('draws two goals that share an id, each once, without a duplicate key', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);

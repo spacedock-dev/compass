@@ -10,6 +10,10 @@ export interface PublishedPlanDate {
 interface PublishedPlanSource {
   readonly label: string;
   readonly kind: string;
+  /** The short label the settings give a repository file, or null. */
+  readonly fileLabel: string | null;
+  /** The file's place among its repository's files of this kind, or null when it is the only one. */
+  readonly position: number | null;
   readonly state: 'ok' | 'refused';
   readonly reason: string | null;
 }
@@ -100,6 +104,8 @@ const dateLabels: readonly unknown[] = ['Changed', 'Proposed, not merged', 'from
 const planDate = (value: unknown) =>
   value === null ||
   (isRecord(value) && dateLabels.includes(value['label']) && textOrNull(value['at']));
+const place = (value: unknown) =>
+  value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 1);
 const dated = (item: Fields) =>
   text(item['title']) && text(item['source']) && planDate(item['date']);
 
@@ -136,6 +142,8 @@ const ITEM_CHECKS = {
   sources: (source: Fields) =>
     text(source['label']) &&
     text(source['kind']) &&
+    textOrNull(source['fileLabel']) &&
+    place(source['position']) &&
     (source['state'] === 'ok' || source['state'] === 'refused') &&
     textOrNull(source['reason']),
 } as const;

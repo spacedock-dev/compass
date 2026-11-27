@@ -170,9 +170,76 @@ export const readyPlan = {
     },
   ],
   sources: [
-    { label: 'Library goals', kind: 'goals', state: 'ok', reason: null },
-    { label: 'Annex design notes', kind: 'decisions', state: 'refused', reason: 'private' },
+    {
+      label: 'Library goals',
+      kind: 'goals',
+      fileLabel: null,
+      position: null,
+      state: 'ok',
+      reason: null,
+    },
+    {
+      label: 'Annex design notes',
+      kind: 'decisions',
+      fileLabel: null,
+      position: null,
+      state: 'refused',
+      reason: 'private',
+    },
   ],
   logRejected: 0,
   limits: planLimits,
 } as const;
+
+type WireSource = {
+  readonly label: string;
+  readonly kind: string;
+  readonly fileLabel: string | null;
+  readonly position: number | null;
+  readonly state: 'ok' | 'refused';
+  readonly reason: string | null;
+};
+
+function wireSource(
+  label: string,
+  kind: string,
+  { position = null, fileLabel = null, reason = null }: Partial<WireSource> = {},
+): WireSource {
+  return { label, kind, fileLabel, position, state: reason === null ? 'ok' : 'refused', reason };
+}
+
+const briefSlugs = ['deck', 'hull', 'keel', 'lamp', 'mast', 'paint', 'rigging', 'sails'] as const;
+
+/* One repository with three inventory files (the second not committed, the third labelled in the
+   settings), a draft branch that does not exist yet, and eight lane briefs, one of them refused. */
+export const crowdedSources: readonly WireSource[] = [
+  wireSource('Model ship', 'goals'),
+  wireSource('Model ship', 'inventory', { position: 1 }),
+  wireSource('Model ship', 'inventory', { position: 2, reason: 'not in branch' }),
+  wireSource('Model ship', 'inventory', { position: 3, fileLabel: 'Spare parts' }),
+  wireSource('Model ship', 'draft goals', { reason: 'branch missing' }),
+  wireSource('Model ship', 'draft inventory', { position: 1, reason: 'branch missing' }),
+  wireSource('Model ship', 'draft inventory', { position: 2, reason: 'branch missing' }),
+  wireSource('Model ship', 'draft inventory', {
+    position: 3,
+    fileLabel: 'Spare parts',
+    reason: 'branch missing',
+  }),
+  wireSource('Lane briefs', 'lane briefs'),
+  ...briefSlugs.map((slug) =>
+    wireSource(slug, 'lane brief', slug === 'mast' ? { reason: 'malformed' } : {}),
+  ),
+  wireSource('Coordination', 'event log'),
+];
+
+/* What each Sources row reads, in order, for crowdedSources. */
+export const crowdedSourceRows = [
+  'Model ship · goalsRead',
+  'Model ship · inventory 1Read',
+  'Model ship · inventory 2RefusedThe file is not on the branch.',
+  'Model ship · Spare partsRead',
+  'Model ship · draftRefusedThe branch is missing.',
+  'Lane briefs7 read',
+  'Lane brief · mastRefusedThe source did not have the expected format.',
+  'CoordinationRead',
+] as const;

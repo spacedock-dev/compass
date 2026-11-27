@@ -8,6 +8,8 @@ import { fakeRouterEnvironment } from '../src/router/testing';
 import { createShell } from '../src/shell/createShell';
 import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
 import {
+  crowdedSourceRows,
+  crowdedSources,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -192,6 +194,25 @@ export const PublishedPlanAt320: Story = {
       await expect(report.page).toBeLessThanOrEqual(report.client);
       await expect(report.wide).toEqual([]);
     }),
+};
+
+/* Three inventory files in one repository, a draft branch that does not exist yet and eight lane
+   briefs: each file is told apart without a path, the draft is one row, and the briefs that were
+   read are one counted row with the refused brief listed on its own. */
+export const CrowdedSources: Story = {
+  args: { plan: { ...readyPlan, sources: crowdedSources } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole('heading', { name: 'Plan', level: 1 })).toBeVisible();
+    const sources = within(canvas.getByRole('region', { name: 'Sources' }));
+    const rows = sources.getAllByRole('listitem');
+    await expect(rows.map((row) => row.textContent)).toEqual([...crowdedSourceRows]);
+    for (const row of rows) await expect(row).toBeVisible();
+    const briefs = sources.getByText('Lane briefs', { exact: true }).closest('li');
+    if (!briefs) throw new Error('The lane briefs need a row.');
+    await expect(within(briefs).getByText('7 read', { exact: true })).toBeVisible();
+    await expect(sources.getAllByText('The branch is missing.', { exact: true })).toHaveLength(1);
+  },
 };
 
 async function primary(canvas: ReturnType<typeof within>) {

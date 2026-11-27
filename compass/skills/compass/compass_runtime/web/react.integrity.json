@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2521071,
+    "bytes": 2522607,
     "file": "react.html",
-    "sha256": "1ceb1c12d5dbb8dbf534620b0293001dc5833c9554f278404cc9cc23584fa795"
+    "sha256": "9ef0369aad8e3ba53c158a054d5b7b5eb8801760281ff1ec29e1a25a21d4dcc6"
   },
   "format": 1,
   "frontend": "react",
@@ -247,7 +247,7 @@
       },
       {
         "file": "frontend/src/api/plan.ts",
-        "sha256": "0f5d6f438406850a0c74dff0835ea3f312a36ec51b9c799d18dba8c4913a0a8a"
+        "sha256": "63f120cdcc9fc188129c990098a2fd124b40b57d3a599cab31df4ab83392d9ab"
       },
       {
         "file": "frontend/src/api/promptCapacity.ts",
@@ -1003,7 +1003,7 @@
       },
       {
         "file": "frontend/src/plan/PlanPage.tsx",
-        "sha256": "20eece32a35acff8d94a4f6aa1984e360439e940fd4fae0219acb9862d1322b0"
+        "sha256": "aa1dd117ad110e510ea45822336395617e5882a5215140dc044bff586c505f5c"
       },
       {
         "file": "frontend/src/plan/PlanView.tsx",
@@ -1011,7 +1011,7 @@
       },
       {
         "file": "frontend/src/plan/model.ts",
-        "sha256": "b900a1ffabc622aaf4c4033e8dcfa8df9b7c2fec3b562c0623bfe9450ee8d016"
+        "sha256": "615f61b35e6209bce39448b69e4a0884b0019f21d0da3bec958e4917da2cd6ad"
       },
       {
         "file": "frontend/src/project/ActivityViews.tsx",

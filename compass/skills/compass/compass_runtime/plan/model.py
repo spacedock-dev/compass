@@ -21,6 +21,9 @@ class Source:
     commit: str | None = None
     reason: str | None = None
     draft: bool = False
+    # What tells two files of one kind in one repository apart, without their paths.
+    file_label: str | None = None
+    position: int | None = None
 
     @property
     def display_kind(self) -> str:

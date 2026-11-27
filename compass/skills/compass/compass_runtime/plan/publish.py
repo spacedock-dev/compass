@@ -41,7 +41,7 @@ PLAN_ITEM_FIELDS: Final = MappingProxyType(
         "inventory": frozenset({"title", "group", "source", "date"}),
         "diagrams": frozenset({"title", "caption", "kind", "source", "date", "linkHosts", "body"}),
         "date": frozenset({"label", "at"}),
-        "sources": frozenset({"label", "kind", "state", "reason"}),
+        "sources": frozenset({"label", "kind", "fileLabel", "position", "state", "reason"}),
     }
 )
 # A lane's state is one of these, or null when no single primary tracker row names the lane.
@@ -76,10 +76,12 @@ def _date(value: model.ItemDate | None) -> dict[str, str | None] | None:
     return {"label": value.label, "at": _text(value.value)}
 
 
-def _source(source: model.Source) -> dict[str, str | None]:
+def _source(source: model.Source) -> dict[str, str | int | None]:
     return {
         "label": _text(source.label),
         "kind": source.display_kind,
+        "fileLabel": _text(source.file_label),
+        "position": source.position,
         "state": "ok" if source.reason is None else "refused",
         "reason": source.reason,
     }

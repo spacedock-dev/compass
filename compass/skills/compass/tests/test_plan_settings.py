@@ -475,6 +475,97 @@ class PlanSettingsTest(unittest.TestCase):
             "not named in settings",
         )
 
+    def test_a_repository_file_may_carry_a_short_label_that_is_never_a_path(self) -> None:
+        doc = self.fixture()
+        doc["repos"][0]["files"]["inventory"] = [
+            "plan/built.md",
+            {"path": "plan/parts.md", "label": "Spare parts"},
+        ]
+        repo = self.loaded(doc).sources.repositories[0]
+        self.assertIn(("inventory", "plan/built.md"), repo.files)
+        self.assertIn(("inventory", "plan/parts.md"), repo.files)
+        self.assertEqual(dict(repo.file_labels), {("inventory", "plan/parts.md"): "Spare parts"})
+        for entry in (
+            {"path": "plan/parts.md", "label": "plan/parts.md"},
+            {"path": "plan/parts.md", "label": "plan\\parts"},
+            {"path": "plan/parts.md", "label": "  "},
+            {"path": "plan/parts.md", "label": ""},
+            {"path": "plan/parts.md", "label": "x" * 41},
+            {"path": "plan/parts.md", "label": "Two\nlines"},
+            {"path": "plan/parts.md", "label": 3},
+            {"label": "Spare parts"},
+            {"path": "plan/parts.md", "label": "Spare parts", "note": "unexpected"},
+            {"path": "../parts.md", "label": "Spare parts"},
+        ):
+            with self.subTest(entry=entry):
+                refused = self.fixture()
+                refused["repos"][0]["files"]["inventory"] = ["plan/built.md", entry]
+                self.assertEqual(self.load(refused).reason, "malformed settings")
+        # Two files in one repository cannot share a label, so a label always tells them apart.
+        for first, second in (("Parts", "PARTS"), ("Parts", "Pa\u200brts"), ("Parts", " Parts  ")):
+            with self.subTest(first=first, second=second):
+                twice = self.fixture()
+                twice["repos"][0]["files"]["inventory"] = [
+                    {"path": "plan/built.md", "label": first},
+                    {"path": "plan/parts.md", "label": second},
+                ]
+                self.assertEqual(self.load(twice).reason, "malformed settings")
+
+    def test_a_file_entry_may_leave_its_label_out(self) -> None:
+        doc = self.fixture()
+        doc["repos"][0]["files"]["inventory"] = ["plan/built.md", {"path": "plan/parts.md"}]
+        repo = self.loaded(doc).sources.repositories[0]
+        self.assertEqual(
+            [path for kind, path in repo.files if kind == "inventory"],
+            ["plan/built.md", "plan/parts.md"],
+        )
+        self.assertEqual(repo.file_labels, ())
+
+    def test_a_label_cannot_hide_characters_or_stand_in_for_a_path_or_a_generated_name(
+        self,
+    ) -> None:
+        refused = (
+            # Invisible and unusual spacing characters.
+            "\u200b",
+            "a\u200bb",
+            "Spare\u00adparts",
+            "Spare\u00a0parts",
+            "Spare\u3000parts",
+            "Spare\u2028parts",
+            "Spare\u2029parts",
+            # Slashes that only look like one.
+            *(f"plan{slash}parts" for slash in "\u2215\uff0f\u29f8\u2044\uff3c\u2216\u29f5"),
+            # A declared file's name or path, in any case.
+            "parts.md",
+            "PARTS.MD",
+            "built.md",
+            "goals.md",
+            # A name the page generates for a file without a label.
+            "inventory",
+            "Inventory 2",
+            "tracker 12",
+            "draft",
+            "Draft goals",
+            "draft inventory 3",
+            " inventory  2 ",
+        )
+        for label in refused:
+            with self.subTest(label=label):
+                doc = self.fixture()
+                doc["repos"][0]["files"]["inventory"] = [
+                    "plan/built.md",
+                    {"path": "plan/parts.md", "label": label},
+                ]
+                self.assertEqual(self.load(doc).reason, "malformed settings")
+        for label in ("Spare parts", "Inventory of parts", "parts", "Parts 2", "Drafts"):
+            with self.subTest(accepted=label):
+                doc = self.fixture()
+                doc["repos"][0]["files"]["inventory"] = [
+                    "plan/built.md",
+                    {"path": "plan/parts.md", "label": label},
+                ]
+                self.assertIsNone(self.load(doc).reason)
+
     def test_settings_links_and_checkouts_are_refused(self) -> None:
         self.path.symlink_to(self.log)
         self.assertEqual(settings.load(str(self.home)).reason, "symbolic link")

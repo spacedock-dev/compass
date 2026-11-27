@@ -1146,7 +1146,12 @@ unsupported versions, unknown fields and invalid declarations refuse the whole f
 leaves the settings file untouched. The agent summary setting defaults to off.
 
 The settings name each repository, its local branch, an optional draft branch and the exact tree
-paths for each file. They also name one event log and one flat lane-brief folder with a filename
+paths for each file. A file may also carry a short label of up to 40 characters, which the Plan page
+shows in place of the file's kind. A label holds no slash or backslash, nor a character that looks
+like one, no invisible or format character and no spacing other than a plain space. It cannot
+repeat a declared file's name or path, in any case, or a name the page gives a file without a
+label, such as `inventory 2` or `draft`. Two files in one repository cannot share one, so a path
+never stands in for a label. They also name one event log and one flat lane-brief folder with a filename
 template. An optional map names the working folder for each lane. Compass checks that folder's
 metadata under the same privacy rules and records its normalised path, device and inode. It
 reads no files from the working folder for that lookup.
@@ -1322,7 +1327,7 @@ A configured reply has `state: ready` and the following fields.
 | `design` | `title`, `summary` (always null), `decided`, `source` and `date`. |
 | `tracker`, `inventory` | `title`, `group` (including the closed fallback `Status not recognised`), `source` and `date`. |
 | `diagrams` | `title`, `caption`, `kind`, `source`, `date`, `linkHosts` and `body`. |
-| `sources` | `label`, `kind`, `state` and a closed `reason` when a source was refused. Includes draft comparisons and refused lane folders. |
+| `sources` | `label`, `kind`, `fileLabel` (the file's label from the settings, or null), `position` (the file's place among its repository's files of that kind, or null when it is the only one), `state` and a closed `reason` when a source was refused. Includes draft comparisons and refused lane folders. No field carries a path. |
 | `logRejected` | The count of rejected log lines, or null if the log could not be read. |
 | `limits` | Compass cannot detect health information or confidential text typed into these sources. |
 
