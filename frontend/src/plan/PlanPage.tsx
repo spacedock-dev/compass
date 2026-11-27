@@ -15,15 +15,30 @@ import type {
   PlanRefusalReason,
   PlanRepoDate,
   PlanSessionReference,
+  PlanTrackerStatus,
 } from './model';
 
-const stateLabels = {
+/* Group order on a goal card. The counted groups come first; the count is done lanes over the
+   lanes rendered in them. Dropped lanes, then lanes whose status is unknown, sit apart below. */
+const countedLaneLabels = {
   blocked: PLAN_WORDS.blocked,
-  'in-progress': PLAN_WORDS.inProgress,
-  planned: 'Planned',
+  waiting: PLAN_WORDS.waiting,
+  running: PLAN_WORDS.inProgress,
+  not_started: 'Planned',
   done: 'Done',
-  unpublished: 'Status not published',
-} satisfies Record<PlanLaneState, string>;
+} as const;
+const trackerLabels = {
+  ...countedLaneLabels,
+  dropped: PLAN_WORDS.dropped,
+} as const satisfies Record<Exclude<PlanTrackerStatus, 'Status not recognised'>, string>;
+const laneGroups: readonly { readonly state: PlanLaneState; readonly label: string }[] = [
+  ...(Object.keys(trackerLabels) as (keyof typeof trackerLabels)[]).map((state) => ({
+    state,
+    label: trackerLabels[state],
+  })),
+  { state: 'Status not recognised', label: 'Status not recognised' },
+  { state: null, label: 'Not measured' },
+];
 
 const sessionStates = {
   working: { word: SESSION_ROW_WORDS.working, ink: 'text-[var(--status-working-ink)]' },
@@ -250,17 +265,30 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
   );
 }
 
+function notCountedNote(dropped: boolean, unknown: boolean) {
+  if (dropped && unknown) return 'Dropped lanes and lanes without a known status are not counted.';
+  return dropped
+    ? 'Dropped lanes are not counted.'
+    : 'Lanes without a known status are not counted.';
+}
+
 function GoalCard({ goal }: { readonly goal: PlanGoal }) {
   const headingId = useId();
-  const groups = Object.entries(stateLabels)
-    .map(([state, label]) => ({
+  const groups = laneGroups
+    .map(({ state, label }) => ({
       state,
       label,
       lanes: goal.lanes.filter((lane) => lane.state === state),
     }))
     .filter(({ lanes }) => lanes.length > 0);
-  const total = groups.reduce((count, { lanes }) => count + lanes.length, 0);
-  const done = groups.find(({ state }) => state === 'done')?.lanes.length ?? 0;
+  const counted = groups.filter(
+    ({ state }) => state !== null && Object.hasOwn(countedLaneLabels, state),
+  );
+  const total = counted.reduce((count, { lanes }) => count + lanes.length, 0);
+  const done = counted.find(({ state }) => state === 'done')?.lanes.length ?? 0;
+  const apart = groups.filter((group) => !counted.includes(group));
+  const dropped = apart.some(({ state }) => state === 'dropped');
+  const unknown = apart.some(({ state }) => state !== 'dropped');
 
   return (
     <Card as="article" aria-labelledby={headingId} className="grid gap-4 max-sm:p-4">
@@ -274,21 +302,30 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
           {goal.doneWhen ?? 'No completion condition is listed.'}
         </dd>
       </dl>
-      {total === 0 ? (
+      {groups.length === 0 ? (
         <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
       ) : (
         <>
-          {groups.some(({ state }) => state === 'unpublished') ? (
-            <p className="m-0 text-muted-foreground">Lane progress is not published.</p>
-          ) : (
-            <p className="m-0 font-semibold">
-              {done} of {total} {total === 1 ? 'lane is' : 'lanes are'} done
+          {total === 0 ? (
+            <p className="m-0 text-muted-foreground">
+              {unknown ? 'Lane progress is not measured.' : notCountedNote(dropped, false)}
             </p>
+          ) : (
+            <div className="grid gap-1">
+              <p className="m-0 font-semibold">
+                {done} of {total} {total === 1 ? 'lane is' : 'lanes are'} done
+              </p>
+              {apart.length > 0 && (
+                <p className="m-0 text-label text-muted-foreground">
+                  {notCountedNote(dropped, unknown)}
+                </p>
+              )}
+            </div>
           )}
           <div className="grid gap-3">
-            {groups.map(({ state, label, lanes }) => (
+            {groups.map(({ label, lanes }) => (
               <div
-                key={state}
+                key={label}
                 className="grid min-w-0 gap-1 border-0 border-solid border-[var(--rule)] not-first:border-t not-first:pt-3"
               >
                 <h4 className="m-0 text-label font-semibold text-muted-foreground">{label}</h4>
@@ -339,8 +376,6 @@ function NotesList({ notes }: { readonly notes: readonly PlanNote[] }) {
   );
 }
 
-const trackerLabels = { ...stateLabels, waiting: 'Waiting', dropped: 'Dropped' };
-
 function Tracker({ items }: { readonly items: PlanModel['tracker'] }) {
   return (
     <PlanSection title="Tracker" sourceLabels={items.map((item) => item.source)}>
@@ -355,7 +390,7 @@ function Tracker({ items }: { readonly items: PlanModel['tracker'] }) {
                   <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
                   {date && <RepoDate date={date} />}
                 </div>
-                {status === 'unrecognised' ? (
+                {status === 'Status not recognised' ? (
                   <span className="text-label text-muted-foreground">Status not recognised</span>
                 ) : (
                   <Badge>{trackerLabels[status]}</Badge>

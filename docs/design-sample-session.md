@@ -419,6 +419,10 @@ The configured Plan destination packages at 2,512,259 bytes on Node 26.10.0 and 
 up 22,260 bytes (0.89%). The increase covers the Plan transport, page and styles. The bound
 follows the measured package. The fixture bound stays at 250,000 bytes.
 
+Grouping Plan lanes by their tracker state packages at 2,513,539 bytes on Node 26.12.1 and
+pnpm 12.19.0, up 1,280 bytes (0.05%) for the lane groups, the not-counted note and the two
+glossary words. The bound follows the measured package. The fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

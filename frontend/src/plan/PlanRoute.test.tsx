@@ -60,7 +60,7 @@ describe('the Plan destination follows the published plan', () => {
       '/api/data',
       '/api/plan',
     ]);
-    expect(screen.getByText('Lane progress is not published.')).toBeVisible();
+    expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
     const goal = within(screen.getByRole('article', { name: 'Make library pickup easier' }));
     expect(goal.getAllByRole('listitem')).toHaveLength(3);
     expect(goal.queryByText(/\d+ of \d+ lanes/)).toBeNull();
@@ -78,7 +78,7 @@ describe('the Plan destination follows the published plan', () => {
       ...readyPlan,
       lanes: readyPlan.lanes.map((lane) => ({
         ...lane,
-        state: lane.id === 'shelf' ? 'done' : 'planned',
+        state: lane.id === 'shelf' ? 'done' : 'not_started',
       })),
     });
     await page.settle();
@@ -86,6 +86,48 @@ describe('the Plan destination follows the published plan', () => {
     expect(goal.getByText('1 of 3 lanes are done', { exact: true })).toBeVisible();
     expect(goal.getAllByRole('listitem')).toHaveLength(3);
     expect(goal.queryByText('1 of 5 lanes are done')).toBeNull();
+  });
+
+  it('groups lanes by their published state and counts only the measured, kept ones', async () => {
+    const published = [
+      ['blocked', 'Blocked'],
+      ['waiting', 'Waiting'],
+      ['running', 'In progress'],
+      ['not_started', 'Planned'],
+      ['done', 'Done'],
+      ['dropped', 'Dropped'],
+      ['Status not recognised', 'Status not recognised'],
+      [null, 'Not measured'],
+      ['parked', 'Not measured'],
+    ] as const;
+    const lanes = published.map(([state], index) => ({
+      ...readyPlan.lanes[2],
+      id: `lane-${String(index)}`,
+      title: `Lane ${String(index)}`,
+      state,
+    }));
+    const page = mountPlan({
+      ...readyPlan,
+      goals: [{ ...readyPlan.goals[0], lanes: lanes.map(({ id }) => id) }],
+      lanes,
+    });
+    await page.settle();
+    const goal = within(screen.getByRole('article', { name: 'Make library pickup easier' }));
+    expect(goal.getAllByRole('heading', { level: 4 }).map((el) => el.textContent)).toEqual([
+      ...new Set(published.map(([, word]) => word)),
+    ]);
+    for (const [index, [, word]] of published.entries()) {
+      expect(
+        within(goal.getByRole('list', { name: word })).getByText(`Lane ${String(index)}`),
+      ).toBeVisible();
+    }
+    expect(goal.getByText('1 of 5 lanes are done', { exact: true })).toBeVisible();
+    expect(
+      goal.getByText('Dropped lanes and lanes without a known status are not counted.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(goal.queryByText('parked')).toBeNull();
   });
 
   it('draws only the diagram caption and hosts from a hostile diagram', async () => {

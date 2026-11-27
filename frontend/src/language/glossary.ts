@@ -141,9 +141,11 @@ export const ACTIVITY_LOG_FILTER_LABELS = {
 
 export const PLAN_WORDS = {
   blocked: 'Blocked',
+  dropped: 'Dropped',
   inProgress: 'In progress',
   lane: 'Lane',
   productDecisions: 'Product decisions',
+  waiting: 'Waiting',
 } as const;
 
 export const GLOSSARY = /* @__PURE__ */ (() =>
@@ -1061,6 +1063,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'A session waiting for a reply',
       'Plan lane and tracker group',
     ]),
+    planDropped: kept([
+      PLAN_WORDS.dropped,
+      'New label',
+      'A lane set aside and left out of the progress count',
+      'Done, a finished lane',
+      'Plan lane and tracker group',
+    ]),
     planInProgress: kept([
       PLAN_WORDS.inProgress,
       'New label',
@@ -1081,6 +1090,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Decisions from the plan design notes',
       'Decisions, the Project tab',
       'Design section on Plan',
+    ]),
+    planWaiting: kept([
+      PLAN_WORDS.waiting,
+      'New label',
+      'A lane paused on something outside it',
+      'Waiting on you, a session state',
+      'Plan lane and tracker group',
     ]),
   }) as const)();
 

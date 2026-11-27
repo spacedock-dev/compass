@@ -1,5 +1,6 @@
 export type PlanGroup = 'not_started' | 'running' | 'waiting' | 'blocked' | 'done' | 'dropped';
-export type PlanLaneStatus = 'blocked' | 'in-progress' | 'planned' | 'done';
+/* A tracker row's group, or the unknown-word marker; null when the lane is not measured. */
+export type PublishedLaneState = PlanGroup | 'Status not recognised' | null;
 
 export interface PublishedPlanDate {
   readonly label: 'Changed' | 'Proposed, not merged' | 'from the log';
@@ -32,7 +33,7 @@ export interface ReadyPlan {
     readonly id: string;
     readonly title: string;
     readonly doneWhen: string | null;
-    readonly state: PlanLaneStatus | null;
+    readonly state: PublishedLaneState;
     readonly date: PublishedPlanDate | null;
     readonly sessions: readonly string[] | null;
   }[];

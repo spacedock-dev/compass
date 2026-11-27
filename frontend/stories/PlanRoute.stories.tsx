@@ -56,7 +56,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const progressUnavailable = 'Lane progress is not published.';
+const progressUnavailable = 'Lane progress is not measured.';
 
 async function expectPublishedPlan(canvasElement: HTMLElement) {
   const canvas = within(canvasElement);

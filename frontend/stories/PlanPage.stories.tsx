@@ -53,7 +53,7 @@ const longLane = {
   id: 'extended-collection',
   title:
     'Confirm the staffing and access arrangements for readers collecting reserved books after the main desk closes',
-  state: 'in-progress',
+  state: 'running',
   sessions: [
     {
       ...sundaySession,
@@ -72,14 +72,26 @@ const goal = {
   lanes: [
     { id: 'shelf', title: 'Set up the pickup shelf', state: 'done', sessions: [shelfSession] },
     { id: 'signs', title: 'Put up signs at the entrance', state: 'done', sessions: [] },
-    { id: 'reminders', title: 'Update the pickup reminders', state: 'in-progress', sessions: [] },
+    { id: 'reminders', title: 'Update the pickup reminders', state: 'running', sessions: [] },
     {
       id: 'weekends',
       title: 'Agree on weekend hours',
       state: 'blocked',
       sessions: [hoursSession, rotaSession],
     },
-    { id: 'trial', title: 'Run a pickup trial', state: 'planned', sessions: [] },
+    { id: 'trial', title: 'Run a pickup trial', state: 'not_started', sessions: [] },
+  ],
+} as const;
+// Waiting is counted with the live groups; dropped and unmeasured lanes are shown apart and not counted.
+const goalWithLanesApart = {
+  id: 'reading-room',
+  title: 'Open the quiet reading room',
+  doneWhen: 'Readers can book a desk in the quiet reading room.',
+  lanes: [
+    { id: 'desks', title: 'Order the reading desks', state: 'waiting', sessions: [] },
+    { id: 'lamps', title: 'Fit the desk lamps', state: 'done', sessions: [] },
+    { id: 'phone', title: 'Take desk bookings by phone', state: 'dropped', sessions: [] },
+    { id: 'quiet', title: 'Put up quiet signs', state: null, sessions: [] },
   ],
 } as const;
 const goalWithoutLanes = {
@@ -138,7 +150,7 @@ const knownTrackerRow = {
 const unknownTrackerRow = {
   id: 'rota',
   title: 'Confirm the Saturday rota',
-  status: 'unrecognised',
+  status: 'Status not recognised',
   rawStatus: 'Parked in orbit',
   source: sourceByKind.tracker.name,
 } as const;
@@ -170,7 +182,7 @@ const complete: PlanModel = {
   ...empty,
   asks: [askWithLane],
   waitingSessions: [waitingSession],
-  goals: [goal, goalWithoutLanes],
+  goals: [goal, goalWithLanesApart, goalWithoutLanes],
   design: [changedDesign, proposedDesign],
   tracker: [knownTrackerRow, unknownTrackerRow],
   diagrams: [pickupDiagram],
@@ -192,6 +204,13 @@ const proposed = 'Proposed, not merged';
 const fromLog = 'from the log';
 const changed = /^Changed /;
 const progressCount = /\d+ of \d+ lanes?/;
+const notMeasured = 'Lane progress is not measured.';
+const notCounted = {
+  both: 'Dropped lanes and lanes without a known status are not counted.',
+  dropped: 'Dropped lanes are not counted.',
+  unknown: 'Lanes without a known status are not counted.',
+} as const;
+const anyNotCounted = /not counted\.$|^Lane progress is not measured\.$/;
 const goalMetadata = /\d+\s*%|Changed |Proposed, not merged|from the log/;
 
 async function expectProgress(card: ReturnType<typeof within>, text: string) {
@@ -241,6 +260,11 @@ export const FullPage: Story = {
       queue.getByRole('list', { name: 'Open asks' }),
     );
     await expectRowPlacement(canvasElement, 'right');
+    const apart = within(
+      section(canvasElement, 'Goals').getByRole('article', { name: goalWithLanesApart.title }),
+    );
+    await expectProgress(apart, '1 of 2 lanes are done');
+    await expect(apart.getByText(notCounted.both, { exact: true })).toBeVisible();
   },
 };
 
@@ -408,6 +432,192 @@ async function expectRowPlacement(canvas: HTMLElement, side: 'right' | 'below') 
     }
   }
 }
+
+const everyLaneState = [
+  ['Blocked', { id: 'b', title: 'Agree on weekend hours', state: 'blocked' }],
+  ['Waiting', { id: 'w', title: 'Order the reading desks', state: 'waiting' }],
+  ['In progress', { id: 'i', title: 'Update the pickup reminders', state: 'running' }],
+  ['Planned', { id: 'p', title: 'Run a pickup trial', state: 'not_started' }],
+  ['Done', { id: 'd', title: 'Set up the pickup shelf', state: 'done' }],
+  ['Dropped', { id: 'x', title: 'Take desk bookings by phone', state: 'dropped' }],
+  [
+    'Status not recognised',
+    { id: 'u', title: 'Confirm the Saturday rota', state: 'Status not recognised' },
+  ],
+  ['Not measured', { id: 'n', title: 'Put up quiet signs', state: null }],
+] as const;
+
+function laneGroup(card: ReturnType<typeof within>, name: string) {
+  return within(card.getByRole('list', { name }));
+}
+
+export const GoalWithEveryLaneState: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [
+        {
+          ...goal,
+          // Reversed so the page, not the fixture, puts the groups in order.
+          lanes: [...everyLaneState].reverse().map(([, lane]) => ({ ...lane, sessions: [] })),
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    await expect(card.getAllByRole('heading', { level: 4 }).map((el) => el.textContent)).toEqual(
+      everyLaneState.map(([word]) => word),
+    );
+    for (const [word, lane] of everyLaneState) {
+      const rows = laneGroup(card, word).getAllByRole('listitem');
+      await expect(rows).toHaveLength(1);
+      await expect(rows[0]).toHaveTextContent(new RegExp(`^${lane.title}$`));
+      await expect(card.getByRole('heading', { name: word, level: 4 })).toHaveClass(
+        'text-muted-foreground',
+      );
+    }
+    // Blocked, Waiting, In progress, Planned and Done are counted; the three groups after them are not.
+    await expectProgress(card, '1 of 5 lanes are done');
+    const note = card.getByText(notCounted.both, { exact: true });
+    await expect(note).toBeVisible();
+    await expect(note).toHaveClass('text-muted-foreground');
+    const count = await settledRect(card.getByText(progressCount));
+    await expect((await settledRect(note)).top).toBeGreaterThanOrEqual(count.bottom);
+    const lastCounted = await settledRect(card.getByRole('list', { name: 'Done' }));
+    for (const word of ['Dropped', 'Status not recognised', 'Not measured']) {
+      await expect((await settledRect(card.getByRole('list', { name: word }))).top).toBeGreaterThan(
+        lastCounted.bottom,
+      );
+    }
+    await expect(card.queryByText('Status not published')).toBeNull();
+    await expect(card.queryByText(notMeasured, { exact: true })).toBeNull();
+  },
+};
+
+export const GoalWithUnmeasuredLanes: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [
+        {
+          ...goal,
+          lanes: [
+            goal.lanes[0],
+            goal.lanes[2],
+            { ...goal.lanes[4], state: null },
+            { ...goal.lanes[1], state: 'Status not recognised' },
+          ],
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    // The unrecognised lane is a done-looking title; it is never counted as done.
+    await expectProgress(card, '1 of 2 lanes are done');
+    await expect(card.getByText(notCounted.unknown, { exact: true })).toBeVisible();
+    await expect(laneGroup(card, 'Done').getAllByRole('listitem')).toHaveLength(1);
+    await expect(laneGroup(card, 'Not measured').getByRole('listitem')).toHaveTextContent(
+      /^Run a pickup trial$/,
+    );
+    await expect(laneGroup(card, 'Status not recognised').getByRole('listitem')).toHaveTextContent(
+      /^Put up signs at the entrance$/,
+    );
+    await expect(card.queryByRole('list', { name: 'Planned' })).toBeNull();
+    await expect(card.queryByText(notCounted.both, { exact: true })).toBeNull();
+  },
+};
+
+export const GoalWithDroppedLane: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [{ ...goal, lanes: [goal.lanes[0], { ...goal.lanes[4], state: 'dropped' }] }],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    await expectProgress(card, '1 of 1 lane is done');
+    await expect(card.getByText(notCounted.dropped, { exact: true })).toBeVisible();
+    await expect(laneGroup(card, 'Dropped').getByRole('listitem')).toHaveTextContent(
+      /^Run a pickup trial$/,
+    );
+  },
+};
+
+export const GoalWithEveryLaneUnmeasured: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [
+        {
+          ...goal,
+          lanes: [
+            { ...goal.lanes[0], state: null },
+            { ...goal.lanes[1], state: null },
+            { ...goal.lanes[3], state: 'Status not recognised' },
+          ],
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const article = section(canvasElement, 'Goals').getByRole('article', { name: goal.title });
+    const card = within(article);
+    await expect(card.queryByText(progressCount)).toBeNull();
+    await expect(article).not.toHaveTextContent(/\b0 of /);
+    const line = card.getByText(notMeasured, { exact: true });
+    await expect(line).toBeVisible();
+    await expect(line).toHaveClass('text-muted-foreground');
+    await expect(card.getAllByText(anyNotCounted)).toEqual([line]);
+    await expect(card.getAllByRole('heading', { level: 4 }).map((el) => el.textContent)).toEqual([
+      'Status not recognised',
+      'Not measured',
+    ]);
+    await expect(laneGroup(card, 'Not measured').getAllByRole('listitem')).toHaveLength(2);
+    // The session links stay on an unmeasured lane.
+    await expectSessionLink(
+      laneGroup(card, 'Not measured'),
+      shelfSession.name,
+      'Waiting on you',
+      shelfHref,
+    );
+  },
+};
+
+export const GoalWithEveryLaneDropped: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [{ ...goal, lanes: [{ ...goal.lanes[0], state: 'dropped' }] }],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    await expect(card.queryByText(progressCount)).toBeNull();
+    await expect(card.getAllByText(anyNotCounted).map((el) => el.textContent)).toEqual([
+      notCounted.dropped,
+    ]);
+  },
+};
+
+export const GoalWithLanesApart: Story = {
+  args: { model: { ...empty, goals: [goalWithLanesApart] } },
+  play: async ({ canvasElement }) => {
+    const card = within(
+      section(canvasElement, 'Goals').getByRole('article', { name: goalWithLanesApart.title }),
+    );
+    await expectProgress(card, '1 of 2 lanes are done');
+    await expect(card.getByText(notCounted.both, { exact: true })).toBeVisible();
+    await expect(card.getAllByRole('heading', { level: 4 }).map((el) => el.textContent)).toEqual([
+      'Waiting',
+      'Done',
+      'Dropped',
+      'Not measured',
+    ]);
+  },
+};
 
 export const LaneWithOneSession: Story = {
   args: { model: { ...empty, goals: [{ ...goal, lanes: [goal.lanes[0]] }] } },
@@ -813,11 +1023,11 @@ const trackerStates = [
     'Blocked',
   ],
   [
-    { ...knownTrackerRow, id: 'shelf', title: 'Measure the shelf', status: 'in-progress' },
+    { ...knownTrackerRow, id: 'shelf', title: 'Measure the shelf', status: 'running' },
     'In progress',
   ],
   [
-    { ...knownTrackerRow, id: 'trial', title: 'Schedule the pickup trial', status: 'planned' },
+    { ...knownTrackerRow, id: 'trial', title: 'Schedule the pickup trial', status: 'not_started' },
     'Planned',
   ],
 ] as const;

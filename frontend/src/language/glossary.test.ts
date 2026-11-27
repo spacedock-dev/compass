@@ -71,8 +71,9 @@ describe('the first-layer glossary', () => {
       Object.entries(GLOSSARY)
         .filter(([key]) => /^plan[A-Z]/.test(key))
         .map(([, { plain }]) => plain),
-    ).toEqual(['Blocked', 'In progress', 'Lane', 'Product decisions']);
+    ).toEqual(['Blocked', 'Dropped', 'In progress', 'Lane', 'Product decisions', 'Waiting']);
     expect(GLOSSARY).toHaveProperty('planInProgress.distinctFrom', 'Working, a session state');
+    expect(GLOSSARY).toHaveProperty('planWaiting.distinctFrom', 'Waiting on you, a session state');
   });
 
   it('has no open rows and keeps the Needs you navigation name', () => {

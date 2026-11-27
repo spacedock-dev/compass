@@ -1,4 +1,4 @@
-import type { PlanGroup, PlanLaneStatus, PublishedPlanDate, ReadyPlan } from '../api/plan';
+import type { PlanGroup, PublishedLaneState, PublishedPlanDate, ReadyPlan } from '../api/plan';
 import type { PayloadData } from '../api/types';
 import { sessionKey, sessionState, sessionTile, type Row } from '../observed';
 import { observedFor } from '../observed/select';
@@ -16,7 +16,9 @@ export interface PlanModel {
   readonly limits: string;
 }
 
-export type PlanLaneState = PlanLaneStatus | 'unpublished';
+/* The published tracker words, kept as published. A lane with no measured state is null. */
+export type PlanTrackerStatus = PlanGroup | 'Status not recognised';
+export type PlanLaneState = PlanTrackerStatus | null;
 
 export interface PlanSessionReference {
   readonly key: SessionRoute;
@@ -71,7 +73,7 @@ export interface PlanNote {
 interface PlanTrackerItem {
   readonly id: string;
   readonly title: string;
-  readonly status: PlanLaneStatus | 'waiting' | 'dropped' | 'unrecognised';
+  readonly status: PlanTrackerStatus;
   readonly source: string;
   readonly date?: PlanRepoDate | undefined;
 }
@@ -94,15 +96,29 @@ export type PlanSource = {
   | { readonly status: 'refused'; readonly reason: PlanRefusalReason }
 );
 
-const trackerStatuses = {
-  not_started: 'planned',
-  running: 'in-progress',
-  waiting: 'waiting',
-  blocked: 'blocked',
-  done: 'done',
-  dropped: 'dropped',
-  'Status not recognised': 'unrecognised',
-} as const satisfies Record<PlanGroup | 'Status not recognised', PlanTrackerItem['status']>;
+const trackerStatuses: readonly PlanTrackerStatus[] = [
+  'not_started',
+  'running',
+  'waiting',
+  'blocked',
+  'done',
+  'dropped',
+  'Status not recognised',
+];
+
+function known(state: string): state is PlanTrackerStatus {
+  return (trackerStatuses as readonly string[]).includes(state);
+}
+
+/* A tracker row always has a status word, so an unknown one reads as not recognised. A lane's
+   state is optional, so anything outside the closed list reads as not measured. */
+function trackerStatus(group: string): PlanTrackerStatus {
+  return known(group) ? group : 'Status not recognised';
+}
+
+function laneState(state: PublishedLaneState): PlanLaneState {
+  return state !== null && known(state) ? state : null;
+}
 
 const sessionStates = {
   Working: 'working',
@@ -174,7 +190,7 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
     lanes.set(lane.id, {
       id: lane.id,
       title: lane.title,
-      state: lane.state ?? 'unpublished',
+      state: laneState(lane.state),
       sessions,
     });
   }
@@ -206,7 +222,7 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
     tracker: plan.tracker.map((item, index) => ({
       id: String(index),
       title: item.title,
-      status: trackerStatuses[item.group] ?? 'unrecognised',
+      status: trackerStatus(item.group),
       source: item.source,
       date: repoDate(item.date),
     })),
