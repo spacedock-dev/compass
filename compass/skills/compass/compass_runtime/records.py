@@ -1550,26 +1550,39 @@ _LINK_DOTS: Final = ".\u3002\uff0e\uff61"
 # register.
 _ADDED_OPAQUE_SCHEMES: Final = (*_OPAQUE_SCHEMES, "webcal")
 _ADDED_OPAQUE: Final = "|".join(_ADDED_OPAQUE_SCHEMES) + r"|web\+[a-z]+"
+# Invisible characters that can sit between a host and its path: the zero-width space and
+# the other format characters, several of which UTS 46 drops from a host.
+_ZERO_WIDTH: Final = r"\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff"
+# UTS 46 maps the full-width solidus to `/`, which ends a host.
+_FULL_WIDTH_SOLIDUS: Final = "\uff0f"
+# What follows a host: a path, a query, a fragment, a port or a backslash, or a full-width
+# solidus, or invisible characters before a path or a port. A host followed by either of the
+# last two is masked unnamed, since WHATWG and `urlsplit` read it differently.
+_HOST_AHEAD: Final = rf"(?=[/?#:\\\uff0f]|[{_ZERO_WIDTH}]++(?:[/?#\\\uff0f]|:[0-9]))"
+_HOST_FOLLOWS: Final = "/?#:\\"
 # `{label}` is a label character: a word character or a combining mark, which `\w` leaves out
 # although Devanagari, Thai and NFD-spelt Latin labels need them.
 _ADDED_AFTER_RUN: Final = rf"""
     # `localhost` and dotted quads glued to a word, digit or hyphen before them.
     (?P<glued>localhost|(?:[0-9]{{1,3}}[{_LINK_DOTS}]){{3}}[0-9]{{1,3}})
-        (?::[0-9]{{1,5}})?(?=[/?#:\\])
+        (?::[0-9]{{1,5}})?{_HOST_AHEAD}
     |(?<!(?-i:[A-Za-z]))(?:{_ADDED_OPAQUE}):(?=\S)
     # A `data:` URI glued to a letter; a media type or parameter sets it apart from prose.
     |data:(?:[a-z0-9.+-]{{1,63}}/[a-z0-9.+-]{{1,63}})?(?:;[^\s,;]{{1,64}}){{0,8}},
-    # An scp-style git remote, `user@host:path`, matched from its `@`; `_added_userinfo`
-    # masks the userinfo. The path needs a slash or a `.git` ending, so `alice@corp: hello`
-    # and `image@sha256:abc` stay prose.
+    # An scp-style git remote, `user@host:path`, matched from its `@`; `_link_behind`
+    # masks the userinfo. `_AddedLinks` keeps it only when its path holds a slash or ends in
+    # `.git`, so `alice@corp: hello` and `image@sha256:abc` stay prose.
     |(?<=[^\s/\\@?#<>"'`()\[\]{{}}])@(?P<scp>\[[0-9a-f:.]{{2,45}}\]|[{{label}}{_LINK_DOTS}-]++):
-        (?=[^\s:/\\]*+[/\\]|[^\s:/\\][^\s:]*?\.git(?![^\W_]|-))
+    # A bracketed IPv6 address, which holds two colons at least, with or without a zone. A
+    # letter or digit before it makes it an index, as in `arr[::2]/n`.
+    |(?<!(?-i:[A-Za-z0-9]))
+        (?P<ipv6>\[(?=[0-9a-f.]{{0,45}}:[0-9a-f.]{{0,45}}:)[0-9a-f:.]{{2,45}}(?:%[\w.~%-]{{1,64}})?\])
+        (?::[0-9]{{1,5}})?{_HOST_AHEAD}
 """
-# A dotted host read as a whole run of label characters, followed by a path, a query, a
-# fragment, a port or a backslash. `_run_host` accepts it only when it ends in a top-level
-# domain; otherwise the branches after it are tried at the same offset.
+# A dotted host read as a whole run of label characters. `_run_host` accepts it only when it
+# ends in a top-level domain; otherwise the branches after it are tried at the same offset.
 _ADDED_RUN: Final = rf"""
-    (?<![{{label}}{_LINK_DOTS}-])(?P<run>[{{label}}{_LINK_DOTS}-]++)(?=[/?#:\\])
+    (?<![{{label}}{_LINK_DOTS}-])(?P<run>[{{label}}{_LINK_DOTS}-]++){_HOST_AHEAD}
     |"""
 
 
@@ -1617,12 +1630,27 @@ _CJK_PREFIX = re.compile(
 )
 # A host with a wide dot or a non-ASCII top-level label is a link only before a path or a port,
 # and its mask stops at ideographic punctuation: `完了。次は?` and `迁移。下一步:` are prose.
-_WIDE_HOST_END = re.compile(r"/|:[0-9]{1,5}(?![0-9])")
+_WIDE_HOST_END = re.compile(rf"[{_ZERO_WIDTH}]*+[/\uff0f]|:[0-9]{{1,5}}(?![0-9])")
 _IDEOGRAPHIC_PUNCTUATION = re.compile(
     "[\u3001-\u303f\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65]"
 )
-_USERINFO_STOP = re.compile(r"""[\s/\\@?#<>"'`()\[\]{}]""")
-_USERINFO_BREAK: Final = frozenset("/\\?#<>\"'`()[]{}")
+# A CJK top-level label before a full-width solidus is prose, such as `詳細` and `補足` with
+# one between them, rather than a host.
+_CJK_LABEL = re.compile(
+    "[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff\uff66-\uff9f]"
+)
+_AFTER_ZERO_WIDTH = re.compile(f"[^{_ZERO_WIDTH}]")
+_GIT_SUFFIX = re.compile(r"(?i)\.git(?![^\W_]|-)")
+# The path an scp remote has always needed: a slash, or a `.git` ending, with no colon first.
+_SCP_PATH = re.compile(r"(?i)[^\s:/\\]*+[/\\]|[^\s:/\\][^\s:]*?\.git(?![^\W_]|-)")
+_SLASH = re.compile(r"[/\\]")
+_AT = re.compile("@")
+# What ends the text between userinfo's `@` and the host after it, with whitespace.
+_USERINFO_STOPS: Final = frozenset("/\\@?#<>\"'`()[]{}")
+# Where the userinfo before a host stops, reading back from its `@`: a quote, a bracket or
+# whitespace. A password can hold `/`, `?`, `#` and `@`, and a token used as the user name is
+# often base64, which holds `/`, so those do not stop it.
+_USERINFO_BREAK: Final = frozenset("<>\"'`()[]{}")
 _LINK_SPACE = re.compile(r"\s")
 _URL_SYNTAX_END = re.compile(r"""[\s<>"'`]""")
 _BARE_BOUNDARY = re.compile(r"""[\s<"'`]""")
@@ -1651,6 +1679,19 @@ def _userinfo_start(text: str, host: int) -> int:
             break
         start -= 1
     return start if start < host - 1 else host
+
+
+def _userinfo_reach(text: str, host: int) -> int:
+    """Where the userinfo before a known host starts, through the whole token before its `@`."""
+    if host == 0 or text[host - 1] != "@":
+        return host
+    start = _userinfo_back(text, host - 1, 0)
+    return start if start < host - 1 else host
+
+
+def _has_authority(match: re.Match[str]) -> bool:
+    """Whether a known link starts at its host, where userinfo before it would sit."""
+    return match["domain"] is not None or match[0][len(match["dash"]) :].lower() == "www."
 
 
 class _KnownLinks:
@@ -1770,9 +1811,12 @@ class _LinkStart(NamedTuple):
     # The host to name; empty when the link is masked unnamed.
     host: str
     host_end: int
-    # A host with a wide dot or a non-ASCII top-level label, whose mask stops at ideographic
-    # punctuation.
-    wide: bool = False
+    # For a host with a wide dot or a non-ASCII top-level label, where its path starts: the
+    # mask stops at ideographic punctuation after it.
+    path: int | None = None
+    # A form the board did not mask before: its mask starts where its token does, so it covers
+    # any userinfo a form later in the token would have reached back over.
+    token: bool = False
 
 
 def _run_host(run: str) -> tuple[int, str] | None:
@@ -1796,12 +1840,19 @@ def _run_host(run: str) -> tuple[int, str] | None:
     return offset, body[offset:]
 
 
-def _added_start(match: re.Match[str]) -> _LinkStart:
-    if (host := match["glued"]) is not None:
-        return _LinkStart(match, match.start(), host, match.end("glued"))
+def _added_start(match: re.Match[str], *, named: bool) -> _LinkStart:
+    for group in ("glued", "ipv6"):
+        if (host := match[group]) is not None:
+            # An IPv6 zone after `%` can hold any text, so a host with one is not named.
+            follows = match.string[match.end() : match.end() + 1] in _HOST_FOLLOWS
+            named = follows and "%" not in host
+            token = group == "ipv6" or not follows
+            return _LinkStart(
+                match, match.start(), host if named else "", match.end(group), None, token
+            )
     if (host := match["scp"]) is not None:
         # An opaque scheme's name before the colon is masked as that scheme, unnamed.
-        unnamed = host.lower() in _ADDED_OPAQUE_SCHEMES
+        unnamed = not named or host.lower() in _ADDED_OPAQUE_SCHEMES
         return _LinkStart(match, match.start("scp"), "" if unnamed else host, match.end("scp"))
     return _LinkStart(match, match.start(), "", match.start())
 
@@ -1812,6 +1863,7 @@ class _AddedLinks:
     def __init__(self, text: str) -> None:
         self.text = text
         self._found: tuple[int, _LinkStart | None] | None = None
+        self._token: _RemoteToken | None = None
 
     def start(self, position: int) -> _LinkStart | None:
         if (searched := self._found) is not None and searched[0] <= position:
@@ -1827,26 +1879,114 @@ class _AddedLinks:
         patterns = _added_patterns()
         while (match := patterns.start.search(text, position)) is not None:
             if (run := match["run"]) is None:
-                return _added_start(match)
-            if (found := _run_host(run)) is not None:
-                offset, host = found
-                wide = bool(_WIDE_DOT.search(host)) or not host.rsplit(".", 1)[-1].isascii()
-                if not wide or _WIDE_HOST_END.match(text, match.end()):
-                    start = match.start() + offset
-                    return _LinkStart(match, start, host, start + len(host), wide)
-            if (other := patterns.after_run.match(text, match.start())) is not None:
-                return _added_start(other)
+                if (named := self._remote(match)) is not None:
+                    return _added_start(match, named=named)
+            elif (found := self._run_start(match, run)) is not None:
+                return found
+            elif (other := patterns.after_run.match(text, match.start())) is not None and (
+                named := self._remote(other)
+            ) is not None:
+                return _added_start(other, named=named)
             position = match.start() + 1
         return None
 
+    def _run_start(self, match: re.Match[str], run: str) -> _LinkStart | None:
+        if (found := _run_host(run)) is None:
+            return None
+        text = self.text
+        offset, host = found
+        top = _LINK_DOT.split(host)[-1]
+        # The pattern's lookahead saw the separator after any invisible characters.
+        if (after := _AFTER_ZERO_WIDTH.search(text, match.end())) is None:
+            return None
+        separator = after.group()
+        if separator == _FULL_WIDTH_SOLIDUS and _CJK_LABEL.search(top):
+            return None
+        path = None
+        if _WIDE_DOT.search(host) or not top.isascii():
+            if (wide_end := _WIDE_HOST_END.match(text, match.end())) is None:
+                return None
+            path = wide_end.end()
+        start = match.start() + offset
+        if after.start() == match.end() and separator in _HOST_FOLLOWS:
+            return _LinkStart(match, start, host, start + len(host), path)
+        # Masked through the token, with no stop at ideographic punctuation.
+        return _LinkStart(match, start, "", start + len(host), None, token=True)
 
-def _added_userinfo(text: str, start: int, previous: int) -> int:
-    """Where an added link's span starts once the userinfo before it, if any, is masked too."""
-    at = text.rfind("@", previous, start)
-    if at < 0 or _USERINFO_STOP.search(text, at + 1, start):
-        return start
-    # Through every `@` in the token, since a password can hold one.
-    while at > previous and not (text[at - 1].isspace() or text[at - 1] in _USERINFO_BREAK):
+    def _remote(self, match: re.Match[str]) -> bool | None:
+        """Whether to keep an scp remote and name its host, or None to pass it by.
+
+        Other forms are kept and named. A remote's path needs a slash or a `.git` ending. One
+        with no colon before them reads as it always has. One with a colon there is new, and is
+        not named, since what follows the colon may be another link form whose userinfo the
+        remote is; it is passed by when an `@` comes before its first slash, since
+        `a@b:pw@host:org/r.git` is userinfo before `host`. An `@` anywhere after the colon may
+        sit in a password, so the host is not named either.
+        """
+        if match["scp"] is None:
+            return True
+        text = self.text
+        path = match.end()
+        token = self._token
+        if token is None or not token.first <= path <= token.end:
+            token = self._token = _RemoteToken(text, path)
+        if _SCP_PATH.match(text, path) is None:
+            slash = token.next(_SLASH, path)
+            if slash == token.end and not (token.git > path and text[path] not in ":/\\"):
+                return None
+            if token.next(_AT, path) < slash:
+                return None
+            return False
+        return token.last_at < path
+
+
+class _RemoteToken:
+    """One whitespace-free token an scp remote's path is read in, each part read once.
+
+    A path can hold colons, so a search from each remote in a long token would rescan the rest
+    of it; the next slash or `@` is found from where the last search stopped.
+    """
+
+    def __init__(self, text: str, first: int) -> None:
+        self.text = text
+        self.first = first
+        stop = _LINK_SPACE.search(text, first)
+        self.end = len(text) if stop is None else stop.start()
+        self.git = max((m.start() for m in _GIT_SUFFIX.finditer(text, first, self.end)), default=-1)
+        self.last_at = text.rfind("@", first, self.end)
+        self._next: dict[re.Pattern[str], tuple[int, int]] = {}
+
+    def next(self, pattern: re.Pattern[str], position: int) -> int:
+        """Where `pattern` next matches at or after `position`, or the token's end."""
+        searched = self._next.get(pattern)
+        if searched is not None and searched[0] <= position <= searched[1]:
+            return searched[1]
+        found = pattern.search(self.text, position, self.end)
+        at = self.end if found is None else found.start()
+        self._next[pattern] = (position, at)
+        return at
+
+
+def _link_behind(text: str, found: _LinkStart) -> tuple[int, int]:
+    """The `@` an added link's userinfo ends at, or -1, and where its mask starts.
+
+    A form the board did not mask before starts its mask where its token does. Read with no
+    floor, once for each link, since the scan to the previous link would repeat for each known
+    link before it.
+    """
+    if found.token:
+        return -1, _userinfo_back(text, found.start, 0)
+    stop = found.start
+    while stop and not (text[stop - 1].isspace() or text[stop - 1] in _USERINFO_STOPS):
+        stop -= 1
+    if stop and text[stop - 1] == "@":
+        return stop - 1, _userinfo_back(text, stop - 1, 0)
+    return -1, found.start
+
+
+def _userinfo_back(text: str, at: int, floor: int) -> int:
+    """Where the userinfo that ends at `at` starts: back to whitespace, a quote or a bracket."""
+    while at > floor and not (text[at - 1].isspace() or text[at - 1] in _USERINFO_BREAK):
         at -= 1
     return at
 
@@ -1948,6 +2088,8 @@ def _markdown_links(text: str) -> Iterator[_LinkSpan]:
 def _bare_links(text: str) -> Iterator[_LinkSpan]:
     known, added = _KnownLinks(text), _AddedLinks(text)
     previous = 0
+    reach = (-1, -1)
+    behind: tuple[_LinkStart | None, int, int] = (None, -1, 0)
     while True:
         match = known.match(previous)
         found = added.start(previous)
@@ -1957,12 +2099,21 @@ def _bare_links(text: str) -> Iterator[_LinkSpan]:
         limit = len(text)
         if match is not None:
             limit = match.start()
-            if match["domain"]:
-                limit = max(previous, _userinfo_start(text, limit))
-        if found is not None and (start := _added_userinfo(text, found.start, previous)) < limit:
+            if _has_authority(match):
+                # Read once per known link: a long token after many added links would
+                # otherwise be read back again for each of them.
+                if reach[0] != limit:
+                    reach = (limit, _userinfo_reach(text, limit))
+                limit = max(previous, reach[1])
+        if found is not None:
+            if behind[0] is not found:
+                behind = (found, *_link_behind(text, found))
+            _, at, back = behind
+            start = max(previous, back) if found.token or at >= previous else found.start
+        if found is not None and start < limit:
             end = _bare_destination_end(text, found.match, limit)
-            if found.wide and (
-                stop := _IDEOGRAPHIC_PUNCTUATION.search(text, found.match.end(), end)
+            if found.path is not None and (
+                stop := _IDEOGRAPHIC_PUNCTUATION.search(text, found.path, end)
             ):
                 end = stop.start()
             named = (
@@ -1979,8 +2130,8 @@ def _bare_links(text: str) -> Iterator[_LinkSpan]:
         start = match.end("dash")
         end = _bare_destination_end(text, match)
         host = link_host(text[start:end])
-        if match["domain"] and (userinfo := _userinfo_start(text, match.start())) < match.start():
-            start = max(previous, userinfo)
+        if _has_authority(match) and reach[1] < match.start():
+            start = max(previous, reach[1])
         previous = end
         yield _LinkSpan(start, end, host or _URL_UNNAMED, host)
 
