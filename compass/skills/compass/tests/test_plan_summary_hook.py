@@ -214,13 +214,13 @@ class PlanSummaryHookTest(SummaryHarness):
             "Progress: 1 of 2 lanes are done\nLane state: In progress\n",
         )
 
-    def test_zero_done_lanes_are_not_written_as_a_bare_zero(self) -> None:
+    def test_zero_done_lanes_read_as_the_plan_page_does(self) -> None:
         self.setup_measured(hull="stuck", paint="parked")
         self.board()
         self.assert_everywhere(
             "hull",
             "Goal: Restore the model ship\nDone when: The model floats.\n"
-            "Progress: none of 2 lanes are done\nLane state: Blocked\nAsk: Is the hull ready?\n",
+            "Progress: 0 of 2 lanes are done\nLane state: Blocked\nAsk: Is the hull ready?\n",
         )
         self.assertIn("Lane state: Waiting\n", self.preview("--lane", "paint"))
 
@@ -239,9 +239,9 @@ class PlanSummaryHookTest(SummaryHarness):
     def test_an_unmeasured_lane_is_not_counted(self) -> None:
         self.setup_measured(hull="open")
         self.board()
-        self.assertIn("Progress: none of 1 lane is done\nLane state: Planned\n", self.preview())
+        self.assertIn("Progress: 0 of 1 lane is done\nLane state: Planned\n", self.preview())
         self.assertIn(
-            "Progress: none of 1 lane is done\nLane state: not measured\n",
+            "Progress: 0 of 1 lane is done\nLane state: not measured\n",
             self.preview("--lane", "paint"),
         )
 
@@ -607,7 +607,7 @@ class PlanSummaryHookTest(SummaryHarness):
                     if len(serving) == 1 and counted:
                         done = counted.count("done")
                         unit = "lane is" if len(counted) == 1 else "lanes are"
-                        progress = f"{done or 'none'} of {len(counted)} {unit} done"
+                        progress = f"{done} of {len(counted)} {unit} done"
                     fields = [
                         ("Goal", lane["title"]),
                         ("Done when", lane["doneWhen"]),
@@ -857,8 +857,8 @@ class PlanSummaryFormatTest(unittest.TestCase):
         for states, progress in (
             (["done", "running"], "1 of 2 lanes are done"),
             (["done"], "1 of 1 lane is done"),
-            (["running", "blocked"], "none of 2 lanes are done"),
-            (["running"], "none of 1 lane is done"),
+            (["running", "blocked"], "0 of 2 lanes are done"),
+            (["running"], "0 of 1 lane is done"),
             (["done", None, "Status not recognised"], "1 of 1 lane is done"),
             (["done", "dropped", "waiting", "not_started"], "1 of 3 lanes are done"),
             (["done", "dropped"], "1 of 1 lane is done"),
@@ -870,7 +870,7 @@ class PlanSummaryFormatTest(unittest.TestCase):
             with self.subTest(states=states):
                 summary = self._goal(states)
                 self.assertIn(f"Progress: {progress}\n", summary + "\n")
-                self.assertNotRegex(summary, r"\b0 of ")
+                self.assertNotIn("0 of 0", summary)
 
     def test_progress_is_not_measured_without_exactly_one_serving_goal(self) -> None:
         self.assertIn("Progress: not measured", self.summary(_snapshot({"hull": "done"}, [])))

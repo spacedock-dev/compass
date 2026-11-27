@@ -281,8 +281,8 @@ def _fit(label: str, value: str | None, limit: int) -> str | None:
 
 
 def _progress(slug: str, snapshot: summary_states.Snapshot | None) -> str:
-    """Done lanes among the measured lanes serving the lane's one goal. Zero is written out in
-    words, so it never reads like a count that was never taken."""
+    """Done lanes among the measured lanes serving the lane's one goal, worded as the Plan page
+    words it. With no lane measured there is no count, so it never reads "0 of 0"."""
     if snapshot is None:
         return _UNMEASURED
     serving = [goal for goal in snapshot.goals if slug in goal]
@@ -297,7 +297,7 @@ def _progress(slug: str, snapshot: summary_states.Snapshot | None) -> str:
         return _UNMEASURED
     done = measured.count("done")
     unit = "lane is" if len(measured) == 1 else "lanes are"
-    return f"{done or 'none'} of {len(measured)} {unit} done"
+    return f"{done} of {len(measured)} {unit} done"
 
 
 def _summary(
