@@ -21,6 +21,7 @@ from compass_runtime import (
     git_status,
     history,
     http_api,
+    records,
     sessions,
 )
 from compass_runtime import io as runtime_io
@@ -330,6 +331,57 @@ class PlanPublicationTest(PlanRepoTestCase):
             ("[ref]: ./CANARY_REFERENCE.md", "[ref]"),
             (r"[a\]]: ./secret/CANARY_ESCAPED_REF.md", r"[a\]]"),
             (f"Authorization: Bearer {credential}", "REDACTED"),
+            # A backslash after a host is a path separator to WHATWG, so the link is unnamed.
+            ("example.test\\CANARY_BACKSLASH", "[link]"),
+            ("localhost:3000\\CANARY_BACKSLASH_LOCAL", "[link]"),
+            ("example.рф/r?c=CANARY_IDN_TLD", "[link]"),
+            ("пример.рф/r?c=CANARY_IDN_HOST", "[link]"),
+            ("sub.пример.рф/r?c=CANARY_IDN_SUB", "[link]"),
+            ("example。test/CANARY_IDEOGRAPHIC_DOT", "[link]"),
+            ("example\uff0etest/CANARY_FULLWIDTH_DOT", "[link]"),
+            ("example｡test/CANARY_HALFWIDTH_DOT", "[link]"),
+            ("example.test./CANARY_TRAILING_DOT", "example.test"),
+            ("a-localhost:3000/reset/CANARY_GLUED_LOCAL", "localhost"),
+            ("1localhost:3000/reset/CANARY_DIGIT_LOCAL", "localhost"),
+            ("a.192.168.1.10/admin/CANARY_DOT_IP", "192.168.1.10"),
+            ("a-10.0.0.5:8080/CANARY_DASH_IP", "10.0.0.5"),
+            ("1192.168.1.10/admin/CANARY_DIGIT_IP", "192.168.1.10"),
+            ("a-data:text/plain,CANARY_DASH_DATA", "[link]"),
+            ("1data:text/plain,CANARY_DIGIT_DATA", "[link]"),
+            ("adata:text/plain;base64,CANARY_LETTER_DATA", "[link]"),
+            ("git@host:CANARY_ORG/CANARY_REPO.git", "host"),
+            ("git@github.com:CANARY_ORG/repo.git", "github.com"),
+            ("git@[::1]:CANARY_ORG/repo.git", "[::1]"),
+            ("git@host:CANARY_REPO_ONLY.git", "host"),
+            ("_git@host:CANARY_EMPHASIS.git_", "host"),
+            ("CANARY_REMOTE_USER:CANARY_REMOTE_PASS@host:CANARY_ORG/repo.git", "host"),
+            ("CANARY_IP_USER:CANARY_IP_PASS@1192.168.1.10/admin/CANARY_IP_PATH", "192.168.1.10"),
+            ("CANARY_LOCAL_USER@a-localhost:3000/CANARY_LOCAL_PATH", "localhost"),
+            ("CANARY_IDN_USER@пример.рф/CANARY_IDN_PATH", "[link]"),
+            ("webcal:feed?c=CANARY_WEBCAL", "[link]"),
+            ("web+example:opaque-CANARY_WEB_PLUS", "[link]"),
+            ("1webcal:CANARY_GLUED_WEBCAL", "[link]"),
+            # A known link later in the token keeps its own span; the added form masks the rest.
+            ("CANARY_U1:CANARY_P1@1192.168.1.10/admin?r=//x", "192.168.1.10"),
+            ("git@host:CANARY_ORG/repo.git#readme", "host"),
+            ("example.рф/CANARY_NEXT?next=https://other.test/", "[link]"),
+            ("webcal:CANARY_WEBCAL_NEXT?next=https://x.test/", "[link]"),
+            ("a-localhost\\CANARY_GLUED_BACKSLASH", "[link]"),
+            ("example.xn--p1ai\\CANARY_PUNY_BACKSLASH", "[link]"),
+            ("x@webcal:org/CANARY_OPAQUE_REMOTE.git", "[link]"),
+            ("参考docs.example.test\\CANARY_CJK_BACKSLASH", "参考[link]"),
+            ("CANARY_U2:CANARY_P2%3A@host:org/repo.git", "host"),
+            ("CANARY_U3:CANARY_P3!@host:org/repo.git", "host"),
+            ("CANARY_U4:CANARY_P4@host:/srv/CANARY_SLASH.git", "[link]"),
+            ("CANARY_U5:CANARY_P5@CANARY_P6@1192.168.1.10/CANARY_AT", "192.168.1.10"),
+            ("adata:;base64,CANARY_DATA_PARAMS", "[link]"),
+            ("उदाहरण.भारत/CANARY_DEVANAGARI", "[link]"),
+            ("ตัวอย่าง.ไทย/CANARY_THAI", "[link]"),
+            ("cafe\u0301.test/CANARY_COMBINING", "[link]"),
+            ("пример1.рф/CANARY_MIXED_LABEL", "[link]"),  # noqa: RUF001 - a digit inside an IDN label
+            ("git@host:CANARY_ORG\\repo.git", "[link]"),
+            ("git@host:/srv/CANARY_ABSOLUTE.git", "[link]"),
+            ("[repo](git@host:CANARY_ORG/repo.git)", "[repo]"),
         )
         self.write_sources(
             {
@@ -364,7 +416,10 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertNotIn(b"CANARY_", body)
         self.assertNotIn(b"https://", body)
         self.assertNotIn(credential.encode(), body)
-        self.assertNotIn("-docs.example.test", payload["diagrams"][0]["linkHosts"])
+        hosts = payload["diagrams"][0]["linkHosts"]
+        self.assertNotIn("-docs.example.test", hosts)
+        self.assertTrue({"host", "github.com", "[::1]", "localhost", "10.0.0.5"} <= set(hosts))
+        self.assertFalse([host for host in hosts if not host.isascii() or "\\" in host])
 
     def test_multiline_diagram_link_destinations_are_stripped(self) -> None:
         long_label = "[" + "a" * 1000 + "]"
@@ -964,3 +1019,135 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(payload["goals"], [])
         refused = [source for source in payload["sources"] if source["reason"] == "git timed out"]
         self.assertEqual(len(refused), 10)
+
+
+class LinkProjectionTest(unittest.TestCase):
+    def test_prose_that_only_resembles_a_link_is_kept(self) -> None:
+        for text in (
+            "metadata: foo, bar",
+            "ping alice@corp: hello",
+            "image@sha256:abcdef01",
+            "release v1.2.3.4 shipped",
+            "i.e.: see below",
+            "notes on records.md",
+            "a@b and c@d",
+            "今日はリリース作業を行いました。次は?明日、レビューをお願いします。",
+            "実験を行った．結果はA/Bの両方で改善した．詳細は付録を参照．",  # noqa: RUF001 - CJK prose
+            "我们完成了迁移。下一步:更新文档，然后发布。",  # noqa: RUF001 - CJK prose
+            "好的。为什么?",
+            "完了。テスト:確認",
+            "xwebcal:x",
+            "git@host:x.gitx",
+            "see webcal: later",
+            "1tel: call me",
+            "ping @team:design/ux",
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.hosts_only(text), (text, ()))
+
+    def test_text_glued_to_a_link_stays_beside_its_host(self) -> None:
+        for text, expected, host in (
+            ("完了。https://example.test/p/CANARY", "完了。example.test", "example.test"),
+            ("完了。example.test/p/CANARY", "完了。example.test", "example.test"),
+            ("参考docs.example.test/d/CANARY", "参考docs.example.test", "docs.example.test"),
+            ("a-localhost:3000/CANARY", "a-localhost", "localhost"),
+            ("user:CANARY@host:org/repo.git", "host", "host"),
+            ("参考docs.example.test\\CANARY", "参考[link]", None),
+            ("ü-app.рф/CANARY", "[link]", None),
+            ("例子。中国/CANARY，然后", "[link]，然后", None),  # noqa: RUF001 - CJK prose
+            ("完了。example。test/CANARY", "完了。[link]", None),
+            ("mail a@b then пример.рф/CANARY", "mail a@b then [link]", None),
+            ("foo..example.рф/CANARY", "foo..[link]", None),
+            ("u:p@secret-host:/srv/r.git", "[link][link]", None),
+            ("webcal:CANARY@example.test/x", "example.test", "example.test"),
+        ):
+            with self.subTest(text=text):
+                hosts = () if host is None else (host,)
+                self.assertEqual(records.hosts_only(text), (expected, hosts))
+
+
+class KnownLinkOffsetsTest(unittest.TestCase):
+    def test_linear_finder_matches_the_regex_search_at_every_offset(self) -> None:
+        labels = [
+            "a+b://x",
+            "1+b://x y",
+            "x.\u017f.com/",
+            "\u017f" + "a" * 62 + ".com/",
+            "a" * 63 + ".com/",
+            "a" * 64 + ".com/",
+            ".".join(["a"] * 126) + ".com/",
+            ".".join(["a"] * 127) + ".com/",
+            "\u0131example.com/ \u212a.test:80",
+            "-a.com/ --.com/ a..b.com/",
+            "a\u00e4.test/ \u017f-a.com/",
+            "w\u0131ww.a/ localhost:3/",
+        ]
+        for text in labels:
+            with self.subTest(text=text[:40]):
+                known = records._KnownLinks(text)
+                for offset in range(len(text) + 1):
+                    found = known.match(offset)
+                    expected = records._URL_START.search(text, offset)
+                    self.assertEqual(
+                        None if found is None else found.span(),
+                        None if expected is None else expected.span(),
+                    )
+
+
+class LinkProjectionTimingTest(unittest.TestCase):
+    # Measures elapsed time on adversarial input, to keep every link matcher linear.
+    REAL_TIME_TESTS = True
+
+    def test_adversarial_text_is_projected_in_linear_time(self) -> None:
+        size = 250_000
+        cases = {
+            name: head + unit * ((size - len(head)) // len(unit)) + tail
+            for name, head, unit, tail in (
+                ("ascii and non-ascii letters", "", "aä", "!"),
+                ("non-ascii letters and hyphens", "", "ä-a", "!"),
+                ("scheme characters after plus signs", "", "a+", "!"),
+                ("ideographic dots", "", "a。", "!"),
+                ("full-width dotted labels", "", "ab\uff0e", "!"),
+                ("non-ascii labels", "", "äb.", "!"),
+                ("dashes", "", "-", "!"),
+                ("scp-like remotes", "", "a@b:", "!"),
+                ("userinfo", "", "a@", "!"),
+                ("cyrillic", "", "п", "!"),
+                ("digits and dots", "", "1.", "!"),
+                ("glued data", "", "adata:", "!"),
+                ("backslashes", "", "a.bc\\", "!"),
+                ("brackets", "", "[", "!"),
+                ("markdown destination", "[x](", "aä", ")"),
+                ("markdown glued hosts", "", "[x](a-localhost/ ", "!"),
+                ("userinfo before many glued hosts", "@", " x-localhost/", "!"),
+                ("long s labels", "", "\u017f" * 63 + ".", "!"),
+                ("kelvin labels", "", "\u212a" * 63 + ".", "!"),
+                ("long s labels before a path", "", "\u017f" * 63 + ".", "com/"),
+                ("overlong long s labels before a path", "", "\u017f" * 64 + ".", "com/"),
+                ("repeated known links", "", "https://a.test/x ", "!"),
+                ("repeated added links", "", "a.рф/x ", "!"),
+                ("known links with no added form ahead", "", "//x ", "!"),
+            )
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                started = time.monotonic()
+                records.hosts_only(text)
+                # The slow shapes took 90 to 105 s before; linear projection takes under 0.4 s
+                # here and up to 1.1 s on CI's 3.12 runner (measured 2026-11-27), so 5 s separates
+                # them without failing on a slow runner.
+                self.assertLess(time.monotonic() - started, 5.0)
+
+    def test_an_added_link_before_a_known_one_scans_in_linear_time(self) -> None:
+        # Linear time quadruples from 250 KB to 1 MB; a rescan to the line end for each added
+        # link grows sixteenfold.
+        for unit, tail in (("a.рф/< //x ", "!"), ("x-localhost/< https://k.test/ ", ">")):
+            with self.subTest(unit=unit):
+                took = []
+                for size in (250_000, 1_000_000):
+                    text = unit * (size // len(unit)) + tail
+                    started = time.monotonic()
+                    records.hosts_only(text)
+                    took.append(time.monotonic() - started)
+                self.assertLess(took[0], 5.0)
+                self.assertLess(took[1], 8 * took[0])
