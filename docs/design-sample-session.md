@@ -432,6 +432,11 @@ Showing an ask with no words and dropping only an unreadable plan item package a
 on Node 26.12.1 and pnpm 12.19.0, up 624 bytes. The bound follows the measured package. The fixture
 bound stays at 250,000 bytes.
 
+Telling a repository's files apart on the Plan page's Sources list, folding a missing draft branch
+into one row and counting the lane briefs that were read package at 2,522,259 bytes on Node 26.12.1
+and pnpm 12.19.0, up 1,188 bytes. The bound follows the measured package. The fixture bound stays
+at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.
