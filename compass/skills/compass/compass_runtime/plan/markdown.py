@@ -135,8 +135,9 @@ def _labels(
     lines: Sequence[Line],
     specs: Sequence[tuple[str, settings.BriefLabel]],
     emphasis: tuple[str, ...],
-) -> dict[str, str]:
+) -> tuple[dict[str, str], tuple[int, ...]]:
     found: dict[str, str] = {}
+    used_lines: list[int] = []
     active: tuple[str, settings.BriefLabel] | None = None
 
     def finish() -> None:
@@ -159,18 +160,20 @@ def _labels(
                 raise ParseError
             active = role, spec
             found[role] = value
+            used_lines.append(line.number)
         elif active is not None:
             role, spec = active
             if spec.continuation == "line" or not line.text.strip() or line.heading() is not None:
                 finish()
                 continue
             found[role] = " ".join(filter(None, (found[role], line.text.strip())))
+            used_lines.append(line.number)
             if len(found[role]) > spec.max_chars:
                 raise ParseError(TOO_LARGE)
     finish()
     if any(spec.required and role not in found for role, spec in specs):
         raise ParseError
-    return found
+    return found, tuple(used_lines)
 
 
 def _ids(
@@ -186,7 +189,7 @@ def _ids(
 
 
 def brief(text: str, spec: settings.Briefs) -> tuple[str | None, str | None, tuple[str, ...]]:
-    values = _labels(prose(text), tuple(spec.labels.items()), spec.emphasis)
+    values, _ = _labels(prose(text), tuple(spec.labels.items()), spec.emphasis)
     if not values:
         raise ParseError
     serves = (
@@ -268,14 +271,19 @@ def goals(
             raise ParseError
         if len(rows) >= MAX_ROWS:
             raise ParseError(TOO_MANY_ROWS)
-        values = _labels(block, labels, spec.emphasis)
+        values, used_lines = _labels(block, labels, spec.emphasis)
         expected = (
             _ids(values["lanes"], briefs.separators, briefs.max_files, grammar.is_slug)
             if "lanes" in values
             else ()
         )
         rows[goal_id] = (
-            model.Goal(goal_id, _text(title), values.get("done"), model.Origin(source, number)),
+            model.Goal(
+                goal_id,
+                _text(title),
+                values.get("done"),
+                model.Origin(source, number, used_lines),
+            ),
             expected,
         )
 
@@ -515,7 +523,7 @@ def _diagram_kind(first: str, fence: str, spec: settings.Diagrams) -> str:
     raise ParseError
 
 
-def _diagram_body(block: Fence, spec: settings.Diagrams) -> tuple[str, str]:
+def _diagram_body(block: Fence, spec: settings.Diagrams) -> tuple[str, str, int]:
     if (
         block.first.text != "```" + block.info
         or block.last is None
@@ -531,7 +539,7 @@ def _diagram_body(block: Fence, spec: settings.Diagrams) -> tuple[str, str]:
     kind = _diagram_kind(block.body[0].text, block.info, spec)
     if kind not in spec.types or (kind != "ascii" and _DIRECTIVE.search(body)):
         raise ParseError
-    return kind, body
+    return kind, body, block.last.number
 
 
 def diagrams(text: str, spec: settings.Diagrams, source: model.Source) -> tuple[model.Diagram, ...]:
@@ -541,17 +549,22 @@ def diagrams(text: str, spec: settings.Diagrams, source: model.Source) -> tuple[
     for block in _blocks(text):
         if isinstance(block, Line):
             if spec.caption == "heading" and (heading := block.heading()):
-                caption = heading[1]
+                caption = heading[1], block.number
             elif spec.caption.startswith("label:") and block.text.startswith(label):
-                caption = block.text.removeprefix(label).strip()
+                caption_text = block.text.removeprefix(label).strip()
+                caption = (caption_text, block.number) if caption_text else None
             continue
         if block.info not in spec.fences and not (spec.bare_fence and not block.info):
             continue
         if len(rows) >= spec.max_blocks:
             raise ParseError(TOO_MANY_ROWS)
-        kind, body = _diagram_body(block, spec)
-        name = _text(caption or f"Diagram {len(rows) + 1}")
-        rows.append(model.Diagram(kind, name, body, model.Origin(source, block.first.number)))
+        kind, body, last = _diagram_body(block, spec)
+        name = _text(caption[0] if caption else f"Diagram {len(rows) + 1}")
+        related = tuple(range(block.first.number + 1, last + 1))
+        if caption is not None:
+            related = (caption[1], *related)
+        origin = model.Origin(source, block.first.number, related)
+        rows.append(model.Diagram(kind, name, body, origin))
     if not rows:
         raise ParseError
     return tuple(rows)

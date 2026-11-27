@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+
+@dataclass(frozen=True)
+class ItemDate:
+    label: Literal["Changed", "Proposed, not merged", "from the log"]
+    value: str | None
 
 
 @dataclass(frozen=True)
@@ -19,6 +26,8 @@ class Source:
 class Origin:
     source: Source
     line: int | None = None
+    related_lines: tuple[int, ...] = ()
+    date: ItemDate | None = None
 
     @property
     def commit(self) -> str | None:
@@ -72,6 +81,7 @@ class Lane:
     source: Source
     folder: FolderIdentity | None = field(default=None, repr=False)
     folder_reason: str | None = None
+    date: ItemDate | None = None
 
 
 @dataclass(frozen=True)
@@ -81,6 +91,10 @@ class Ask:
     timestamp: str | None
     source: str
     lane: str | None
+
+    @property
+    def date(self) -> ItemDate | None:
+        return ItemDate("from the log", self.timestamp) if self.timestamp is not None else None
 
 
 @dataclass(frozen=True)

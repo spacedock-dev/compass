@@ -1367,6 +1367,62 @@ if __name__ == "__main__":
 
 
 class PlanTreeGitTest(unittest.TestCase):
+    def test_plan_history_uses_only_short_blame_and_no_walk_commit_times(self) -> None:
+        tip = "1" * 40
+        origin = "2" * 40
+        runner = mock.Mock(
+            side_effect=[
+                subprocess.CompletedProcess([], 0, f"{origin} 1) text\n".encode()),
+                subprocess.CompletedProcess([], 0, f"{origin} 1767312000\n".encode()),
+            ]
+        )
+        with mock.patch.object(git_status, "_executable", return_value="/bin/git"):
+            reader = git_status.plan_reader("/example/repo", timeout_sec=5, runner=runner)
+        self.assertEqual(list(reader.blame(tip, "plan/a.md", line_count=1)), [1767312000])
+        self.assertEqual(
+            [call.args[0] for call in runner.call_args_list],
+            [
+                (
+                    "/bin/git",
+                    "-c",
+                    "core.fsmonitor=",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "--no-optional-locks",
+                    "-c",
+                    "blame.ignoreRevsFile=",
+                    "blame",
+                    "-s",
+                    "-l",
+                    "--first-parent",
+                    "--root",
+                    "--ignore-revs-file",
+                    "",
+                    "--no-textconv",
+                    tip,
+                    "--",
+                    "plan/a.md",
+                ),
+                (
+                    "/bin/git",
+                    "-c",
+                    "core.fsmonitor=",
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "--no-optional-locks",
+                    "log",
+                    "--no-walk=unsorted",
+                    "--format=%H %ct",
+                    "--no-patch",
+                    "--no-show-signature",
+                    "--no-decorate",
+                    "--no-notes",
+                    origin,
+                    "--",
+                ),
+            ],
+        )
+
     def test_tree_read_uses_only_local_object_commands_and_disables_lazy_fetch(self) -> None:
         commit = "1" * 40
         blob = "2" * 40

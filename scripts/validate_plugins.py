@@ -581,6 +581,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/project_scripts.py",
     "skills/compass/compass_runtime/reader_checks.py",
     "skills/compass/compass_runtime/plan/__init__.py",
+    "skills/compass/compass_runtime/plan/dates.py",
     "skills/compass/compass_runtime/plan/grammar.py",
     "skills/compass/compass_runtime/plan/markdown.py",
     "skills/compass/compass_runtime/plan/model.py",

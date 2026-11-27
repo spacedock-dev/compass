@@ -17,6 +17,7 @@ from compass_runtime.terminal_sessions import printable_text
 if TYPE_CHECKING:
     from compass_runtime.aggregate import Application
     from compass_runtime.config import RuntimeConfig
+    from compass_runtime.state import RuntimeState
 
 
 # Report order only. The paths come from the resolved configuration, never from
@@ -90,14 +91,17 @@ def candidate_report(path: str) -> dict[str, Any]:
     return entry
 
 
-def _plan_report(config: RuntimeConfig) -> dict[str, Any]:
+def _plan_report(state: RuntimeState) -> dict[str, Any]:
+    config = state.config
     loaded = plan_settings.load(
         config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
     )
     report = plan_settings.report(loaded)
     if loaded.settings is None:
         return report
-    result = plan_readers.read_plan(loaded.settings, git_timeout_sec=config.git_probe_timeout_sec)
+    result = plan_readers.read_plan(
+        loaded.settings, git_timeout_sec=config.git_probe_timeout_sec, state=state
+    )
     positions = {source: index for index, source in enumerate(result.model.sources, 1)}
     report.update(
         sources=[{"kind": source.kind, "reason": source.reason} for source in result.model.sources],
@@ -173,7 +177,7 @@ def diagnose(application: Application) -> dict[str, Any]:
         # The reader's own list of check commands: where it is, whether it could be read, and each
         # entry that was ignored with its program and why. Never an argument or a path.
         "reader_checks": reader_checks.report(config, project_context.listed_entry_refusal),
-        "plan": _plan_report(config),
+        "plan": _plan_report(state),
         "stores": {
             key: {
                 "primary": primary,
