@@ -585,14 +585,24 @@ def _run_read(
     deadline: float,
     runner: Callable[..., Any],
     directory: int | None = None,
+    verify_cwd: Callable[[tuple[str, ...]], None] | None = None,
 ) -> bytes | None:
+    command = (resolved, *_SAFE_READ, *args)
+    env = dict(environ)
+
+    # Git takes `cwd` as a path, so its ancestry is checked as well as its identity: an ancestor
+    # replaced by a link would otherwise lead the same folder somewhere private.
+    def verify() -> None:
+        if verify_cwd is not None:
+            verify_cwd(args)
+        elif directory is not None:
+            _require_plan_cwd(cwd, directory)
+
+    verify()
+    # Measured after the check, which walks the folder's ancestry and can take a while.
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise subprocess.TimeoutExpired(args, 0)
-    command = (resolved, *_SAFE_READ, *args)
-    env = dict(environ)
-    if directory is not None:
-        _require_plan_cwd(cwd, directory)
     result = runner(
         command,
         cwd=cwd,
@@ -602,8 +612,7 @@ def _run_read(
         check=False,
         env=env,
     )
-    if directory is not None:
-        _require_plan_cwd(cwd, directory)
+    verify()
     if getattr(result, "returncode", 1) != 0:
         return None
     out = getattr(result, "stdout", b"")
@@ -704,6 +713,8 @@ class PlanTreeReader:
     _runner: Callable[..., Any]
     request_deadline: float | None = None
     directory: int | None = None
+    # Raises PlanGitError when the working folder no longer passes its admission checks.
+    verify_cwd: Callable[[tuple[str, ...]], None] | None = None
     _marker_names: dict[tuple[str, str], frozenset[str] | str] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
@@ -724,6 +735,7 @@ class PlanTreeReader:
                 deadline=deadline,
                 runner=self._runner,
                 directory=self.directory,
+                verify_cwd=self.verify_cwd,
             )
         except subprocess.TimeoutExpired:
             raise PlanGitError("git timed out") from None
@@ -841,12 +853,14 @@ class PlanTreeReader:
         """Return committer times in tip line order for an already admitted blob."""
         self._check_path(tip, path)
         deadline = time.monotonic() + self.timeout_sec
-        # The empty CLI argument clears configured ignore files on Git versions where
-        # an empty config value only appends to the list.
+        # A configured ignore-revs file or mailmap is a file the repository config names,
+        # possibly outside it. Measured on Git 2.54 and 2.56: an empty blame.ignoreRevsFile
+        # or --ignore-revs-file '' still read the configured file; --no-ignore-revs-file and
+        # an empty mailmap.file do not open theirs.
         output = self._run(
             (
                 "-c",
-                "blame.ignoreRevsFile=",
+                "mailmap.file=",
                 "-c",
                 "color.ui=never",
                 "-c",
@@ -856,8 +870,7 @@ class PlanTreeReader:
                 "-l",
                 "--first-parent",
                 "--root",
-                "--ignore-revs-file",
-                "",
+                "--no-ignore-revs-file",
                 "--no-textconv",
                 tip,
                 "--",
@@ -897,7 +910,10 @@ class PlanTreeReader:
             batch = oids[start : start + _PLAN_LOG_BATCH]
             output = self._run(
                 (
+                    "-c",
+                    "mailmap.file=",
                     "log",
+                    "--no-mailmap",
                     "--no-walk=unsorted",
                     "--format=%H %ct",
                     "--no-patch",
@@ -928,9 +944,18 @@ def plan_reader(
     cwd: str, *, timeout_sec: float, runner: Callable[..., Any] = subprocess.run
 ) -> PlanTreeReader:
     environ = probe_environment(
-        {key: value for key, value in os.environ.items() if not key.upper().startswith("GIT_")}
+        {
+            key: value
+            for key, value in os.environ.items()
+            if not key.upper().startswith("GIT_") and key.upper() != "XDG_CONFIG_HOME"
+        }
     )
     environ.update(
+        # Only the repository's own config is read; the caller checks it for includes first.
+        # GIT_CONFIG_GLOBAL needs Git 2.32; an older Git looks under HOME, which names no folder.
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=os.devnull,
+        HOME=os.devnull,
         GIT_CEILING_DIRECTORIES=os.path.dirname(cwd),
         GIT_NO_REPLACE_OBJECTS="1",
         GIT_LITERAL_PATHSPECS="1",

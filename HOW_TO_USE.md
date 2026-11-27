@@ -912,10 +912,16 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    says how many are done. Dropped lanes and lanes without a known status are listed apart and
    left out of that count.
    Declare private roots and markers for locations Compass should skip.
+   A private root inside a Git checkout also covers the same path in that repository's linked
+   worktrees (`git worktree add`), but not in a separate clone. Use a marker file to keep a
+   folder private in every clone.
 3. Run the dashboard launcher with `--diagnose` and check the plan settings section for refused
    sources. It reports missing or unreadable draft sources and refused lane folders by kind
    and reason. If you configure private roots or marker files, keep the declared Git file's
-   parent directories present in the checkout so Compass can check them. See
+   parent directories present in the checkout so Compass can check them. Compass refuses a
+   repository whose own Git config includes another file, or that borrows another
+   repository's objects (a shared or reference clone). Remove the include, or run
+   `git repack -a -d` and delete `.git/objects/info/alternates`, to read it. See
    [what the local plan route publishes](SECURITY.md#published-plan-fields).
 4. Open the dashboard on the Compass computer. Choose **Plan** in the page links, or open
    **Menu** on a narrow screen. If Compass refuses the settings, Plan shows why. With no

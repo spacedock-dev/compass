@@ -1401,7 +1401,7 @@ class PlanTreeGitTest(unittest.TestCase):
                     "core.hooksPath=/dev/null",
                     "--no-optional-locks",
                     "-c",
-                    "blame.ignoreRevsFile=",
+                    "mailmap.file=",
                     "-c",
                     "color.ui=never",
                     "-c",
@@ -1411,8 +1411,7 @@ class PlanTreeGitTest(unittest.TestCase):
                     "-l",
                     "--first-parent",
                     "--root",
-                    "--ignore-revs-file",
-                    "",
+                    "--no-ignore-revs-file",
                     "--no-textconv",
                     tip,
                     "--",
@@ -1425,7 +1424,10 @@ class PlanTreeGitTest(unittest.TestCase):
                     "-c",
                     "core.hooksPath=/dev/null",
                     "--no-optional-locks",
+                    "-c",
+                    "mailmap.file=",
                     "log",
+                    "--no-mailmap",
                     "--no-walk=unsorted",
                     "--format=%H %ct",
                     "--no-patch",
@@ -1494,3 +1496,111 @@ class PlanTreeGitTest(unittest.TestCase):
         with self.assertRaises(git_status.PlanGitError) as error:
             reader.tip("main")
         self.assertEqual(error.exception.reason, "git timed out")
+
+    def test_plan_reader_reads_no_system_or_global_config(self) -> None:
+        with (
+            mock.patch.object(git_status, "_executable", return_value="/bin/git"),
+            mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": "/example/xdg"}),
+        ):
+            reader = git_status.plan_reader("/example/repo", timeout_sec=5)
+        env = reader._environ
+        self.assertEqual(env["GIT_CONFIG_NOSYSTEM"], "1")
+        self.assertEqual(env["GIT_CONFIG_GLOBAL"], os.devnull)
+        # Git before 2.32 ignores GIT_CONFIG_GLOBAL and reads $HOME/.gitconfig instead.
+        self.assertEqual(env["HOME"], os.devnull)
+        self.assertNotIn("XDG_CONFIG_HOME", env)
+
+    @unittest.skipIf(GIT is None or os.name == "nt", "Needs Git")
+    def test_a_broken_global_config_include_does_not_reach_a_plan_read(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            repo, home, xdg = root / "repo", root / "home", root / "xdg"
+            for folder in (repo, home, xdg / "git"):
+                folder.mkdir(parents=True)
+            broken = root / "outside.config"
+            broken.write_text("[[[ not a config\n")
+            for config in (home / ".gitconfig", xdg / "git" / "config", root / "global"):
+                config.write_text(f"[include]\n\tpath = {broken}\n")
+            environ = {**os.environ, "HOME": str(home), "XDG_CONFIG_HOME": str(xdg)}
+            environ["GIT_CONFIG_GLOBAL"] = str(root / "global")
+            git_env = {**environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            for args in (
+                ("init", "-q", "-b", "main"),
+                ("commit", "-q", "--allow-empty", "-m", "x"),
+            ):
+                subprocess.run(
+                    [GIT or "git", "-c", "user.name=a", "-c", "user.email=a@example.test", *args],
+                    cwd=repo,
+                    env=git_env,
+                    check=True,
+                )
+            traces: list[bytes] = []
+
+            def runner(argv: Any, *, check: bool, **kwargs: Any) -> Any:
+                kwargs["env"] = {**kwargs["env"], "GIT_TRACE": "1"}
+                result = subprocess.run(argv, check=check, **kwargs)
+                traces.append(result.stderr)
+                return result
+
+            with mock.patch.dict(os.environ, environ, clear=True):
+                reader = git_status.plan_reader(str(repo), timeout_sec=10, runner=runner)
+            self.assertRegex(reader.tip("main"), r"^[0-9a-f]{40}$")
+            self.assertTrue(traces)
+            self.assertTrue(all(b"trace: built-in" in trace for trace in traces))
+            self.assertFalse(any(b"bad config" in trace for trace in traces))
+
+    def test_plan_git_timeout_is_measured_after_the_working_folder_check(self) -> None:
+        clock = [100.0]
+        runner = mock.Mock(return_value=subprocess.CompletedProcess([], 0, b"\n", b""))
+
+        def slow_check(_args: tuple[str, ...]) -> None:
+            clock[0] += 5.0
+
+        with mock.patch("compass_runtime.git_status.time.monotonic", side_effect=lambda: clock[0]):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                git_status._run_read(
+                    ("rev-parse",),
+                    "/example/repo",
+                    {},
+                    "/bin/git",
+                    deadline=103.0,
+                    runner=runner,
+                    verify_cwd=slow_check,
+                )
+            runner.assert_not_called()
+            clock[0] = 100.0
+            git_status._run_read(
+                ("rev-parse",),
+                "/example/repo",
+                {},
+                "/bin/git",
+                deadline=110.0,
+                runner=runner,
+                verify_cwd=slow_check,
+            )
+        self.assertEqual(runner.call_args.kwargs["timeout"], 5.0)
+
+    @unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and FIFOs")
+    def test_plan_history_opens_no_file_the_repository_config_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            repo = root / "repo"
+            repo.mkdir()
+            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            identity = ["-c", "user.name=a", "-c", "user.email=a@example.test"]
+            (repo / "plan.md").write_text("one\n")
+            for args in (("init", "-q", "-b", "main"), ("add", "plan.md"), ("commit", "-qm", "x")):
+                subprocess.run([GIT or "git", *identity, *args], cwd=repo, env=env, check=True)
+            for key in ("mailmap.file", "blame.ignoreRevsFile"):
+                fifo = root / key
+                os.mkfifo(fifo)
+                subprocess.run(
+                    [GIT or "git", "config", key, str(fifo)], cwd=repo, env=env, check=True
+                )
+            reader = git_status.plan_reader(str(repo), timeout_sec=5)
+            tip = reader.tip("main")
+            # Opening either FIFO would block until the timeout.
+            started = time.monotonic()
+            self.assertEqual(len(reader.blame(tip, "plan.md", line_count=1)), 1)
+            self.assertEqual(set(reader.commit_times([tip])), {tip})
+            self.assertLess(time.monotonic() - started, 4)

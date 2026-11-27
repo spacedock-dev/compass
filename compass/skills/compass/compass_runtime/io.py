@@ -14,7 +14,7 @@ import stat
 import sys
 import time
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, BinaryIO, TextIO
 from urllib.parse import quote
@@ -644,9 +644,13 @@ def _owned(info: os.stat_result) -> bool:
     return os.name == "nt" or info.st_uid == os.getuid()
 
 
+class NotOwnedError(PermissionError):
+    """A directory Compass's ownership rule refuses, as distinct from one the system refused."""
+
+
 def _check_directory(info: os.stat_result, path: str, *, require_owner: bool = True) -> None:
     if not stat.S_ISDIR(info.st_mode) or (require_owner and not _owned(info)):
-        raise OSError(errno.EPERM, "Directory is not owned by this user", path)
+        raise NotOwnedError(errno.EPERM, "Directory is not owned by this user", path)
 
 
 def _check_regular(info: os.stat_result, path: str) -> None:
@@ -671,7 +675,7 @@ def _directory_child(
     mode: int,
     links: list[int],
     follow_links: bool,
-    directory_check: Callable[[int, str, os.stat_result], None] | None = None,
+    directory_check: Callable[[int | None, str, os.stat_result], None] | None = None,
 ) -> int:
     child = os.path.join(walked, part)
     # Without O_DIRECTORY, nonblocking open plus fstat still refuses a planted FIFO.
@@ -701,6 +705,8 @@ def _directory_child(
         try:
             target = os.readlink(part, dir_fd=fd)
         except OSError:
+            if directory_check is not None and open_error.errno in {errno.EACCES, errno.EPERM}:
+                _check_unlisted(fd, part, directory_check)
             raise open_error from None
         trusted = (
             _platform_alias(child, target)
@@ -725,6 +731,59 @@ def _directory_child(
         )
 
 
+def _search_only_flag() -> int:
+    """The open flag for a directory held for lookups only: enough for metadata, not a listing."""
+    flag = getattr(os, "O_SEARCH", 0) or getattr(os, "O_PATH", 0)
+    if not flag and sys.platform == "darwin":
+        # A Python built against an older macOS SDK does not export O_SEARCH: on 2026-11-27 the
+        # CPython 3.12.10 GitHub's macOS runners install failed only the test that needs it.
+        # The SDK defines O_SEARCH as O_EXEC (0x40000000) | O_DIRECTORY. A kernel without it
+        # refuses the open, and the caller then treats the folder as one it cannot examine.
+        flag = 0x40000000 | (getattr(os, "O_DIRECTORY", 0) or 0)
+    return flag
+
+
+_SEARCH_ONLY = _search_only_flag()
+
+
+def _check_unlisted(
+    fd: int, part: str, directory_check: Callable[[int | None, str, os.stat_result], None]
+) -> None:
+    """Let a policy refuse a directory this user may not list, before EACCES does.
+
+    A declared private root of mode 111 or 000 is still private: report it as such rather than
+    as unreadable. Its identity and name come from metadata under the held parent; the parts
+    of the policy that look inside it need a lookup-only open, which mode 000 refuses. Only
+    the policy's refusal escapes; the walk never continues through the child.
+    """
+    try:
+        info = os.stat(part, dir_fd=fd, follow_symlinks=False)
+    except OSError:
+        return
+    if not stat.S_ISDIR(info.st_mode):
+        return
+    directory_check(None, part, info)
+    if not _SEARCH_ONLY:
+        return
+    try:
+        child = os.open(
+            part,
+            _SEARCH_ONLY
+            | (getattr(os, "O_DIRECTORY", 0) or 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+            dir_fd=fd,
+        )
+    except OSError:
+        return
+    try:
+        directory_check(child, part, os.fstat(child))
+    except OSError:
+        return
+    finally:
+        os.close(child)
+
+
 def _directory_fd(
     path: str,
     *,
@@ -734,7 +793,7 @@ def _directory_fd(
     require_owner: bool = True,
     follow_links: bool = True,
     parent_fd: int | None = None,
-    directory_check: Callable[[int, str, os.stat_result], None] | None = None,
+    directory_check: Callable[[int | None, str, os.stat_result], None] | None = None,
 ) -> int:
     """Walk held directories and bound link traversal, preserving platform ancestor aliases."""
     links = [0] if links is None else links
@@ -793,6 +852,8 @@ class PlanRefusal(StrEnum):
     INSIDE_REPO = "settings are inside a repository"
     UNSUPPORTED = "guarded plan reads are unavailable on this platform"
     CHANGED = "file changed before it could be read"
+    GIT_INCLUDE = "repository config includes another file"
+    GIT_ALTERNATES = "repository borrows another object store"
 
 
 class PlanReadError(Exception):
@@ -835,20 +896,81 @@ def plan_directory_identities(paths: tuple[str, ...]) -> frozenset[tuple[int, in
     return frozenset(identities)
 
 
+@dataclass(frozen=True)
+class PlanPrivatePrefixes:
+    """Where private roots sit: below folder identities, and in a shared Git repository's tree.
+
+    `commons` maps the common Git directory of the deepest checkout holding a root to the
+    root's path in that checkout, so linked worktrees of the repository share it. An empty
+    path means the root is a whole checkout.
+    """
+
+    folders: dict[tuple[int, int], set[tuple[str, ...]]] = field(default_factory=dict)
+    commons: dict[tuple[int, int], set[tuple[str, ...]]] = field(default_factory=dict)
+
+
+def _lookup_fd(path: str) -> int | None:
+    """A directory held for lookups, or None when this user may not even enter it."""
+    parent, name = os.path.split(path)
+    if not name:
+        return _directory_fd(path, follow_links=False, require_owner=False)
+    held = _directory_fd(parent, follow_links=False, require_owner=False)
+    try:
+        flags = (getattr(os, "O_DIRECTORY", 0) or 0) | os.O_NOFOLLOW | os.O_NONBLOCK
+        for mode in (os.O_RDONLY, _SEARCH_ONLY) if _SEARCH_ONLY else (os.O_RDONLY,):
+            with contextlib.suppress(PermissionError):
+                return os.open(name, mode | flags, dir_fd=held)
+        return None
+    finally:
+        os.close(held)
+
+
+def _checkout_prefixes(real: str) -> Iterator[tuple[tuple[int, int], tuple[str, ...]]]:
+    """Every checkout at or above a folder: its common Git directory and the path in it.
+
+    A nested repository's folder is also a tracked path in each repository around it.
+    """
+    parts = [part for part in real.split("/") if part]
+    for depth in range(len(parts), -1, -1):
+        directory = _lookup_fd("/" + "/".join(parts[:depth]))
+        if directory is None:
+            # A root this user cannot enter cannot be checked for a .git entry.
+            continue
+        try:
+            try:
+                found = _present_at(directory, ".git")
+            except PermissionError:
+                # Linux opens a mode 000 root with O_PATH but refuses lookups inside it. Like
+                # a root Compass cannot open, it cannot be checked for a .git entry. Every
+                # folder above it was entered on the way, so this is only the root itself.
+                if depth != len(parts):
+                    raise
+                continue
+            if found:
+                common = inspect_plan_git(directory, PlanPathPolicy(), contents=False).common
+                yield common, tuple(parts[depth:])
+        finally:
+            os.close(directory)
+
+
 def plan_private_prefixes(
     roots: tuple[str, ...], private_ids: frozenset[tuple[int, int]]
-) -> dict[tuple[int, int], set[tuple[str, ...]]]:
-    """Remember where each private root sits below directory identities, including repo roots."""
-    prefixes: dict[tuple[int, int], set[tuple[str, ...]]] = {}
+) -> PlanPrivatePrefixes:
+    """Remember where each private root sits below directory identities and in Git trees."""
+    prefixes = PlanPrivatePrefixes()
     for root in roots:
-        ancestry = _plan_ancestry(
-            os.path.realpath(root, strict=True), PlanPathPolicy(), require_owner=False
-        )
+        # Identify the root itself by metadata under its held parent, so a root this user may
+        # enter but not list (mode 111) still loads.
+        real = os.path.realpath(root, strict=True)
+        parent, name = os.path.split(real)
+        ancestry = _plan_ancestry(parent, PlanPathPolicy().check, require_owner=False, leaf=name)
         if ancestry[-1][1] not in private_ids:
             raise PlanReadError(PlanRefusal.CHANGED)
         names = tuple(name for name, _ in ancestry)
         for index, (_, identity) in enumerate(ancestry[:-1]):
-            prefixes.setdefault(identity, set()).add(names[index + 1 :])
+            prefixes.folders.setdefault(identity, set()).add(names[index + 1 :])
+        for common, path in _checkout_prefixes(real):
+            prefixes.commons.setdefault(common, set()).add(path)
     return prefixes
 
 
@@ -859,8 +981,14 @@ class PlanPathPolicy:
     marker_files: tuple[str, ...] = ()
     settings_file: bool = False
     repo_ids: frozenset[tuple[int, int]] = frozenset()
+    # One settings load is one read. Its marker scans are kept by the directory's identity and
+    # times, which any added, renamed or removed entry changes.
+    _scans: dict[tuple[int, int, int, int], PlanRefusal | None] = field(
+        default_factory=dict, init=False, repr=False, compare=False
+    )
 
-    def check(self, directory: int, name: str, info: os.stat_result) -> None:
+    def check(self, directory: int | None, name: str, info: os.stat_result) -> None:
+        """Refuse a directory by policy. Without a descriptor, only its metadata is checked."""
         if not info.st_ino:
             raise PlanReadError(PlanRefusal.UNREADABLE)
         identity = _identity(info)
@@ -868,15 +996,32 @@ class PlanPathPolicy:
             raise PlanReadError(PlanRefusal.INSIDE_REPO)
         if identity in self.private_ids or (self.marked_name and self.marked_name(name)):
             raise PlanReadError(PlanRefusal.PRIVATE)
+        if directory is None:
+            return
         if self.settings_file and _git_directory_at(directory):
             raise PlanReadError(PlanRefusal.INSIDE_REPO)
-        if self.marker_files and _marker_at(directory, self.marker_files):
+        if self.marker_files:
+            self._check_markers(directory, info)
+
+    def _check_markers(self, directory: int, info: os.stat_result) -> None:
+        # The exact names cost one lookup each, so they are checked on every walk.
+        if any(_present_at(directory, marker) for marker in self.marker_files):
             raise PlanReadError(PlanRefusal.PRIVATE)
+        key = (info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns)
+        if key not in self._scans:
+            if len(self._scans) >= 4096:
+                self._scans.clear()
+            try:
+                self._scans[key] = (
+                    PlanRefusal.PRIVATE if _marker_scan(directory, self.marker_files) else None
+                )
+            except PlanReadError as exc:
+                self._scans[key] = exc.reason
+        if (reason := self._scans[key]) is not None:
+            raise PlanReadError(reason)
 
 
-def _marker_at(directory: int, markers: tuple[str, ...]) -> bool:
-    if any(_present_at(directory, marker) for marker in markers):
-        return True
+def _marker_scan(directory: int, markers: tuple[str, ...]) -> bool:
     folded = {unicodedata.normalize("NFC", marker).casefold() for marker in markers}
     with os.scandir(directory) as entries:
         for index, entry in enumerate(entries, start=1):
@@ -933,37 +1078,73 @@ def inspect_plan_directory(path: str, policy: PlanPathPolicy) -> tuple[int, int]
 
 
 def _plan_ancestry(
-    path: str, policy: PlanPathPolicy, *, require_owner: bool = True
+    path: str,
+    policy_check: Callable[[int | None, str, os.stat_result], None],
+    *,
+    require_owner: bool = True,
+    leaf: str = "",
 ) -> list[tuple[str, tuple[int, int]]]:
     ancestry: list[tuple[str, tuple[int, int]]] = []
 
-    def check(directory: int, name: str, info: os.stat_result) -> None:
-        policy.check(directory, name, info)
+    def check(directory: int | None, name: str, info: os.stat_result) -> None:
+        policy_check(directory, name, info)
         ancestry.append((name, _identity(info)))
 
-    os.close(
-        _directory_fd(path, follow_links=False, directory_check=check, require_owner=require_owner)
+    directory = _directory_fd(
+        path, follow_links=False, directory_check=check, require_owner=require_owner
     )
+    try:
+        if leaf:
+            info = os.stat(leaf, dir_fd=directory, follow_symlinks=False)
+            if not stat.S_ISDIR(info.st_mode) or not info.st_ino:
+                raise OSError(errno.ENOTDIR, "Not a directory", leaf)
+            ancestry.append((leaf, _identity(info)))
+    finally:
+        os.close(directory)
     return ancestry
 
 
-def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[int, int]]:
-    if os.name == "nt" or not os.path.isabs(path):
-        return frozenset()
+def _session_identities(
+    path: str, check: Callable[[int | None, str, os.stat_result], None]
+) -> frozenset[tuple[int, int]] | None:
     try:
         resolved = os.path.realpath(path, strict=True)
-        ancestry = _plan_ancestry(resolved, policy)
-        if path != resolved:
-            # Check the alias route too, without using it for the join.
-            alias = _directory_fd(path, directory_check=policy.check)
-            try:
-                if _identity(os.fstat(alias)) != ancestry[-1][1]:
-                    return frozenset()
-            finally:
-                os.close(alias)
-        return frozenset(identity for _, identity in ancestry)
-    except (OSError, ValueError, PlanReadError):
+    except PermissionError:
+        # Walk the given route: a private folder there may be what refuses the lookup.
+        os.close(_directory_fd(path, directory_check=check, require_owner=False))
+        return None
+    ancestry = _plan_ancestry(resolved, check, require_owner=False)
+    if path != resolved:
+        # Check the alias route too, without using it for the join.
+        alias = _directory_fd(path, directory_check=check, require_owner=False)
+        try:
+            if _identity(os.fstat(alias)) != ancestry[-1][1]:
+                return None
+        finally:
+            os.close(alias)
+    return frozenset(identity for _, identity in ancestry)
+
+
+def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[int, int]] | None:
+    """The identities above a session folder, empty when it is or may be private, or is gone.
+
+    None means the folder's identity chain could not be looked up, so it may sit below any lane
+    folder. A chain that resolves but fails a policy check it cannot finish (a folder Compass
+    does not own, a marker scan over the cap) may be private, so it joins no lane.
+    """
+    if os.name == "nt" or not os.path.isabs(path):
+        return None
+    try:
+        return _session_identities(path, policy.check)
+    except (PlanReadError, NotOwnedError):
         return frozenset()
+    except OSError as exc:
+        # A folder that is gone, not a folder, or a link raced in joins no lane. Any other
+        # error (a refused lookup, too many open files, an I/O error) leaves it unexamined.
+        gone = {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}
+        return frozenset() if exc.errno in gone else None
+    except ValueError:
+        return None
 
 
 def _check_plan_leaf(
@@ -1019,15 +1200,48 @@ def open_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> int:
     return fd
 
 
-def read_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> bytes:
-    try:
-        with os.fdopen(open_plan_source(path, policy, max_bytes), "rb") as stream:
-            data = stream.read(max_bytes + 1)
-    except OSError as exc:
-        raise _plan_refusal(exc) from None
+def _content_stamp(info: os.stat_result) -> tuple[int, ...]:
+    # The change time is the one field a same-size rewrite cannot restore: utime sets it too.
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _read_held_leaf(fd: int, max_bytes: int) -> bytes:
+    """Read an open leaf, then refuse it if its metadata moved while it was read."""
+    chunks: list[bytes] = []
+    remaining = max_bytes + 1
+    before = os.fstat(fd)
+    while remaining > 0:
+        chunk = os.read(fd, min(remaining, 64 * 1024))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    after = os.fstat(fd)
+    data = b"".join(chunks)
+    # A same-size rewrite in place keeps the inode, so the read could join two versions.
+    if _content_stamp(before) != _content_stamp(after) or len(data) != after.st_size:
+        raise PlanReadError(PlanRefusal.CHANGED)
     if len(data) > max_bytes:
         raise PlanReadError(PlanRefusal.TOO_LARGE)
     return data
+
+
+def read_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> bytes:
+    fd = open_plan_source(path, policy, max_bytes)
+    try:
+        return _read_held_leaf(fd, max_bytes)
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
+    finally:
+        os.close(fd)
 
 
 def read_plan_settings(path: str, max_bytes: int) -> bytes:
@@ -1038,6 +1252,192 @@ def read_plan_settings(path: str, max_bytes: int) -> bytes:
     policy = PlanPathPolicy(settings_file=True)
     inspect_plan_source(path, policy, max_bytes)
     return read_plan_source(path, policy, max_bytes)
+
+
+# Git's own pointer files (.git, commondir) are one short line.
+_GIT_POINTER_BYTES = 4096
+_GIT_CONFIG_BYTES = 256 * 1024
+_GIT_ALTERNATES_BYTES = 64 * 1024
+# 256 fan-out folders plus info and pack; a pack folder holds a few files per pack.
+_GIT_OBJECT_ENTRIES = 16384
+
+
+@dataclass(frozen=True)
+class PlanGitFiles:
+    """What a repository's own Git directories hold that could reach outside them."""
+
+    common: tuple[int, int]
+    configs: tuple[bytes, ...]
+    alternates: tuple[bytes, ...]
+    # A link among the object store's entries, or for a named loose object, to another store.
+    linked: bool = False
+
+
+def _read_plan_leaf_at(directory: int, name: str, max_bytes: int) -> bytes | None:
+    """A guarded leaf under a held directory, or None when it is absent."""
+    try:
+        before = _inspect_plan_leaf(directory, name, max_bytes)
+    except FileNotFoundError:
+        return None
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        _check_plan_leaf(os.fstat(fd), max_bytes, before=before)
+        return _read_held_leaf(fd, max_bytes)
+    finally:
+        os.close(fd)
+
+
+def _git_pointer(data: bytes, prefix: bytes = b"") -> str:
+    # Git strips trailing line ends only, then takes the rest as a path.
+    if not data.startswith(prefix) or b"\0" in data:
+        raise PlanReadError(PlanRefusal.UNREADABLE)
+    path = data[len(prefix) :].rstrip(b"\r\n")
+    if not path:
+        raise PlanReadError(PlanRefusal.UNREADABLE)
+    return os.fsdecode(path)
+
+
+def _plan_subdirectory(parent: int, name: str, policy: PlanPathPolicy) -> int | None:
+    """A directory entry under a held parent, or None when it is absent."""
+    try:
+        info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if stat.S_ISLNK(info.st_mode):
+        raise PlanReadError(PlanRefusal.SYMLINK)
+    if not stat.S_ISDIR(info.st_mode):
+        raise PlanReadError(PlanRefusal.NOT_REGULAR)
+    return _directory_fd(name, parent_fd=parent, follow_links=False, directory_check=policy.check)
+
+
+def _plan_git_dir(directory: int, policy: PlanPathPolicy) -> int:
+    try:
+        info = os.stat(".git", dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        # A bare repository is its own Git directory.
+        return os.dup(directory)
+    if stat.S_ISLNK(info.st_mode):
+        raise PlanReadError(PlanRefusal.SYMLINK)
+    if stat.S_ISDIR(info.st_mode):
+        return _directory_fd(
+            ".git", parent_fd=directory, follow_links=False, directory_check=policy.check
+        )
+    pointer = _read_plan_leaf_at(directory, ".git", _GIT_POINTER_BYTES)
+    if pointer is None:
+        raise PlanReadError(PlanRefusal.CHANGED)
+    # A linked worktree or submodule names its Git directory, relative to the checkout.
+    return _directory_fd(
+        _git_pointer(pointer, b"gitdir: "),
+        parent_fd=directory,
+        follow_links=False,
+        directory_check=policy.check,
+    )
+
+
+def _plan_common_dir(gitdir: int, policy: PlanPathPolicy) -> int:
+    pointer = _read_plan_leaf_at(gitdir, "commondir", _GIT_POINTER_BYTES)
+    if pointer is None:
+        return os.dup(gitdir)
+    return _directory_fd(
+        _git_pointer(pointer), parent_fd=gitdir, follow_links=False, directory_check=policy.check
+    )
+
+
+def plan_git_common(directory: int, policy: PlanPathPolicy) -> tuple[int, int]:
+    """The identity of the Git directory a checkout shares with its linked worktrees."""
+    return inspect_plan_git(directory, policy, contents=False).common
+
+
+def _linked_entry(directory: int, cap: int) -> bool:
+    """Whether any direct entry of a held directory is a symbolic link, up to a bounded count."""
+    with os.scandir(directory) as entries:
+        for index, entry in enumerate(entries, start=1):
+            if index > cap:
+                raise PlanReadError(PlanRefusal.UNREADABLE)
+            if entry.is_symlink():
+                return True
+    return False
+
+
+def _linked_objects(
+    common: int, policy: PlanPathPolicy, held: contextlib.ExitStack, loose: tuple[str, ...]
+) -> tuple[list[bytes | None], bool]:
+    """The alternates files, and whether the store links any of its entries elsewhere.
+
+    Git follows a link for a fan-out folder, a pack or a loose object as readily as an
+    alternates line, so the fan-out folders, packs, info files and each named loose object
+    are checked for links. Hard links are not: the bytes are then the repository's own.
+    """
+    objects = _plan_subdirectory(common, "objects", policy)
+    if objects is None:
+        return [], False
+    held.callback(os.close, objects)
+    linked = _linked_entry(objects, _GIT_OBJECT_ENTRIES)
+    alternates: list[bytes | None] = []
+    for name in ("info", "pack"):
+        folder = _plan_subdirectory(objects, name, policy)
+        if folder is None:
+            continue
+        held.callback(os.close, folder)
+        linked = linked or _linked_entry(folder, _GIT_OBJECT_ENTRIES)
+        if name == "info":
+            alternates.extend(
+                _read_plan_leaf_at(folder, file, _GIT_ALTERNATES_BYTES)
+                for file in ("alternates", "http-alternates")
+            )
+    for oid in loose:
+        with contextlib.suppress(FileNotFoundError, NotADirectoryError):
+            info = os.stat(f"{oid[:2]}/{oid[2:]}", dir_fd=objects, follow_symlinks=False)
+            linked = linked or stat.S_ISLNK(info.st_mode)
+    return alternates, linked
+
+
+def _bare_layout(directory: int) -> bool:
+    # Git's own test for a Git directory: HEAD, objects and refs entries.
+    return all(_present_at(directory, name) for name in ("HEAD", "objects", "refs"))
+
+
+def inspect_plan_git(
+    directory: int,
+    policy: PlanPathPolicy,
+    *,
+    contents: bool = True,
+    loose: tuple[str, ...] = (),
+) -> PlanGitFiles:
+    """Find a checkout's Git directory and common directory under the same guards as a source.
+
+    With `contents`, also read its config files and alternate object lists, and check its
+    object store and the named loose objects for links, so the caller can refuse a repository
+    whose Git would read files outside it.
+    """
+    if os.name == "nt":
+        raise PlanReadError(PlanRefusal.UNSUPPORTED)
+    try:
+        if _present_at(directory, ".git") and _bare_layout(directory):
+            # When its .git entry is not a valid Git directory, Git reads the folder itself
+            # as a bare repository, which these checks would not have looked at.
+            raise PlanReadError(PlanRefusal.UNREADABLE)
+        with contextlib.ExitStack() as held:
+            gitdir = _plan_git_dir(directory, policy)
+            held.callback(os.close, gitdir)
+            common = _plan_common_dir(gitdir, policy)
+            held.callback(os.close, common)
+            identity = _identity(os.fstat(common))
+            if not contents:
+                return PlanGitFiles(identity, (), ())
+            configs = (
+                _read_plan_leaf_at(common, "config", _GIT_CONFIG_BYTES),
+                _read_plan_leaf_at(gitdir, "config.worktree", _GIT_CONFIG_BYTES),
+            )
+            alternates, linked = _linked_objects(common, policy, held, loose)
+            return PlanGitFiles(
+                identity,
+                tuple(data for data in configs if data is not None),
+                tuple(data for data in alternates if data is not None),
+                linked,
+            )
+    except OSError as exc:
+        raise _plan_refusal(exc) from None
 
 
 def list_plan_names(

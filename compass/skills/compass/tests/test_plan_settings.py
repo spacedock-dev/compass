@@ -361,6 +361,71 @@ class PlanSettingsTest(unittest.TestCase):
         self.assertIsNone(read.data)
         self.assertEqual(read.reason, "file changed before it could be read")
 
+    def rewrite_during_read(self, path: Path, old: bytes, new: bytes) -> Any:
+        """Return part of the file, then rewrite it in place to the same size."""
+        self.assertEqual(len(old), len(new))
+        original_read = os.read
+        rewritten: list[bool] = []
+
+        def read(fd: int, size: int) -> bytes:
+            if rewritten:
+                return original_read(fd, size)
+            rewritten.append(True)
+            chunk = original_read(fd, min(size, 16))
+            data = path.read_bytes()
+            self.assertIn(old, data[16:])
+            with path.open("r+b") as stream:
+                stream.write(data.replace(old, new))
+            info = path.stat()
+            os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
+            self.assertEqual(path.stat().st_size, len(data))
+            return chunk
+
+        self.addCleanup(lambda: self.assertTrue(rewritten, "the read was not intercepted"))
+        return mock.patch("compass_runtime.io.os.read", side_effect=read)
+
+    def test_settings_refuse_a_same_size_rewrite_during_the_read(self) -> None:
+        self.path.write_text(json.dumps(self.fixture()), encoding="utf-8")
+        with self.rewrite_during_read(self.path, b'"ref": "main"', b'"ref": "next"'):
+            loaded = settings.load(str(self.home))
+        self.assertEqual(loaded.reason, "file changed before it could be read")
+        self.assertIsNone(loaded.settings)
+        # The finished rewrite is read whole on the next load.
+        repo = self.loaded(json.loads(self.path.read_text(encoding="utf-8"))).sources
+        self.assertEqual(repo.repositories[0].ref, "next")
+
+    def test_log_refuses_a_same_size_rewrite_during_the_read(self) -> None:
+        plan = self.loaded(self.fixture())
+        with self.rewrite_during_read(self.log, b"on this", b"on that"):
+            read = plan.sources.read_log()
+        self.assertIsNone(read.data)
+        self.assertEqual(read.reason, "file changed before it could be read")
+        self.assertEqual(plan.sources.read_log().data, b"ask lane:one Check on that")
+
+    def test_log_refuses_a_rewrite_that_restores_its_modification_time(self) -> None:
+        plan = self.loaded(self.fixture())
+        before = self.log.stat()
+        original_read = os.read
+        rewritten: list[bool] = []
+
+        def read(fd: int, size: int) -> bytes:
+            if rewritten:
+                return original_read(fd, size)
+            rewritten.append(True)
+            chunk = original_read(fd, min(size, 16))
+            with self.log.open("r+b") as stream:
+                stream.write(self.log.read_bytes().replace(b"on this", b"on that"))
+            # Only the change time still shows the write.
+            os.utime(self.log, ns=(before.st_atime_ns, before.st_mtime_ns))
+            self.assertEqual(self.log.stat().st_mtime_ns, before.st_mtime_ns)
+            return chunk
+
+        with mock.patch("compass_runtime.io.os.read", side_effect=read):
+            read_back = plan.sources.read_log()
+        self.assertTrue(rewritten)
+        self.assertIsNone(read_back.data)
+        self.assertEqual(read_back.reason, "file changed before it could be read")
+
     def test_brief_listing_refuses_an_overfull_folder_without_opening_briefs(self) -> None:
         doc = self.fixture()
         doc["briefs"]["max_files"] = 1
@@ -436,6 +501,66 @@ class PlanSettingsTest(unittest.TestCase):
         loaded = self.load(doc)
         self.assertEqual(loaded.reason, "could not identify a private root")
         self.assertIsNone(loaded.settings)
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory whatever its mode")
+    def test_execute_only_private_root_loads_and_refuses_beneath_it(self) -> None:
+        for private in (self.private, self.repo / "sealed"):
+            with self.subTest(private=private.name):
+                (private / "nested").mkdir(parents=True)
+                log = private / "nested" / "events.log"
+                log.write_bytes(b"ask lane:one CANARY_EXECUTE_ONLY")
+                (private / "goals.md").write_text("## Goals\n- G1: CANARY_EXECUTE_ONLY\n")
+                doc = self.fixture()
+                doc["private"]["roots"] = [str(private)]
+                doc["log"]["path"] = str(log)
+                doc["briefs"]["folder"] = str(private / "nested")
+                doc["repos"][0]["files"] = {"goals": ["sealed/goals.md"]}
+                private.chmod(0o111)
+                self.addCleanup(private.chmod, 0o700)
+                plan = self.loaded(doc).sources
+                self.assertEqual(plan.events.reason, "private")
+                self.assertEqual(plan.brief_folder.reason, "private")
+                with mock.patch.object(io, "open_plan_source") as opened:
+                    self.assertEqual(plan.read_log().reason, "private")
+                    self.assertEqual(plan.brief_names().reason, "private")
+                opened.assert_not_called()
+                if private.parent == self.repo:
+                    self.assertEqual(
+                        plan.tree_source("Example", "main", "sealed/goals.md").reason, "private"
+                    )
+                # A private root that cannot even be entered still loads; beneath it is refused.
+                private.chmod(0)
+                self.assertIn(self.loaded(doc).sources.read_log().reason, {"private", "unreadable"})
+                private.chmod(0o700)
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory whatever its mode")
+    def test_a_private_root_held_open_but_not_searchable_still_loads(self) -> None:
+        # Linux opens a mode 000 folder with O_PATH, but any lookup inside it is refused.
+        (self.private / "nested").mkdir()
+        log = self.private / "nested" / "events.log"
+        log.write_bytes(b"ask lane:one CANARY_NOT_SEARCHABLE")
+        doc = self.fixture()
+        doc["log"]["path"] = str(log)
+        held = os.open(self.private, os.O_RDONLY)
+        self.addCleanup(os.close, held)
+        self.private.chmod(0)
+        self.addCleanup(self.private.chmod, 0o700)
+        lookup = io._lookup_fd
+
+        def opened_anyway(path: str) -> int | None:
+            return os.dup(held) if path == str(self.private) else lookup(path)
+
+        with mock.patch.object(io, "_lookup_fd", side_effect=opened_anyway):
+            plan = self.loaded(doc)
+        self.assertIn(plan.sources.read_log().reason, {"private", "unreadable"})
+
+    @unittest.skipUnless(sys.platform == "darwin", "the macOS lookup-only flag")
+    def test_lookup_only_flag_does_not_depend_on_the_python_build(self) -> None:
+        # Python built against an SDK before O_SEARCH was declared does not export it.
+        with mock.patch.dict(os.__dict__):
+            for name in ("O_SEARCH", "O_EXEC", "O_PATH"):
+                os.__dict__.pop(name, None)
+            self.assertEqual(io._search_only_flag(), 0x40000000 | os.O_DIRECTORY)
 
     def test_an_unreadable_repository_does_not_refuse_other_sources(self) -> None:
         doc = self.fixture()

@@ -108,6 +108,16 @@ def _diagram(diagram: model.Diagram) -> dict[str, Any]:
     }
 
 
+def _published_folders(
+    config: RuntimeConfig, state: RuntimeState
+) -> tuple[tuple[str, str, str], ...] | None:
+    # The folder sidecar is bound to the same snapshot as the board rows.
+    published = state.snapshot.session_folders((config.window_hours, False))
+    if published is None:
+        published = state.snapshot.session_folders((config.window_hours, True))
+    return published
+
+
 def _lane_sessions(
     lanes: tuple[model.Lane, ...],
     config: RuntimeConfig,
@@ -118,21 +128,22 @@ def _lane_sessions(
     for lane in lanes:
         if lane.folder is not None:
             folders[lane.folder.device, lane.folder.inode].append(lane.slug)
-    # The folder sidecar is bound to the same snapshot as the board rows.
-    published = state.snapshot.session_folders((config.window_hours, False))
-    if published is None:
-        published = state.snapshot.session_folders((config.window_hours, True))
+    published = _published_folders(config, state)
     if published is None or not folders:
         return {}
 
     matched: dict[str, list[str]] = {slug: [] for slugs in folders.values() for slug in slugs}
-    ancestry: dict[str, frozenset[tuple[int, int]]] = {}
+    ancestry: dict[str, frozenset[tuple[int, int]] | None] = {}
     for harness, sid, cwd in published:
         if _text(harness) != harness or _text(sid) != sid:
             continue
         if cwd not in ancestry:
             ancestry[cwd] = io.plan_session_ancestry(cwd, policy)
-        matches = [slug for identity in ancestry[cwd] for slug in folders.get(identity, ())]
+        identities = ancestry[cwd]
+        if identities is None:
+            # An unexamined folder could sit below any lane folder, so no lane's list is complete.
+            return {}
+        matches = [slug for identity in identities for slug in folders.get(identity, ())]
         if len(matches) == 1:
             # Same wire key as the board's sessionKey helper.
             key = "session:" + json.dumps([harness, sid], ensure_ascii=False, separators=(",", ":"))

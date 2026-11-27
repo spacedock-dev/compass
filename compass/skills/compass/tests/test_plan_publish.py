@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
@@ -495,6 +496,104 @@ class PlanPublicationTest(PlanRepoTestCase):
         warm = {row["id"]: row["sessions"] for row in self.payload(app)[0]["lanes"]}
         self.assertEqual(cold, {"hull": None, "none": None, "refused": None})
         self.assertEqual(warm, {"hull": [], "none": None, "refused": None})
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads a directory whatever its mode")
+    def test_unexaminable_session_folder_leaves_the_join_unmeasured(self) -> None:
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")
+        locked = self.root / "locked"
+        (locked / "inner").mkdir(parents=True)
+        sealed = self.root / "sealed"
+        (sealed / "inner").mkdir(parents=True)
+        policy = self.configure(private={"roots": [str(sealed)]}).sources.policy
+        app = self.application()
+
+        def lanes(*folders: Path) -> Any:
+            app.snapshot.publish(
+                (app.config.window_hours, False),
+                b"{}",
+                folders=(
+                    ("claude", "public", str(self.hull)),
+                    *(("claude", f"s{index}", str(path)) for index, path in enumerate(folders)),
+                ),
+            )
+            return self.payload(app)[0]["lanes"][0]["sessions"]
+
+        public = ['session:["claude","public"]']
+        self.assertEqual(lanes(locked / "inner", self.root / "gone"), public)
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o700)
+        # The locked folder might sit below the lane folder, so neither a full nor an empty
+        # list would be true.
+        self.assertIsNone(lanes(locked / "inner"))
+        self.assertIsNone(runtime_io.plan_session_ancestry(str(locked / "inner"), policy))
+        # A private folder is excluded rather than unexamined, even when it cannot be listed.
+        sealed.chmod(0o111)
+        self.addCleanup(sealed.chmod, 0o700)
+        self.assertEqual(lanes(sealed / "inner"), public)
+        self.assertEqual(
+            runtime_io.plan_session_ancestry(str(sealed / "inner"), policy), frozenset()
+        )
+        # A folder that can be entered but not listed cannot be cleared of marker files, so it
+        # is not examined, unless an exact marker name or a private identity settles it.
+        listed_only = self.hull / "exec"
+        (listed_only / "inner").mkdir(parents=True)
+        listed_only.chmod(0o111)
+        self.addCleanup(listed_only.chmod, 0o700)
+        self.assertIsNone(lanes(listed_only / "inner"))
+        self.assertIsNone(runtime_io.plan_session_ancestry(str(listed_only / "inner"), policy))
+        listed_only.chmod(0o700)
+        (listed_only / ".restricted").touch()
+        listed_only.chmod(0o111)
+        self.assertEqual(lanes(listed_only / "inner"), public)
+        # Even one that cannot be entered at all is identified by its metadata.
+        sealed.chmod(0)
+        self.assertEqual(lanes(sealed, sealed / "inner"), public)
+        for folder in (sealed, sealed / "inner"):
+            self.assertEqual(runtime_io.plan_session_ancestry(str(folder), policy), frozenset())
+
+    def test_root_owned_and_crowded_ancestors_keep_the_join_measured(self) -> None:
+        (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")
+        crowded = self.root / "crowded"
+        (crowded / "inner").mkdir(parents=True)
+        for index in range(4100):
+            (crowded / f"entry-{index}").touch()
+        policy = self.configure().sources.policy
+        app = self.application()
+        app.snapshot.publish(
+            (app.config.window_hours, False),
+            b"{}",
+            folders=(
+                ("claude", "public", str(self.hull)),
+                ("claude", "root", "/"),
+                ("claude", "tmp", "/tmp"),
+                ("claude", "crowded", str(crowded / "inner")),
+            ),
+        )
+        lanes = self.payload(app)[0]["lanes"]
+        self.assertEqual(lanes[0]["sessions"], ['session:["claude","public"]'])
+        for folder in ("/", "/tmp"):
+            self.assertIsNotNone(runtime_io.plan_session_ancestry(folder, policy))
+        # The root folder is examined, not merely excluded.
+        self.assertTrue(runtime_io.plan_session_ancestry("/", policy))
+        # Only a lookup the system refuses leaves the join unmeasured.
+        for error, expected in (
+            (errno.EMFILE, None),
+            (errno.EIO, None),
+            (errno.ENOENT, frozenset()),
+            (errno.ENOTDIR, frozenset()),
+            (errno.ELOOP, frozenset()),
+        ):
+            with (
+                self.subTest(errno=errno.errorcode[error]),
+                mock.patch.object(
+                    runtime_io, "_session_identities", side_effect=OSError(error, "probe")
+                ),
+            ):
+                self.assertEqual(runtime_io.plan_session_ancestry("/", policy), expected)
+        # A marker scan over the cap cannot clear the folder, so it joins no lane.
+        self.assertEqual(
+            runtime_io.plan_session_ancestry(str(crowded / "inner"), policy), frozenset()
+        )
 
     def test_refused_lane_folder_has_a_path_free_reason(self) -> None:
         (self.briefs / "hull.md").write_text("## Goal\nBuild the hull\n")

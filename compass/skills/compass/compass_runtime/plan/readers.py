@@ -179,10 +179,18 @@ def _read_repository(
     ]
     if not any(source.reason is None for source in declared):
         return [_FileRows(source) for source in declared]
+
+    def verify_cwd(args: tuple[str, ...]) -> None:
+        try:
+            config.sources.verify_repository(repo, args)
+        except io.PlanReadError as exc:
+            raise git_status.PlanGitError(exc.reason) from None
+
     tree = replace(
         git_status.plan_reader(repo.path, timeout_sec=timeout_sec),
         request_deadline=git_deadline,
         directory=directory,
+        verify_cwd=verify_cwd,
     )
     try:
         tip = tree.tip(repo.ref)
