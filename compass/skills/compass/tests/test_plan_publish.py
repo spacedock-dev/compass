@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
@@ -532,6 +533,18 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(
             runtime_io.plan_session_ancestry(str(sealed / "inner"), policy), frozenset()
         )
+        # A folder that can be entered but not listed cannot be cleared of marker files, so it
+        # is not examined, unless an exact marker name or a private identity settles it.
+        listed_only = self.hull / "exec"
+        (listed_only / "inner").mkdir(parents=True)
+        listed_only.chmod(0o111)
+        self.addCleanup(listed_only.chmod, 0o700)
+        self.assertIsNone(lanes(listed_only / "inner"))
+        self.assertIsNone(runtime_io.plan_session_ancestry(str(listed_only / "inner"), policy))
+        listed_only.chmod(0o700)
+        (listed_only / ".restricted").touch()
+        listed_only.chmod(0o111)
+        self.assertEqual(lanes(listed_only / "inner"), public)
         # Even one that cannot be entered at all is identified by its metadata.
         sealed.chmod(0)
         self.assertEqual(lanes(sealed, sealed / "inner"), public)
@@ -560,6 +573,23 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(lanes[0]["sessions"], ['session:["claude","public"]'])
         for folder in ("/", "/tmp"):
             self.assertIsNotNone(runtime_io.plan_session_ancestry(folder, policy))
+        # The root folder is examined, not merely excluded.
+        self.assertTrue(runtime_io.plan_session_ancestry("/", policy))
+        # Only a lookup the system refuses leaves the join unmeasured.
+        for error, expected in (
+            (errno.EMFILE, None),
+            (errno.EIO, None),
+            (errno.ENOENT, frozenset()),
+            (errno.ENOTDIR, frozenset()),
+            (errno.ELOOP, frozenset()),
+        ):
+            with (
+                self.subTest(errno=errno.errorcode[error]),
+                mock.patch.object(
+                    runtime_io, "_session_identities", side_effect=OSError(error, "probe")
+                ),
+            ):
+                self.assertEqual(runtime_io.plan_session_ancestry("/", policy), expected)
         # A marker scan over the cap cannot clear the folder, so it joins no lane.
         self.assertEqual(
             runtime_io.plan_session_ancestry(str(crowded / "inner"), policy), frozenset()

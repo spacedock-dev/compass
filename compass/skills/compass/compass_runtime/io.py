@@ -914,8 +914,11 @@ def _lookup_fd(path: str) -> int | None:
         os.close(held)
 
 
-def _checkout_prefix(real: str) -> tuple[tuple[int, int], tuple[str, ...]] | None:
-    """The deepest checkout at or above a folder: its common Git directory and the path in it."""
+def _checkout_prefixes(real: str) -> Iterator[tuple[tuple[int, int], tuple[str, ...]]]:
+    """Every checkout at or above a folder: its common Git directory and the path in it.
+
+    A nested repository's folder is also a tracked path in each repository around it.
+    """
     parts = [part for part in real.split("/") if part]
     for depth in range(len(parts), -1, -1):
         directory = _lookup_fd("/" + "/".join(parts[:depth]))
@@ -925,10 +928,9 @@ def _checkout_prefix(real: str) -> tuple[tuple[int, int], tuple[str, ...]] | Non
         try:
             if _present_at(directory, ".git"):
                 common = inspect_plan_git(directory, PlanPathPolicy(), contents=False).common
-                return common, tuple(parts[depth:])
+                yield common, tuple(parts[depth:])
         finally:
             os.close(directory)
-    return None
 
 
 def plan_private_prefixes(
@@ -947,9 +949,8 @@ def plan_private_prefixes(
         names = tuple(name for name, _ in ancestry)
         for index, (_, identity) in enumerate(ancestry[:-1]):
             prefixes.folders.setdefault(identity, set()).add(names[index + 1 :])
-        checkout = _checkout_prefix(real)
-        if checkout is not None:
-            prefixes.commons.setdefault(checkout[0], set()).add(checkout[1])
+        for common, path in _checkout_prefixes(real):
+            prefixes.commons.setdefault(common, set()).add(path)
     return prefixes
 
 
@@ -1113,21 +1114,17 @@ def plan_session_ancestry(path: str, policy: PlanPathPolicy) -> frozenset[tuple[
     """
     if os.name == "nt" or not os.path.isabs(path):
         return None
-
-    def check(directory: int | None, name: str, info: os.stat_result) -> None:
-        try:
-            policy.check(directory, name, info)
-        except OSError:
-            raise PlanReadError(PlanRefusal.UNREADABLE) from None
-
     try:
-        return _session_identities(path, check)
+        return _session_identities(path, policy.check)
     except (PlanReadError, NotOwnedError):
         return frozenset()
-    except PermissionError:
+    except OSError as exc:
+        # A folder that is gone, not a folder, or a link raced in joins no lane. Any other
+        # error (a refused lookup, too many open files, an I/O error) leaves it unexamined.
+        gone = {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}
+        return frozenset() if exc.errno in gone else None
+    except ValueError:
         return None
-    except (OSError, ValueError):
-        return frozenset()
 
 
 def _check_plan_leaf(
@@ -1241,6 +1238,8 @@ def read_plan_settings(path: str, max_bytes: int) -> bytes:
 _GIT_POINTER_BYTES = 4096
 _GIT_CONFIG_BYTES = 256 * 1024
 _GIT_ALTERNATES_BYTES = 64 * 1024
+# 256 fan-out folders plus info and pack; a pack folder holds a few files per pack.
+_GIT_OBJECT_ENTRIES = 16384
 
 
 @dataclass(frozen=True)
@@ -1250,6 +1249,8 @@ class PlanGitFiles:
     common: tuple[int, int]
     configs: tuple[bytes, ...]
     alternates: tuple[bytes, ...]
+    # A link among the object store's entries, or for a named loose object, to another store.
+    linked: bool = False
 
 
 def _read_plan_leaf_at(directory: int, name: str, max_bytes: int) -> bytes | None:
@@ -1327,17 +1328,75 @@ def plan_git_common(directory: int, policy: PlanPathPolicy) -> tuple[int, int]:
     return inspect_plan_git(directory, policy, contents=False).common
 
 
+def _linked_entry(directory: int, cap: int) -> bool:
+    """Whether any direct entry of a held directory is a symbolic link, up to a bounded count."""
+    with os.scandir(directory) as entries:
+        for index, entry in enumerate(entries, start=1):
+            if index > cap:
+                raise PlanReadError(PlanRefusal.UNREADABLE)
+            if entry.is_symlink():
+                return True
+    return False
+
+
+def _linked_objects(
+    common: int, policy: PlanPathPolicy, held: contextlib.ExitStack, loose: tuple[str, ...]
+) -> tuple[list[bytes | None], bool]:
+    """The alternates files, and whether the store links any of its entries elsewhere.
+
+    Git follows a link for a fan-out folder, a pack or a loose object as readily as an
+    alternates line, so the fan-out folders, packs, info files and each named loose object
+    are checked for links. Hard links are not: the bytes are then the repository's own.
+    """
+    objects = _plan_subdirectory(common, "objects", policy)
+    if objects is None:
+        return [], False
+    held.callback(os.close, objects)
+    linked = _linked_entry(objects, _GIT_OBJECT_ENTRIES)
+    alternates: list[bytes | None] = []
+    for name in ("info", "pack"):
+        folder = _plan_subdirectory(objects, name, policy)
+        if folder is None:
+            continue
+        held.callback(os.close, folder)
+        linked = linked or _linked_entry(folder, _GIT_OBJECT_ENTRIES)
+        if name == "info":
+            alternates.extend(
+                _read_plan_leaf_at(folder, file, _GIT_ALTERNATES_BYTES)
+                for file in ("alternates", "http-alternates")
+            )
+    for oid in loose:
+        with contextlib.suppress(FileNotFoundError, NotADirectoryError):
+            info = os.stat(f"{oid[:2]}/{oid[2:]}", dir_fd=objects, follow_symlinks=False)
+            linked = linked or stat.S_ISLNK(info.st_mode)
+    return alternates, linked
+
+
+def _bare_layout(directory: int) -> bool:
+    # Git's own test for a Git directory: HEAD, objects and refs entries.
+    return all(_present_at(directory, name) for name in ("HEAD", "objects", "refs"))
+
+
 def inspect_plan_git(
-    directory: int, policy: PlanPathPolicy, *, contents: bool = True
+    directory: int,
+    policy: PlanPathPolicy,
+    *,
+    contents: bool = True,
+    loose: tuple[str, ...] = (),
 ) -> PlanGitFiles:
     """Find a checkout's Git directory and common directory under the same guards as a source.
 
-    With `contents`, also read its config files and alternate object lists, so the caller can
-    refuse a repository whose Git would read files outside it.
+    With `contents`, also read its config files and alternate object lists, and check its
+    object store and the named loose objects for links, so the caller can refuse a repository
+    whose Git would read files outside it.
     """
     if os.name == "nt":
         raise PlanReadError(PlanRefusal.UNSUPPORTED)
     try:
+        if _present_at(directory, ".git") and _bare_layout(directory):
+            # When its .git entry is not a valid Git directory, Git reads the folder itself
+            # as a bare repository, which these checks would not have looked at.
+            raise PlanReadError(PlanRefusal.UNREADABLE)
         with contextlib.ExitStack() as held:
             gitdir = _plan_git_dir(directory, policy)
             held.callback(os.close, gitdir)
@@ -1350,21 +1409,12 @@ def inspect_plan_git(
                 _read_plan_leaf_at(common, "config", _GIT_CONFIG_BYTES),
                 _read_plan_leaf_at(gitdir, "config.worktree", _GIT_CONFIG_BYTES),
             )
-            alternates: list[bytes | None] = []
-            objects = _plan_subdirectory(common, "objects", policy)
-            if objects is not None:
-                held.callback(os.close, objects)
-                info = _plan_subdirectory(objects, "info", policy)
-                if info is not None:
-                    held.callback(os.close, info)
-                    alternates.extend(
-                        _read_plan_leaf_at(info, name, _GIT_ALTERNATES_BYTES)
-                        for name in ("alternates", "http-alternates")
-                    )
+            alternates, linked = _linked_objects(common, policy, held, loose)
             return PlanGitFiles(
                 identity,
                 tuple(data for data in configs if data is not None),
                 tuple(data for data in alternates if data is not None),
+                linked,
             )
     except OSError as exc:
         raise _plan_refusal(exc) from None

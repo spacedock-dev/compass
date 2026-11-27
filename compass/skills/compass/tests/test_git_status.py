@@ -1401,7 +1401,7 @@ class PlanTreeGitTest(unittest.TestCase):
                     "core.hooksPath=/dev/null",
                     "--no-optional-locks",
                     "-c",
-                    "blame.ignoreRevsFile=",
+                    "mailmap.file=",
                     "-c",
                     "color.ui=never",
                     "-c",
@@ -1411,8 +1411,7 @@ class PlanTreeGitTest(unittest.TestCase):
                     "-l",
                     "--first-parent",
                     "--root",
-                    "--ignore-revs-file",
-                    "",
+                    "--no-ignore-revs-file",
                     "--no-textconv",
                     tip,
                     "--",
@@ -1425,7 +1424,10 @@ class PlanTreeGitTest(unittest.TestCase):
                     "-c",
                     "core.hooksPath=/dev/null",
                     "--no-optional-locks",
+                    "-c",
+                    "mailmap.file=",
                     "log",
+                    "--no-mailmap",
                     "--no-walk=unsorted",
                     "--format=%H %ct",
                     "--no-patch",
@@ -1496,7 +1498,10 @@ class PlanTreeGitTest(unittest.TestCase):
         self.assertEqual(error.exception.reason, "git timed out")
 
     def test_plan_reader_reads_no_system_or_global_config(self) -> None:
-        with mock.patch.object(git_status, "_executable", return_value="/bin/git"):
+        with (
+            mock.patch.object(git_status, "_executable", return_value="/bin/git"),
+            mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": "/example/xdg"}),
+        ):
             reader = git_status.plan_reader("/example/repo", timeout_sec=5)
         env = reader._environ
         self.assertEqual(env["GIT_CONFIG_NOSYSTEM"], "1")
@@ -1548,7 +1553,7 @@ class PlanTreeGitTest(unittest.TestCase):
         clock = [100.0]
         runner = mock.Mock(return_value=subprocess.CompletedProcess([], 0, b"\n", b""))
 
-        def slow_check() -> None:
+        def slow_check(_args: tuple[str, ...]) -> None:
             clock[0] += 5.0
 
         with mock.patch("compass_runtime.git_status.time.monotonic", side_effect=lambda: clock[0]):
@@ -1574,3 +1579,28 @@ class PlanTreeGitTest(unittest.TestCase):
                 verify_cwd=slow_check,
             )
         self.assertEqual(runner.call_args.kwargs["timeout"], 5.0)
+
+    @unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and FIFOs")
+    def test_plan_history_opens_no_file_the_repository_config_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            repo = root / "repo"
+            repo.mkdir()
+            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            identity = ["-c", "user.name=a", "-c", "user.email=a@example.test"]
+            (repo / "plan.md").write_text("one\n")
+            for args in (("init", "-q", "-b", "main"), ("add", "plan.md"), ("commit", "-qm", "x")):
+                subprocess.run([GIT or "git", *identity, *args], cwd=repo, env=env, check=True)
+            for key in ("mailmap.file", "blame.ignoreRevsFile"):
+                fifo = root / key
+                os.mkfifo(fifo)
+                subprocess.run(
+                    [GIT or "git", "config", key, str(fifo)], cwd=repo, env=env, check=True
+                )
+            reader = git_status.plan_reader(str(repo), timeout_sec=5)
+            tip = reader.tip("main")
+            # Opening either FIFO would block until the timeout.
+            started = time.monotonic()
+            self.assertEqual(len(reader.blame(tip, "plan.md", line_count=1)), 1)
+            self.assertEqual(set(reader.commit_times([tip])), {tip})
+            self.assertLess(time.monotonic() - started, 4)

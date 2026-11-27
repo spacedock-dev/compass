@@ -74,8 +74,8 @@ class PlanDatesTest(PlanRepoTestCase):
         tip = subprocess.check_output([GIT or "git", "rev-parse", "HEAD"], cwd=self.repo)
         (self.repo / ".git" / "ignored-revisions").write_bytes(tip)
         git(self.repo, "config", "blame.ignoreRevsFile", ".git/ignored-revisions")
-        # Apple Git 2.54.0 (Apple Git-157) needs the empty --ignore-revs-file
-        # argument as well as the config override to clear the configured list.
+        # --no-ignore-revs-file clears the configured list; on Apple Git 2.54.0 an empty
+        # config override and an empty --ignore-revs-file argument did not.
         model = readers.read_plan(self.configure()).model
         self.assertEqual(
             [(row.title, date_fields(row.origin.date)) for row in model.tracker[:2]],

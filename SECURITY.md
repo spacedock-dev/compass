@@ -1209,8 +1209,9 @@ from the checkout. When private roots or marker files are configured, a missing 
 refuses the read.
 
 Linked worktrees of one repository share its committed files, so a private root covers the same
-tree path in all of them. At settings load Compass finds the deepest Git checkout holding each
-private root and that checkout's common Git directory. A declared repository with the same
+tree path in all of them. At settings load Compass finds every Git checkout holding each private
+root, including one around a nested repository, and each checkout's common Git directory. A
+declared repository with the same
 common directory, whether it is the main checkout or another linked worktree, refuses that tree
 path. A private root that is a whole checkout refuses every checkout of the repository. A
 separate clone has its own Git directory and keeps its own private roots, so declare a private
@@ -1226,17 +1227,26 @@ path must still reach the folder Compass holds open. A change before dispatch re
 and Git is not run. A change during the command discards its output if it is still there when
 Git returns. A folder moved or linked away and back within one Git command goes undetected.
 
-Git reads only the repository's own configuration and objects. Compass finds the repository's
-Git directory (its `.git` folder, or the folder a linked worktree's or submodule's `.git` file
-names) and the common Git directory that folder names, through the same guarded walk as the
-checkout. A link anywhere on those paths, or a private or marked folder, refuses the
-repository. Compass then reads the common directory's `config` and the Git directory's
+Compass refuses a repository whose Git would read configuration or objects from outside it. It
+finds the repository's Git directory (its `.git` folder, or the folder a linked worktree's or
+submodule's `.git` file names) and the common Git directory that folder names, through the same
+guarded walk as the checkout. A link anywhere on those paths, or a private or marked folder,
+refuses the repository. So does a `.git` file that does not start with `gitdir: `. A checkout
+that holds `HEAD`, `objects` and `refs` entries beside its `.git` entry is refused as
+unreadable, because Git reads such a folder as a bare repository when its `.git` entry is not a
+valid one. A relative `gitdir:` path that climbs through a folder the user does not own, such as
+`/tmp`, is refused as unreadable too. Compass then reads the common directory's `config` and the Git directory's
 `config.worktree`, up to 256 KiB each, and refuses the repository with `repository config
 includes another file` when either has an `[include]` or `[includeIf]` section. The check
 follows Git's config grammar for comments, quoted values and continued lines, and refuses a
-file it cannot read that way. A non-comment line in `objects/info/alternates` or
-`objects/info/http-alternates` refuses it with `repository borrows another object store`, as
-does a shared or reference clone. These checks run at settings load and again before and after
+file it cannot read that way. A line in `objects/info/alternates` or
+`objects/info/http-alternates` that is not empty and does not start with `#` refuses it with
+`repository borrows another object store`, as does a shared or reference clone. A carriage
+return counts as part of a line, as it does to Git. The same reason refuses a symbolic link
+among the direct entries of `objects`, `objects/info` and `objects/pack` (a linked fan-out
+folder or pack, for instance), up to 16,384 entries each, and, before each Git command, a linked
+loose object file for any object ID the command names. A hard-linked object is the repository's
+own copy and is allowed. These checks run at settings load and again before and after
 each Git command. The common directory must also stay the one found at load. A config file
 changed and restored within one Git command goes undetected. Compass verifies the repository root with
 `rev-parse --show-prefix` and resolves one exact `refs/heads/<name>` to a commit using
@@ -1252,18 +1262,20 @@ Compass uses `cat-file blob <id>` only for the exact named entry, with a regular
 of at most 256 KiB. Only content at the admitted tips reaches the plan reader. A source that is
 unavailable or malformed contributes no rows. A failure leaves other sources readable.
 
-For Markdown dates, Compass runs `-c blame.ignoreRevsFile= -c color.ui=never -c blame.coloring=none
+For Markdown dates, Compass runs `-c mailmap.file= -c color.ui=never -c blame.coloring=none
 blame -s -l --first-parent --root
---ignore-revs-file '' --no-textconv <tip> -- <path>` after the file passes those checks. The empty
-`--ignore-revs-file` argument clears configured ignore lists on Git versions where the config
-override alone leaves them in place. Short blame prints full commit IDs, line numbers and the
+--no-ignore-revs-file --no-textconv <tip> -- <path>` after the file passes those checks.
+`--no-ignore-revs-file` clears the ignore-revs files a repository config names, and the empty
+`mailmap.file` stops Git opening a configured mailmap file. Measured on Git 2.54 and 2.56: an
+empty `blame.ignoreRevsFile` override or an empty `--ignore-revs-file` argument still read the
+configured file. Short blame prints full commit IDs, line numbers and the
 current tip's lines, with an original filename column when it follows a rename. Compass
 discards filenames and line text in the Git reader. Git compares older versions
 internally and returns no older content, authors or commit messages.
 
 For those IDs and for the tip of a draft branch with proposed items, Compass reads only commit
-IDs and committer timestamps using `log --no-walk=unsorted --format='%H %ct' --no-patch
---no-show-signature --no-decorate --no-notes <ids> --`. Each call takes up to 64 validated IDs.
+IDs and committer timestamps using `-c mailmap.file= log --no-mailmap --no-walk=unsorted
+--format='%H %ct' --no-patch --no-show-signature --no-decorate --no-notes <ids> --`. Each call takes up to 64 validated IDs.
 Blame and its timestamp lookups share a deadline. A failed attribution leaves the item undated.
 The per-file cache holds only line timestamps, keyed by repository, ref, tip and path. Compass
 still checks admission and reads the current file on a cache hit. Shallow repositories can
@@ -1332,9 +1344,10 @@ found zero matching sessions. A private or deleted session folder joins no lane,
 one whose ancestry Compass could look up but not clear: a folder that fails the ownership rule,
 or one whose marker scan is over the cap. Folders above the user's own, such as `/` or `/tmp`,
 are checked under the privacy rules without the ownership rule; lane folders keep it, so they
-never match one. If the system refuses the lookup of any session folder's path, and no private
-folder on that path explains it, every lane's `sessions` is null, because that session could
-belong to any of them.
+never match one. If any session folder's path cannot be looked up, and no private folder on
+that path explains it, every lane's `sessions` is null, because that session could belong to any
+of them. That covers a folder the system refuses to open or list, and any error other than a
+missing folder, a file in place of a folder or a link.
 
 Plan text and its source diagnostics stay out of the board's session rows, event stream and
 [local history](#local-history-the-session-history-store). Fetching the plan does not collect

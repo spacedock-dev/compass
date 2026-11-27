@@ -180,9 +180,9 @@ def _read_repository(
     if not any(source.reason is None for source in declared):
         return [_FileRows(source) for source in declared]
 
-    def verify_cwd() -> None:
+    def verify_cwd(args: tuple[str, ...]) -> None:
         try:
-            config.sources.verify_repository(repo)
+            config.sources.verify_repository(repo, args)
         except io.PlanReadError as exc:
             raise git_status.PlanGitError(exc.reason) from None
 

@@ -585,7 +585,7 @@ def _run_read(
     deadline: float,
     runner: Callable[..., Any],
     directory: int | None = None,
-    verify_cwd: Callable[[], None] | None = None,
+    verify_cwd: Callable[[tuple[str, ...]], None] | None = None,
 ) -> bytes | None:
     command = (resolved, *_SAFE_READ, *args)
     env = dict(environ)
@@ -594,7 +594,7 @@ def _run_read(
     # replaced by a link would otherwise lead the same folder somewhere private.
     def verify() -> None:
         if verify_cwd is not None:
-            verify_cwd()
+            verify_cwd(args)
         elif directory is not None:
             _require_plan_cwd(cwd, directory)
 
@@ -714,7 +714,7 @@ class PlanTreeReader:
     request_deadline: float | None = None
     directory: int | None = None
     # Raises PlanGitError when the working folder no longer passes its admission checks.
-    verify_cwd: Callable[[], None] | None = None
+    verify_cwd: Callable[[tuple[str, ...]], None] | None = None
     _marker_names: dict[tuple[str, str], frozenset[str] | str] = field(
         default_factory=dict, init=False, repr=False, compare=False
     )
@@ -853,12 +853,14 @@ class PlanTreeReader:
         """Return committer times in tip line order for an already admitted blob."""
         self._check_path(tip, path)
         deadline = time.monotonic() + self.timeout_sec
-        # The empty CLI argument clears configured ignore files on Git versions where
-        # an empty config value only appends to the list.
+        # A configured ignore-revs file or mailmap is a file the repository config names,
+        # possibly outside it. Measured on Git 2.54 and 2.56: an empty blame.ignoreRevsFile
+        # or --ignore-revs-file '' still read the configured file; --no-ignore-revs-file and
+        # an empty mailmap.file do not open theirs.
         output = self._run(
             (
                 "-c",
-                "blame.ignoreRevsFile=",
+                "mailmap.file=",
                 "-c",
                 "color.ui=never",
                 "-c",
@@ -868,8 +870,7 @@ class PlanTreeReader:
                 "-l",
                 "--first-parent",
                 "--root",
-                "--ignore-revs-file",
-                "",
+                "--no-ignore-revs-file",
                 "--no-textconv",
                 tip,
                 "--",
@@ -909,7 +910,10 @@ class PlanTreeReader:
             batch = oids[start : start + _PLAN_LOG_BATCH]
             output = self._run(
                 (
+                    "-c",
+                    "mailmap.file=",
                     "log",
+                    "--no-mailmap",
                     "--no-walk=unsorted",
                     "--format=%H %ct",
                     "--no-patch",

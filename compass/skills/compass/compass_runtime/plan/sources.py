@@ -25,6 +25,7 @@ GIT_OFF = "git reads are off"
 BRIEF_MAX_BYTES = 64 * 1024
 FILE_KINDS = ("goals", "decisions", "inventory", "tracker", "diagrams")
 
+OBJECT_ID = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 _TREE_PART = re.compile(r"[A-Za-z0-9._ -]{1,128}")
 _MARKER_SEPARATOR = re.compile(r"[-_. ]+")
 
@@ -160,7 +161,7 @@ class Sources:
                 raise io.PlanReadError(io.PlanRefusal.CHANGED)
             yield directory
 
-    def verify_repository(self, repo: Repository) -> None:
+    def verify_repository(self, repo: Repository, objects: tuple[str, ...] = ()) -> None:
         """Walk the repository path afresh and require it to reach the admitted folder.
 
         Every ancestor passes the link, private identity, name marker and marker file checks
@@ -168,7 +169,7 @@ class Sources:
         pass the boundary check against the common directory found at load.
         """
         with self.hold_repository(repo) as current:
-            if git_boundary(current, self.policy) != repo.common:
+            if git_boundary(current, self.policy, objects) != repo.common:
                 raise io.PlanReadError(io.PlanRefusal.CHANGED)
 
     def tree_source(
@@ -387,19 +388,23 @@ def config_reaches_outside(data: bytes) -> bool:
 
 def _borrows_objects(data: bytes) -> bool:
     # Git skips only empty lines and lines starting with "#"; any other line names a store.
-    lines = data.replace(b"\r", b"").split(b"\n")
-    return any(line and not line.startswith(b"#") for line in lines)
+    # A carriage return is part of the path to Git, so a line holding one is not blank.
+    return any(line and not line.startswith(b"#") for line in data.split(b"\n"))
 
 
-def git_boundary(directory: int, policy: io.PlanPathPolicy) -> tuple[int, int]:
+def git_boundary(
+    directory: int, policy: io.PlanPathPolicy, objects: tuple[str, ...] = ()
+) -> tuple[int, int]:
     """Refuse a repository whose Git would read a config file or object store outside it.
 
-    Returns the identity of the repository's common Git directory.
+    `objects` names object IDs a Git command is about to read, whose loose files are checked
+    for links too. Returns the identity of the repository's common Git directory.
     """
-    files = io.inspect_plan_git(directory, policy)
+    loose = tuple(oid for oid in objects if OBJECT_ID.fullmatch(oid))
+    files = io.inspect_plan_git(directory, policy, loose=loose)
     if any(config_reaches_outside(config) for config in files.configs):
         raise io.PlanReadError(io.PlanRefusal.GIT_INCLUDE)
-    if any(_borrows_objects(alternates) for alternates in files.alternates):
+    if files.linked or any(_borrows_objects(alternates) for alternates in files.alternates):
         raise io.PlanReadError(io.PlanRefusal.GIT_ALTERNATES)
     return files.common
 

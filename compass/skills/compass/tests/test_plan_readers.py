@@ -443,11 +443,17 @@ class PlanReadersTest(PlanRepoTestCase):
                 None,
             ),
             ("continued value", f"[core]\n\tname = one \\\n[include] path = {outside}\n", None),
+            (
+                "comment ends a continuation",
+                f"[core]\n\tx = a ; \\\n[include]\n\tpath = {outside}\n",
+                include,
+            ),
+            ("byte order mark", f"\ufeff[include]\n\tpath = {outside}\n", include),
+            ("NUL byte", f"[core]\n\tname = a\x00\n[include]\n\tpath = {outside}\n", include),
         ):
             with self.subTest(name=name):
-                target = (
-                    self.repo / ".git" / "config.worktree" if name == "worktree config" else config
-                )
+                fresh = name in {"worktree config", "byte order mark"}
+                target = self.repo / ".git" / "config.worktree" if fresh else config
                 target.write_text((original if target == config else "") + text, newline="")
                 loaded = self.only_goals()
                 if reason is None:
@@ -459,6 +465,17 @@ class PlanReadersTest(PlanRepoTestCase):
                     self.assert_refused_without_git(loaded, reason)
                 config.write_text(original)
                 (self.repo / ".git" / "config.worktree").unlink(missing_ok=True)
+
+    def test_a_git_file_must_start_with_the_gitdir_prefix(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_GITFILE_PREFIX\n"})
+        git(self.repo, "branch", "side")
+        linked = self.root / "linked"
+        git(self.repo, "worktree", "add", "-q", str(linked), "side")
+        pointer = (linked / ".git").read_text()
+        self.assertTrue(pointer.startswith("gitdir: "))
+        (linked / ".git").write_text(pointer.removeprefix("gitdir: "))
+        self.repo = linked
+        self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.UNREADABLE)
 
     def test_include_added_after_load_refuses_before_git(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: CANARY_LATE_INCLUDE\n"})
@@ -495,6 +512,69 @@ class PlanReadersTest(PlanRepoTestCase):
         self.assertIsNone(self.only_goals().sources.declarations()[0].reason)
         (objects / "http-alternates").write_text("https://example.test/objects\n")
         self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.GIT_ALTERNATES)
+        (objects / "http-alternates").unlink()
+        # Git keeps a carriage return as part of the path, so neither line is blank or a comment.
+        for data in (b"\r#/../x\n", b"\r\n"):
+            with self.subTest(alternates=data):
+                (objects / "alternates").write_bytes(data)
+                self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.GIT_ALTERNATES)
+
+    def test_object_store_links_refuse_without_running_git(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_OBJECT_LINK\n"})
+        objects = self.repo / ".git" / "objects"
+        blob = subprocess.run(
+            [GIT or "git", "rev-parse", "HEAD:plan/goals.md"],
+            cwd=self.repo,
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout.strip()
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        loose = objects / blob[:2] / blob[2:]
+        for name, link in (
+            ("fan-out folder", objects / "zz"),
+            ("pack folder entry", objects / "pack" / "pack-0.pack"),
+            ("info entry", objects / "info" / "commit-graph"),
+        ):
+            with self.subTest(link=name):
+                link.parent.mkdir(exist_ok=True)
+                link.symlink_to(elsewhere)
+                self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.GIT_ALTERNATES)
+                link.unlink()
+        # A loose object linked to another store refuses before Git reads that object.
+        config = self.only_goals()
+        self.assertIsNone(config.sources.declarations()[0].reason)
+        moved = elsewhere / blob[2:]
+        loose.rename(moved)
+        loose.symlink_to(moved)
+        original = git_status.plan_reader
+        commands: list[tuple[str, ...]] = []
+
+        def runner(argv: tuple[str, ...], *, check: bool, **kwargs: Any) -> Any:
+            commands.append(argv)
+            return subprocess.run(argv, check=check, **kwargs)
+
+        def factory(cwd: str, *, timeout_sec: float) -> git_status.PlanTreeReader:
+            return original(cwd, timeout_sec=timeout_sec, runner=runner)
+
+        with mock.patch.object(git_status, "plan_reader", side_effect=factory):
+            result = readers.read_plan(config).model
+        self.assertFalse(any("cat-file" in argv for argv in commands))
+        self.assertEqual(result.sources[0].reason, io.PlanRefusal.GIT_ALTERNATES)
+        self.assertNotIn("CANARY_OBJECT_LINK", json.dumps(asdict(result)))
+
+    def test_a_bare_repository_behind_a_decoy_git_folder_is_refused(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_DECOY\n"})
+        decoy = self.root / "decoy"
+        git(self.root, "clone", "-q", "--bare", str(self.repo), str(decoy))
+        (decoy / "objects" / "info" / "alternates").write_text(f"{self.repo}/.git/objects\n")
+        with (decoy / "config").open("a") as stream:
+            stream.write("[include]\n\tpath = /outside\n")
+        # An invalid .git folder makes Git read the folder itself as a bare repository.
+        (decoy / ".git").mkdir()
+        self.repo = decoy
+        self.assert_refused_without_git(self.only_goals(), io.PlanRefusal.UNREADABLE)
 
     def test_linked_git_metadata_refuses_without_running_git(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: CANARY_LINKED_METADATA\n"})
@@ -538,6 +618,24 @@ class PlanReadersTest(PlanRepoTestCase):
         config = self.only_goals(private={"roots": [str(linked)]})
         self.assertEqual(config.sources.repositories[0].reason, "private")
         self.assert_private_without_tree_read(config)
+
+    def test_a_private_root_in_a_nested_repository_maps_for_the_outer_one(self) -> None:
+        (self.repo / "inner" / "priv").mkdir(parents=True)
+        (self.repo / "inner" / "priv" / "goals.md").write_text("## Goals\n- G1: CANARY_NESTED\n")
+        git(self.repo, "add", "inner")
+        git(self.repo, "commit", "-qm", "Nested files")
+        git(self.repo / "inner", "init", "-q", "-b", "main")
+        main = self.repo
+        git(main, "branch", "side")
+        linked = self.root / "linked"
+        git(main, "worktree", "add", "-q", str(linked), "side")
+        for configured in (main, linked):
+            with self.subTest(configured=configured.name):
+                self.repo = configured
+                config = self.only_goals(
+                    "inner/priv/goals.md", private={"roots": [str(main / "inner" / "priv")]}
+                )
+                self.assert_private_without_tree_read(config)
 
     def test_a_separate_clone_keeps_its_own_private_roots(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Clone goal\n"})
@@ -586,10 +684,61 @@ class PlanReadersTest(PlanRepoTestCase):
             result = readers.read_plan(config).model
         self.assertTrue(all(source.reason is None for source in result.sources[:5]))
         self.assertGreater(git_calls.call_count, 10)
-        info = outer.stat()
-        # The settings load already scanned it; an unchanged folder is not scanned again.
-        self.assertLessEqual(scanned.count((info.st_dev, info.st_ino)), 1)
-        self.assertLessEqual(max(map(scanned.count, scanned)), 1)
+        # The settings load already scanned them; an unchanged folder is not scanned again.
+        # Shared folders above the test's own root can change under other processes.
+        own = {
+            (info.st_dev, info.st_ino)
+            for folder in (self.root, outer, self.repo, self.repo / "plan", self.repo / ".git")
+            for info in (folder.stat(),)
+        }
+        self.assertLessEqual(max(scanned.count(identity) for identity in own), 1)
+
+    def test_exact_marker_names_are_checked_even_when_a_scan_misses_them(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_EXACT_MARKER\n"})
+        config = self.only_goals()
+        (self.repo / "plan" / ".restricted").touch()
+        with mock.patch.object(io, "_marker_scan", return_value=False):
+            self.assert_private_without_tree_read(config)
+
+    def test_a_marker_added_with_the_folder_time_restored_is_still_found(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_CTIME_KEY\n"})
+        config = self.only_goals()
+        folder = self.repo / "plan"
+        before = folder.stat()
+        self.assertIsNone(config.sources.declarations()[0].reason)
+        (folder / ".RESTRICTED").touch()
+        os.utime(folder, ns=(before.st_atime_ns, before.st_mtime_ns))
+        self.assertEqual(folder.stat().st_mtime_ns, before.st_mtime_ns)
+        present = io._present_at
+
+        def exact(directory: int, name: str) -> bool:
+            # Only the folded scan may find the marker, as on a case-sensitive filesystem.
+            return False if name == ".restricted" else present(directory, name)
+
+        with mock.patch.object(io, "_present_at", side_effect=exact):
+            self.assert_private_without_tree_read(config)
+
+    def test_a_common_directory_redirected_after_load_refuses_before_git(self) -> None:
+        self.write_sources({"goals": "## Goals\n- G1: CANARY_REDIRECT\n"})
+        git(self.repo, "branch", "side")
+        linked = self.root / "linked"
+        git(self.repo, "worktree", "add", "-q", str(linked), "side")
+        other = self.root / "other"
+        git(self.root, "clone", "-q", "--no-local", str(self.repo), str(other))
+        git(other, "worktree", "add", "-q", str(self.root / "other-linked"), "-b", "side")
+        self.repo = linked
+        config = self.only_goals()
+        (linked / ".git").write_text(f"gitdir: {other}/.git/worktrees/other-linked\n")
+        original = git_status.plan_reader
+        runner = mock.Mock(wraps=subprocess.run)
+
+        def factory(*args: Any, **kwargs: Any) -> git_status.PlanTreeReader:
+            return original(*args, **kwargs, runner=runner)
+
+        with mock.patch.object(git_status, "plan_reader", side_effect=factory):
+            result = readers.read_plan(config).model
+        self.assertEqual(runner.call_count, 0)
+        self.assertEqual(result.sources[0].reason, io.PlanRefusal.CHANGED)
 
     def test_frozen_build_reads_git_sources(self) -> None:
         self.write_sources({"goals": "## Goals\n- G1: Admitted repo\n"})
