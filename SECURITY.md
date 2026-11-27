@@ -1343,12 +1343,14 @@ top-level label counts as a link only before a path or a port, and its mask ends
 ideographic punctuation mark, so CJK prose that contains a full stop stays readable. A CJK top-level
 label before a full-width solidus is read as prose. A bracketed IPv6 address before a port, path,
 query or fragment counts as a link, and one with a zone after `%` is masked unnamed. An IPv6
-address, and a host before a full-width solidus or an invisible character, is masked with its whole
-token, back to the whitespace, quote or bracket before it, so it covers any userinfo another link in
-that token would mask. A host glued to a word, digit or hyphen before it counts as a link too, and
-so does a `data:` URI glued to text. A `webcal:` or `web+name:` link is masked unnamed. A plain git
-remote such as `git@host:org/repo.git` shows only its host. One whose path holds a colon, starts
-with a slash or holds an `@`, whose host is an opaque scheme's name, or that is a Markdown link's
+address, a host before a full-width solidus or an invisible character, and a git remote whose path
+holds a colon are masked with their whole token, back to the whitespace, quote or bracket before it,
+so the mask covers any userinfo another link in that token would mask. When another link form starts
+inside one of them, the mask runs to the end of the line, as that form's own mask can after an
+unmatched quote. A host glued to a word, digit or hyphen before it counts as a link too, and so does
+a `data:` URI glued to text. A `webcal:` or `web+name:` link is masked unnamed. A plain git remote
+such as `git@host:org/repo.git` shows only its host. One whose path holds a colon, starts with a
+slash or holds an `@`, whose host is an opaque scheme's name, or that is a Markdown link's
 destination shows no host, since what follows the colon may be another link or a password. When an
 `@` comes before the first slash of a path that holds a colon, the text before it is read as
 userinfo of the remote after it. Userinfo before any of these hosts or before a `www.` host, such as
@@ -1356,11 +1358,13 @@ userinfo of the remote after it. Userinfo before any of these hosts or before a 
 because a password can hold `/`, `?`, `#` and `@`. Some prose stays masked because the same text is
 a link elsewhere: a name ending in `.md`, a country's top-level domain, before a backslash; a word
 glued to a dotted quad, such as `v1.2.3.4/x`; `image@sha256:` or `pkg@1.2.3:` before a path, which
-git reads as remotes; and a CJK label after a full stop before `/`. When another link form starts
-later in the same token, these forms mask only up to it and name a host only if it ends before it,
-and that link keeps its own mask and host, so they never show text the other forms hide. The link scan's time grows linearly with the text. Each
+git reads as remotes; and a CJK label after a full stop before `/`. When a link with a scheme, a
+`www.` host or a dotted host before a path starts later in the same token, these forms mask only up
+to it, its userinfo included, and name a host only if it ends before that and no backslash sits in
+that userinfo. That link keeps its own mask and host, so these forms never show text the other forms
+hide. The link scan's time grows linearly with the text. Each
 source is capped, a repository file at 256 KB, a brief at 64 KB and the log at 1 MB, and the
-slowest inputs found took under a second at 250 KB and under three seconds at 1 MB, where the
+slowest inputs found took under a second at 250 KB and under four seconds at 1 MB, where the
 previous scan took 90 seconds or more at 250 KB. The lane ID rule applies to brief
 slugs, log lane references, tracker lane cells, lane-folder settings keys and published lane
 references. Each ID must

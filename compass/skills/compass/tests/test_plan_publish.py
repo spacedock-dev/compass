@@ -453,6 +453,11 @@ class PlanPublicationTest(PlanRepoTestCase):
             ("CANARY_T_USER:CANARY_T1/CANARY_T2@example.test/x", "example.test"),
             ("CANARY_Q_USER:CANARY_Q1?CANARY_Q2#CANARY_Q3@1192.168.1.10/x", "192.168.1.10"),
             ("CANARY_B64/CANARY_B64+x@www.example.test/x", "www.example.test"),
+            ("CANARY_X/CANARY_Y@www.example.test", "www.example.test"),
+            ("x.рф\u200b/CANARY_ZW_IDN", "[link]"),
+            ("例子。com\u200b/CANARY_ZW_WIDE", "[link]"),
+            ("CANARY_V6_PREFIX![::1]/x", "[::1]"),
+            ("CANARY_GZ!a-localhost\u200b/x", "[link]"),
             # An `@` after a remote's colon may be a password's: the host after it is named, or
             # none is.
             ("CANARY_R1@CANARY_R2:CANARY_R3@host:org/r.git", "host"),
@@ -1162,6 +1167,41 @@ class LinkProjectionTest(unittest.TestCase):
                 hosts = () if host is None else (host,)
                 self.assertEqual(records.hosts_only(text), (expected, hosts))
 
+    def test_a_form_found_here_first_never_cuts_a_later_link_short(self) -> None:
+        # A form the board did not mask before can start ahead of one it did, whose own end
+        # reaches further: to the line's end after an unmatched quote.
+        for text in (
+            "<example.test\u200b/x@host:org/r.git< CANARY_TAIL",
+            "'a.bc\u200b/x@host:org/r.git' CANARY_TAIL",
+            "'[::1]/webcal:x' CANARY_TAIL",
+            '"[::1]/x-localhost:80/" CANARY_TAIL',
+            "a.bc\uff0f'x@host:org/r.git' CANARY_TAIL 'tail",
+            "'git@host:a:b.git`x-localhost/' CANARY_TAIL",
+            "'git@host:a:b/c@d:e.git' CANARY_TAIL",
+        ):
+            with self.subTest(text=text):
+                self.assertNotIn("CANARY", records.hosts_only(text)[0])
+
+    def test_a_host_before_a_backslash_in_userinfo_is_not_named(self) -> None:
+        # Userinfo read back past a backslash would leave a host before it named, where the
+        # board left it unnamed.
+        for text, host in (
+            ("CANARY_USER:CANARY.secret\u3002/]\\@www.example.test", "www.example.test"),
+            ("x-localhost/]\\@k.test/x", "k.test"),
+            ("a.test\u3002/}\\x@www.example.test", "www.example.test"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.hosts_only(text)[1], (host,))
+
+    def test_forms_found_here_first_keep_their_masks(self) -> None:
+        for text, expected, hosts in (
+            # A glued host before a colon is named, as before a path.
+            ("a-localhost:CANARY", "a-localhost", ("localhost",)),
+            ("example.test\ufeff/CANARY", "[link]", ()),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(records.hosts_only(text), (expected, hosts))
+
     def test_prose_a_link_could_spell_stays_masked(self) -> None:
         # Each is prose here and a link elsewhere: `.md` is a country's top-level domain, git
         # reads `name@host:path` as a remote, and a word glued to a dotted quad is masked like
@@ -1250,6 +1290,9 @@ class LinkProjectionTimingTest(unittest.TestCase):
                 ("scp-like remotes with at signs", "", "a@b:c@", "/"),
                 ("slashes, queries and hashes in userinfo", "", "a/?#", "@b.test/"),
                 ("userinfo before www hosts", "", "a:b@www.", "!"),
+                ("full-width solidi before quotes", "", "a.bc\uff0f'", "!"),
+                ("quotes after a known link", "https://a.test/", "x'", "!"),
+                ("quoted addresses before an opaque link", "", "'[::1]/webcal:x' ", "!"),
             )
         }
         for name, text in cases.items():
@@ -1264,18 +1307,22 @@ class LinkProjectionTimingTest(unittest.TestCase):
     def test_an_added_link_before_a_known_one_scans_in_linear_time(self) -> None:
         # Linear time quadruples from 250 KB to 1 MB; a rescan to the line end for each added
         # link grows sixteenfold.
-        for unit, tail in (
-            ("a.рф/< //x ", "!"),
-            ("x-localhost/< https://k.test/ ", ">"),
-            ("[::1]/< www.k.test/ ", ">"),
-            ("a.bc\uff0f< u:p@www.k.test ", ">"),
+        for head, unit, tail in (
+            ("", "a.рф/< //x ", "!"),
+            ("", "x-localhost/< https://k.test/ ", ">"),
+            ("", "[::1]/< www.k.test/ ", ">"),
+            ("", "a.bc\uff0f< u:p@www.k.test ", ">"),
             # Each known link read the text back to an added link far after it: 4 s at 250 KB.
-            ("//x ", "a.рф/x"),
+            ("", "//x ", "a.рф/x"),
+            # Each quote searched for the line's end again.
+            ("", "a.bc\uff0f'", "!"),
+            ("https://a.test/", "x'", "!"),
+            ("", "'[::1]/webcal:x' ", "!"),
         ):
             with self.subTest(unit=unit):
                 took = []
                 for size in (250_000, 1_000_000):
-                    text = unit * (size // len(unit)) + tail
+                    text = head + unit * (size // len(unit)) + tail
                     started = time.monotonic()
                     records.hosts_only(text)
                     took.append(time.monotonic() - started)
@@ -1285,11 +1332,17 @@ class LinkProjectionTimingTest(unittest.TestCase):
     def test_a_long_userinfo_after_many_added_links_is_read_once(self) -> None:
         # Reading the userinfo back again for each added link before it was quadratic: 20 KB
         # of added links before a 20 KB token took 3.3 s (measured 2026-11-27).
-        took = []
-        for size in (250_000, 1_000_000):
-            text = "a.рф/x " * (size // 14) + "a" * (size // 2) + "@b.test/"
-            started = time.monotonic()
-            self.assertEqual(records.hosts_only(text)[1][-1], "b.test")
-            took.append(time.monotonic() - started)
-        self.assertLess(took[0], 5.0)
-        self.assertLess(took[1], 8 * took[0])
+        # Many known links before one added link read the text between them back once each:
+        # 50 KB took 11.6 s.
+        for links, link, token, tail in (
+            ("a.рф/x ", 14, "a", "@b.test/"),
+            ("//x ", 8, "!", "a.bc\uff0f"),
+        ):
+            took = []
+            for size in (250_000, 1_000_000):
+                text = links * (size // link) + token * (size // 2) + tail
+                started = time.monotonic()
+                records.hosts_only(text)
+                took.append(time.monotonic() - started)
+            self.assertLess(took[0], 5.0)
+            self.assertLess(took[1], 8 * took[0])

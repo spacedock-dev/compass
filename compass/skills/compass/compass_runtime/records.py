@@ -1840,7 +1840,12 @@ def _run_host(run: str) -> tuple[int, str] | None:
     return offset, body[offset:]
 
 
-def _added_start(match: re.Match[str], *, named: bool) -> _LinkStart:
+# How an scp remote is kept: its host named, unnamed, or unnamed as a form the board did not
+# mask before, whose path holds a colon.
+_NAMED, _UNNAMED, _NEW = "named", "unnamed", "new"
+
+
+def _added_start(match: re.Match[str], *, remote: str) -> _LinkStart:
     for group in ("glued", "ipv6"):
         if (host := match[group]) is not None:
             # An IPv6 zone after `%` can hold any text, so a host with one is not named.
@@ -1852,8 +1857,15 @@ def _added_start(match: re.Match[str], *, named: bool) -> _LinkStart:
             )
     if (host := match["scp"]) is not None:
         # An opaque scheme's name before the colon is masked as that scheme, unnamed.
-        unnamed = not named or host.lower() in _ADDED_OPAQUE_SCHEMES
-        return _LinkStart(match, match.start("scp"), "" if unnamed else host, match.end("scp"))
+        unnamed = remote != _NAMED or host.lower() in _ADDED_OPAQUE_SCHEMES
+        return _LinkStart(
+            match,
+            match.start("scp"),
+            "" if unnamed else host,
+            match.end("scp"),
+            None,
+            remote == _NEW,
+        )
     return _LinkStart(match, match.start(), "", match.start())
 
 
@@ -1879,14 +1891,14 @@ class _AddedLinks:
         patterns = _added_patterns()
         while (match := patterns.start.search(text, position)) is not None:
             if (run := match["run"]) is None:
-                if (named := self._remote(match)) is not None:
-                    return _added_start(match, named=named)
+                if (remote := self._remote(match)) is not None:
+                    return _added_start(match, remote=remote)
             elif (found := self._run_start(match, run)) is not None:
                 return found
             elif (other := patterns.after_run.match(text, match.start())) is not None and (
-                named := self._remote(other)
+                remote := self._remote(other)
             ) is not None:
-                return _added_start(other, named=named)
+                return _added_start(other, remote=remote)
             position = match.start() + 1
         return None
 
@@ -1913,8 +1925,8 @@ class _AddedLinks:
         # Masked through the token, with no stop at ideographic punctuation.
         return _LinkStart(match, start, "", start + len(host), None, token=True)
 
-    def _remote(self, match: re.Match[str]) -> bool | None:
-        """Whether to keep an scp remote and name its host, or None to pass it by.
+    def _remote(self, match: re.Match[str]) -> str | None:
+        """How to keep an scp remote, or None to pass it by.
 
         Other forms are kept and named. A remote's path needs a slash or a `.git` ending. One
         with no colon before them reads as it always has. One with a colon there is new, and is
@@ -1924,7 +1936,7 @@ class _AddedLinks:
         sit in a password, so the host is not named either.
         """
         if match["scp"] is None:
-            return True
+            return _NAMED
         text = self.text
         path = match.end()
         token = self._token
@@ -1936,8 +1948,8 @@ class _AddedLinks:
                 return None
             if token.next(_AT, path) < slash:
                 return None
-            return False
-        return token.last_at < path
+            return _NEW
+        return _NAMED if token.last_at < path else _UNNAMED
 
 
 class _RemoteToken:
@@ -2086,7 +2098,7 @@ def _markdown_links(text: str) -> Iterator[_LinkSpan]:
 
 
 def _bare_links(text: str) -> Iterator[_LinkSpan]:
-    known, added = _KnownLinks(text), _AddedLinks(text)
+    known, added, lines = _KnownLinks(text), _AddedLinks(text), _LineEnds(text)
     previous = 0
     reach = (-1, -1)
     behind: tuple[_LinkStart | None, int, int] = (None, -1, 0)
@@ -2111,15 +2123,30 @@ def _bare_links(text: str) -> Iterator[_LinkSpan]:
             _, at, back = behind
             start = max(previous, back) if found.token or at >= previous else found.start
         if found is not None and start < limit:
-            end = _bare_destination_end(text, found.match, limit)
+            end = _bare_destination_end(text, found.match, lines, limit)
             if found.path is not None and (
                 stop := _IDEOGRAPHIC_PUNCTUATION.search(text, found.path, end)
             ):
                 end = stop.start()
+            if (
+                found.token
+                and (later := added.start(found.match.end())) is not None
+                and later.match.start() < end
+            ):
+                # A form the board masked before starts inside this one, and its own end can
+                # reach the line's end after an unmatched quote, read from where it starts.
+                end = lines.next(end, limit)
             named = (
                 found.host
                 and found.host_end <= limit
                 and "\\" not in _link_target(text[found.start : end])
+                # Userinfo read back past a backslash ends this span before it, where the
+                # board's earlier reading ended it after: the host was unnamed then.
+                and (
+                    match is None
+                    or end < limit
+                    or "\\" not in text[limit : _userinfo_start(text, match.start())]
+                )
             )
             host = _validated_link_host("//" + found.host) if named else None
             previous = end
@@ -2128,7 +2155,7 @@ def _bare_links(text: str) -> Iterator[_LinkSpan]:
         if match is None:
             return
         start = match.end("dash")
-        end = _bare_destination_end(text, match)
+        end = _bare_destination_end(text, match, lines)
         host = link_host(text[start:end])
         if _has_authority(match) and reach[1] < match.start():
             start = max(previous, reach[1])
@@ -2193,7 +2220,32 @@ def _markdown_destination_end(text: str, start: int, *, reference: bool) -> int:
     return len(text)
 
 
-def _bare_destination_end(text: str, match: re.Match[str], limit: int | None = None) -> int:
+class _LineEnds:
+    """Where the next line break after an offset is, found by bisection.
+
+    A search for it at each quote would reread the rest of a long line once per quote.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self._breaks: list[int] | None = None
+
+    def next(self, position: int, bound: int) -> int:
+        """The first line break at or after `position` and before `bound`, or `bound`."""
+        if self._breaks is None:
+            self._breaks = [found.start() for found in _LINE_BREAK.finditer(self.text)]
+        index = bisect_left(self._breaks, position)
+        if index < len(self._breaks) and self._breaks[index] < bound:
+            return self._breaks[index]
+        return bound
+
+
+_LINE_BREAK = re.compile("\n")
+
+
+def _bare_destination_end(
+    text: str, match: re.Match[str], lines: _LineEnds, limit: int | None = None
+) -> int:
     # `limit` caps the scan as well as the answer, so an added link before a known one reads
     # only up to it; a scan to the line end for each would be quadratic.
     bound = len(text) if limit is None else limit
@@ -2204,9 +2256,7 @@ def _bare_destination_end(text: str, match: re.Match[str], limit: int | None = N
         char = text[index]
         if char.isspace():
             return index
-        line_end = text.find("\n", index + 1, bound)
-        if line_end == -1:
-            line_end = bound
+        line_end = lines.next(index + 1, bound)
         close = text.find(">" if char == "<" else char, index + 1, line_end)
         # A quoted value can span token boundaries. An ambiguous unfinished
         # value consumes the rest of the line.
