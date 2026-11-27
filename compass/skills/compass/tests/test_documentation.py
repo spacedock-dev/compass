@@ -2036,7 +2036,12 @@ class GitProbeContractDocumentationTest(unittest.TestCase):
         # arrives, the section describes a system that no longer exists, and the
         # census and the trade in it stop being the reason for anything.
         source = (self.RUNTIME / "git_status.py").read_text(encoding="utf-8")
-        self.assertNotIn("GIT_CEILING_DIRECTORIES", source)
+        # The plan tree factory sets its own ceiling. The session probe's shared
+        # environment and probe body must keep their documented behavior.
+        tree = ast.parse(source)
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name in {"probe", "probe_environment"}:
+                self.assertNotIn("GIT_CEILING_DIRECTORIES", ast.unparse(node))
         self.assertIn("passes nothing that bounds the walk", self.FLAT)
 
     def test_the_plan_document_died_with_its_promotion(self) -> None:

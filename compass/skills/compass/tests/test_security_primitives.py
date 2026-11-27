@@ -86,6 +86,10 @@ RUNNERS = {
     ): "Local git_status.executable delegates to rooted_path.which.",
     (
         "compass_runtime/git_status.py",
+        "plan_reader",
+    ): "Uses the rooted Git executable and the fixed local-ref and object-read commands.",
+    (
+        "compass_runtime/git_status.py",
         "identity",
     ): "Local git_status.executable delegates to rooted_path.which.",
     (

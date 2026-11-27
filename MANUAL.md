@@ -249,7 +249,7 @@ These features are enabled by default. An off switch suppresses the named featur
 | `--no-tripwires` | Do not read or write saved workflow stage conditions. |
 | `--no-events` | Disable the event coordinator, event overlays and coarse store probe. Fixed-interval collection continues. Also disables terminal focus, command-shape reporting and reading/writing recorded session ends. Observation history is independent. |
 | `--no-irreversible` | Disable hook command-shape matching, report ingress and publication. Ordinary lifecycle hints remain available unless `--no-events` is also set. |
-| `--no-git` | Do not run end-of-session Git probes in session repositories, and do not read a project's `package.json`, Makefile or justfile from git to count its test and lint scripts as checks. No remote is read either, so no `gh pr checks` or `gh run view` poll counts as CI evidence. Dirty/changed fields stay empty; empty is not a finding that the tree is clean. |
+| `--no-git` | Skip end-of-session Git probes, project check-script reads and plan reads from Git. No remote is read, so no `gh pr checks` or `gh run view` poll counts as CI evidence. Empty dirty and changed fields mean no reading is available. |
 | `--no-plan` | Skip the plan settings and their sources for this run. With `--diagnose`, the plan settings entry reports that the plan is off. |
 | `--no-ci-read` | Do not read a pull request's or merge request's CI checks from GitHub or GitLab when you press Check progress. No `gh` or `glab` command runs, and a reading goes without those checks. Turning off Read pull request status in Settings also stops the read. |
 | `--no-focus` | Do not record terminal identities, publish a focus capability or raise session terminals. `--no-events` also turns this off. |

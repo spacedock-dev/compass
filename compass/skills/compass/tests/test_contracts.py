@@ -2349,12 +2349,30 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.reader_checks": {"compass_runtime.config", "compass_runtime.sessions"},
         "compass_runtime.plan": set(),
         "compass_runtime.plan.grammar": set(),
+        "compass_runtime.plan.markdown": {
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.model",
+            "compass_runtime.plan.settings",
+        },
+        "compass_runtime.plan.model": set(),
+        "compass_runtime.plan.readers": {
+            "compass_runtime.git_status",
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.markdown",
+            "compass_runtime.plan.model",
+            "compass_runtime.plan.settings",
+            "compass_runtime.plan.sources",
+        },
         "compass_runtime.plan.settings": {
             "compass_runtime.io",
             "compass_runtime.plan.grammar",
             "compass_runtime.plan.sources",
         },
-        "compass_runtime.plan.sources": {"compass_runtime.io", "compass_runtime.plan.grammar"},
+        "compass_runtime.plan.sources": {
+            "compass_runtime.io",
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.model",
+        },
         # The pull request CI read: it reuses the git probe's PATH scrub and binary lookup,
         # the supervised runner for `gh`, and the bounded transcript reader. It imports nothing
         # from `reading`, which imports it, and `config` only for a type.

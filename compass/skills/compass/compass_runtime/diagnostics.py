@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from compass_runtime import config as runtime_config
 from compass_runtime import io as runtime_io
 from compass_runtime import project_context, project_scripts, reader_checks, tripwires
+from compass_runtime.plan import readers as plan_readers
 from compass_runtime.plan import settings as plan_settings
 from compass_runtime.terminal_sessions import printable_text
 
@@ -89,6 +90,31 @@ def candidate_report(path: str) -> dict[str, Any]:
     return entry
 
 
+def _plan_report(config: RuntimeConfig) -> dict[str, Any]:
+    loaded = plan_settings.load(
+        config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
+    )
+    report = plan_settings.report(loaded)
+    if loaded.settings is None:
+        return report
+    result = plan_readers.read_plan(loaded.settings, git_timeout_sec=config.git_probe_timeout_sec)
+    positions = {source: index for index, source in enumerate(result.model.sources, 1)}
+    report.update(
+        sources=[{"kind": source.kind, "reason": source.reason} for source in result.model.sources],
+        log_rejected=result.model.log_rejected,
+        goal_lane_mismatches=result.diagnostics.goal_lane_mismatches,
+        unknown_statuses=[
+            {
+                "source": positions[status.origin.source],
+                "line": status.origin.line,
+                "word": printable_text(status.word),
+            }
+            for status in result.diagnostics.unknown_statuses
+        ],
+    )
+    return report
+
+
 def diagnose(application: Application) -> dict[str, Any]:
     """Everything needed to explain a harness that is not showing up.
 
@@ -147,11 +173,7 @@ def diagnose(application: Application) -> dict[str, Any]:
         # The reader's own list of check commands: where it is, whether it could be read, and each
         # entry that was ignored with its program and why. Never an argument or a path.
         "reader_checks": reader_checks.report(config, project_context.listed_entry_refusal),
-        "plan": plan_settings.report(
-            plan_settings.load(
-                config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
-            )
-        ),
+        "plan": _plan_report(config),
         "stores": {
             key: {
                 "primary": primary,
@@ -229,8 +251,17 @@ def _plan_lines(report: dict[str, Any] | None) -> list[str]:
         ]
     )
     for index, source in enumerate(report["sources"], start=1):
-        detail = source["reason"] or "declared"
+        detail = source["reason"] or "read"
         lines.append(f"  {index}. {source['kind']}: {detail}")
+    if report.get("log_rejected") is not None:
+        lines.append(f"  rejected event log lines: {report['log_rejected']}")
+    if report.get("goal_lane_mismatches") is not None:
+        lines.append(f"  goal and lane link mismatches: {report['goal_lane_mismatches']}")
+    for status in report.get("unknown_statuses", ()):
+        location = f"source {status['source']}"
+        if status["line"] is not None:
+            location += f", line {status['line']}"
+        lines.append(f"  Status not recognised ({location}): {status['word']}")
     return lines
 
 

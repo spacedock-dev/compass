@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from compass_runtime import io
 
 from .grammar import SettingsError, folded, string
+from .model import FolderIdentity
 
 if TYPE_CHECKING:
     from .grammar import Template
@@ -185,6 +186,13 @@ class Sources:
 
     def read_log(self) -> PlanRead:
         return self._read(self.events, self.max_log_bytes)
+
+    def lane_folder(self, path: str) -> tuple[FolderIdentity | None, str | None]:
+        try:
+            device, inode = io.inspect_plan_directory(path, self.policy)
+        except io.PlanReadError as exc:
+            return None, exc.reason
+        return FolderIdentity(os.path.normpath(path), device, inode), None
 
     def _read(self, source: Source, max_bytes: int) -> PlanRead:
         if source.reason:

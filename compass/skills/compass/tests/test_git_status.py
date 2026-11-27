@@ -1364,3 +1364,62 @@ class GitProbeRefusalTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlanTreeGitTest(unittest.TestCase):
+    def test_tree_read_uses_only_local_object_commands_and_disables_lazy_fetch(self) -> None:
+        commit = "1" * 40
+        blob = "2" * 40
+        body = b"plan text"
+        runner = mock.Mock(
+            side_effect=[
+                subprocess.CompletedProcess([], 0, b"\n"),
+                subprocess.CompletedProcess(
+                    [], 0, f"refs/heads/main\0{commit}\0commit\0\n".encode()
+                ),
+                subprocess.CompletedProcess([], 0, f"100644 blob {blob} 9\tplan/a.md\0".encode()),
+                subprocess.CompletedProcess([], 0, body),
+            ]
+        )
+        with (
+            mock.patch.object(git_status, "_executable", return_value="/bin/git"),
+            mock.patch.dict(
+                os.environ,
+                {
+                    "GIT_NO_LAZY_FETCH": "0",
+                    "GIT_ALLOW_PROTOCOL": "https",
+                    "GIT_OBJECT_DIRECTORY": "/elsewhere",
+                    "GIT_CONFIG_PARAMETERS": "override",
+                    "GIT_DIR": "/different-repo",
+                },
+            ),
+        ):
+            reader = git_status.plan_reader("/example/repo", timeout_sec=5, runner=runner)
+        self.assertEqual(reader.tip("main"), commit)
+        self.assertEqual(reader.tree_file(commit, "plan/a.md", max_bytes=9), body)
+        self.assertEqual(
+            [call.args[0][6] for call in runner.call_args_list],
+            ["rev-parse", "for-each-ref", "ls-tree", "cat-file"],
+        )
+        for call in runner.call_args_list:
+            env = call.kwargs["env"]
+            self.assertEqual(env["GIT_CEILING_DIRECTORIES"], "/example")
+            self.assertEqual(env["GIT_NO_LAZY_FETCH"], "1")
+            self.assertEqual(env["GIT_NO_REPLACE_OBJECTS"], "1")
+            self.assertEqual(env["GIT_LITERAL_PATHSPECS"], "1")
+            self.assertEqual(env["GIT_TERMINAL_PROMPT"], "0")
+            self.assertEqual(env["GIT_ALLOW_PROTOCOL"], "")
+            self.assertFalse(
+                {"GIT_OBJECT_DIRECTORY", "GIT_CONFIG_PARAMETERS", "GIT_DIR"} & env.keys()
+            )
+            self.assertEqual(call.kwargs["stdin"], subprocess.DEVNULL)
+            self.assertGreater(call.kwargs["timeout"], 0)
+            self.assertLessEqual(call.kwargs["timeout"], 5)
+
+    def test_git_timeout_has_a_closed_reason(self) -> None:
+        runner = mock.Mock(side_effect=subprocess.TimeoutExpired("git", 1))
+        with mock.patch.object(git_status, "_executable", return_value="/bin/git"):
+            reader = git_status.plan_reader("/example/repo", timeout_sec=5, runner=runner)
+        with self.assertRaises(git_status.PlanGitError) as error:
+            reader.tip("main")
+        self.assertEqual(error.exception.reason, "git timed out")

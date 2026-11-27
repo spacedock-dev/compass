@@ -157,10 +157,15 @@ class Briefs:
     separators: tuple[str, ...]
     max_ids: int
     labels: Mapping[str, BriefLabel]
+    lane_folders: Mapping[str, str]
 
 
 def _briefs(value: object) -> Briefs:
-    raw = keys(value, "folder filename max_files emphasis separators max_ids labels")
+    raw = keys(
+        value,
+        "folder filename max_files emphasis separators max_ids labels",
+        optional="lane_folders",
+    )
     filename = grammar.template(raw["filename"])
     if [(field.name, field.kind) for field in filename.fields] != [("lane", "slug")]:
         raise SettingsError
@@ -171,6 +176,9 @@ def _briefs(value: object) -> Briefs:
     }
     if len({grammar.folded(label.label) for label in labels.values()}) != len(labels):
         raise SettingsError
+    folders = grammar.dictionary(raw.get("lane_folders", {}))
+    if len(folders) > 200 or not all(grammar.is_slug(lane) for lane in folders):
+        raise SettingsError
     return Briefs(
         sources.absolute_path(raw["folder"]),
         filename,
@@ -179,6 +187,7 @@ def _briefs(value: object) -> Briefs:
         strings(raw["separators"], 8, 8, min_items=1),
         integer(raw["max_ids"], 8),
         MappingProxyType(labels),
+        MappingProxyType({lane: sources.absolute_path(path) for lane, path in folders.items()}),
     )
 
 
@@ -283,6 +292,7 @@ class Log:
     verbs: Mapping[str, Verb]
     answer_key: str
     lane: LaneMapping
+    label: str
 
     def match(self, line: str) -> dict[str, str] | None:
         if len(line) > self.max_line_bytes or not grammar.is_line(line):
@@ -302,7 +312,11 @@ class Log:
 
 
 def _log(value: object) -> Log:
-    raw = keys(value, "path max_bytes max_line_bytes timestamps templates verbs answer_key lane")
+    raw = keys(
+        value,
+        "path max_bytes max_line_bytes timestamps templates verbs answer_key lane",
+        optional="label",
+    )
     verbs_raw = grammar.dictionary(raw["verbs"])
     if not 1 <= len(verbs_raw) <= 24 or any(
         re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,31}", verb) is None for verb in verbs_raw
@@ -320,6 +334,9 @@ def _log(value: object) -> Log:
     lane = _lane_mapping(raw["lane"])
     _log_coverage(templates, verbs, lane)
     max_bytes = integer(raw["max_bytes"], MAX_LOG_BYTES)
+    label = string(raw.get("label", "Event log"), 80)
+    if not label.strip():
+        raise SettingsError
     return Log(
         sources.absolute_path(raw["path"]),
         max_bytes,
@@ -329,6 +346,7 @@ def _log(value: object) -> Log:
         MappingProxyType(verbs),
         choice(raw["answer_key"], ("id",)),
         lane,
+        label,
     )
 
 
@@ -383,6 +401,8 @@ class Goals:
     done_form: str
     done_continuation: str
     done_heading_level: int | None
+    lanes_label: str | None
+    numbered_id_prefix: str
 
 
 def _goals(value: object) -> Goals:
@@ -390,11 +410,14 @@ def _goals(value: object) -> Goals:
         value,
         "section section_level form templates done_label emphasis max_done_chars "
         "done_form done_continuation",
-        optional="heading_level done_heading_level",
+        optional="heading_level done_heading_level lanes_label numbered_id_prefix",
     )
     form = choice(raw["form"], ("heading", "list"))
     done = choice(raw["done_form"], LABEL_FORMS)
     templates = grammar.templates(raw["templates"])
+    prefix = string(raw["numbered_id_prefix"], 7) if "numbered_id_prefix" in raw else ""
+    if prefix and re.fullmatch(r"[A-Z][A-Z0-9]*", prefix) is None:
+        raise SettingsError
     for template in templates:
         fields = {field.name: field.kind for field in template.fields}
         if fields not in (
@@ -405,18 +428,28 @@ def _goals(value: object) -> Goals:
             raise SettingsError
         if next(field.max_chars for field in template.fields if field.name == "title") > 200:
             raise SettingsError
+        if any(
+            field.name == "n" and field.max_chars + len(prefix) > 8 for field in template.fields
+        ):
+            raise SettingsError
+    done_label = string(raw["done_label"], 80)
+    lanes_label = string(raw["lanes_label"], 80) if "lanes_label" in raw else None
+    if lanes_label is not None and grammar.folded(lanes_label) == grammar.folded(done_label):
+        raise SettingsError
     return Goals(
         string(raw["section"], 80),
         integer(raw["section_level"], 6),
         form,
         _heading_level(raw, "heading_level", accepts_heading=form == "heading"),
         templates,
-        string(raw["done_label"], 80),
+        done_label,
         _options(raw["emphasis"], EMPHASIS),
         integer(raw["max_done_chars"], 300),
         done,
         choice(raw["done_continuation"], CONTINUATIONS),
         _heading_level(raw, "done_heading_level", accepts_heading=done != "label"),
+        lanes_label,
+        prefix,
     )
 
 

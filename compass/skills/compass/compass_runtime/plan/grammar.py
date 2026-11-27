@@ -111,6 +111,20 @@ _TIMESTAMP = re.compile(
     r"(\.[0-9]{1,9})?(Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
 )
 TIMESTAMP_FORMS = ("seconds_z", "fraction_z", "offset", "fraction_offset")
+MAX_TEMPLATE_CHARS = 4096
+
+
+def is_slug(text: str) -> bool:
+    return (
+        1 <= len(text) <= _FIELD_CAPS["slug"]
+        and _FIELD_PATTERNS["slug"].fullmatch(text) is not None
+    )
+
+
+def is_goal_id(text: str) -> bool:
+    return 1 <= len(text) <= _FIELD_CAPS["goal_id"] and any(
+        _FIELD_PATTERNS[kind].fullmatch(text) for kind in ("goal_id", "numbered_goal_id", "integer")
+    )
 
 
 def _timestamp(text: str, forms: tuple[str, ...]) -> bool:
@@ -177,8 +191,22 @@ class Template:
     def match(
         self, line: str, *, timestamps: tuple[str, ...] = TIMESTAMP_FORMS
     ) -> dict[str, str] | None:
-        if len(line) > 4096 or not is_line(line):
+        if len(line) > MAX_TEMPLATE_CHARS or not is_line(line):
             return None
+        matched = self._consume(line, timestamps)
+        return matched[0] if matched is not None and not matched[1] else None
+
+    def trailing_text(self, line: str) -> str | None:
+        """Recognise the start of a declared row even when its final text field is invalid."""
+        last = self.tokens[-1]
+        if not isinstance(last, Field) or last.kind != "text":
+            return None
+        prefix = Template(self.tokens[:-1])
+        bounded = line[:MAX_TEMPLATE_CHARS]
+        matched = prefix._consume(bounded, TIMESTAMP_FORMS)
+        return line[len(bounded) - len(matched[1]) :] if matched is not None else None
+
+    def _consume(self, line: str, timestamps: tuple[str, ...]) -> tuple[dict[str, str], str] | None:
         fields: dict[str, str] = {}
         rest = line
         for index, token in enumerate(self.tokens):
@@ -198,7 +226,7 @@ class Template:
             if not token.accepts(part, timestamps):
                 return None
             fields[token.name] = part
-        return fields if not rest else None
+        return fields, rest
 
 
 def template(value: object) -> Template:
