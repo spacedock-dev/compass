@@ -354,7 +354,13 @@ class PlanPublicationTest(PlanRepoTestCase):
             ("git@[::1]:CANARY_ORG/repo.git", "[::1]"),
             ("git@host:CANARY_REPO_ONLY.git", "host"),
             ("_git@host:CANARY_EMPHASIS.git_", "host"),
-            ("user:CANARY_REMOTE_PASS@host:CANARY_ORG/repo.git", "host"),
+            ("CANARY_REMOTE_USER:CANARY_REMOTE_PASS@host:CANARY_ORG/repo.git", "host"),
+            ("CANARY_IP_USER:CANARY_IP_PASS@1192.168.1.10/admin/CANARY_IP_PATH", "192.168.1.10"),
+            ("CANARY_LOCAL_USER@a-localhost:3000/CANARY_LOCAL_PATH", "localhost"),
+            ("CANARY_IDN_USER@пример.рф/CANARY_IDN_PATH", "[link]"),
+            ("webcal:feed?c=CANARY_WEBCAL", "[link]"),
+            ("web+example:opaque-CANARY_WEB_PLUS", "[link]"),
+            ("1webcal:CANARY_GLUED_WEBCAL", "[link]"),
             ("git@host:CANARY_ORG\\repo.git", "[link]"),
             ("git@host:/srv/CANARY_ABSOLUTE.git", "[link]"),
             ("[repo](git@host:CANARY_ORG/repo.git)", "[repo]"),
@@ -1017,7 +1023,7 @@ class LinkProjectionTest(unittest.TestCase):
             ("完了。example.test/p/CANARY", "完了。example.test", "example.test"),
             ("参考docs.example.test/d/CANARY", "参考docs.example.test", "docs.example.test"),
             ("a-localhost:3000/CANARY", "a-localhost", "localhost"),
-            ("user:CANARY@host:org/repo.git", "user:host", "host"),
+            ("user:CANARY@host:org/repo.git", "host", "host"),
         ):
             with self.subTest(text=text):
                 self.assertEqual(records.hosts_only(text), (expected, (host,)))

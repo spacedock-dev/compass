@@ -1538,16 +1538,20 @@ _TOP_LEVEL_LETTERS = re.compile(r"(?i)[a-z]{2,63}")
 # full-width and half-width full stops as dots and `urlsplit` does not, so a host spelt with
 # one is masked and never named.
 _LINK_DOTS: Final = ".\u3002\uff0e\uff61"
+# Opaque schemes past the earlier list: `webcal:` and the `web+name:` schemes HTML lets a page
+# register.
+_ADDED_OPAQUE_SCHEMES: Final = (*_OPAQUE_SCHEMES, "webcal")
+_ADDED_OPAQUE: Final = "|".join(_ADDED_OPAQUE_SCHEMES) + r"|web\+[a-z]+"
 _ADDED_AFTER_RUN: Final = rf"""
     # `localhost` and dotted quads glued to a word, digit or hyphen before them.
     (?P<glued>localhost|(?:[0-9]{{1,3}}[{_LINK_DOTS}]){{3}}[0-9]{{1,3}})
         (?::[0-9]{{1,5}})?(?=[/?#:\\])
-    |(?<!(?-i:[A-Za-z]))(?:{_OPAQUE}):(?=\S)
+    |(?<!(?-i:[A-Za-z]))(?:{_ADDED_OPAQUE}):(?=\S)
     # A `data:` URI glued to a letter; its media type sets it apart from prose.
     |data:(?:[a-z0-9.+-]{{1,63}}/[a-z0-9.+-]{{1,63}}(?:;[^\s,;]{{1,64}}){{0,8}})?,
-    # An scp-style git remote, `user@host:path`. The path needs a slash or a `.git`
-    # ending, so `alice@corp: hello` and `image@sha256:abc` stay prose.
-    |(?<![\w.+~-])[\w.+~-]++@(?P<scp>\[[0-9a-f:.]{{2,45}}\]|[\w{_LINK_DOTS}-]++):
+    # An scp-style git remote, `user@host:path`, its userinfo masked with the path. The path
+    # needs a slash or a `.git` ending, so `alice@corp: hello` and `image@sha256:abc` stay prose.
+    |(?<![\w.+~:-])[\w.+~:-]++@(?P<scp>\[[0-9a-f:.]{{2,45}}\]|[\w{_LINK_DOTS}-]++):
         (?=[^\s:/\\]++[/\\]|[^\s:/\\][^\s:]*?\.git(?![^\W_]|-))
 """
 # A dotted host read as a whole run of label characters, followed by a path, a query, a
@@ -1565,6 +1569,7 @@ _TOP_LEVEL_LABEL = re.compile(r"xn--[a-z0-9-]{1,59}|[^\W\d_]{2,63}", re.IGNORECA
 # A host is named from its first ASCII letter or digit before any ASCII dot, so prose glued to
 # it, such as CJK text with no space before a link, stays beside it.
 _ASCII_ALNUM = re.compile("[A-Za-z0-9]")
+_USERINFO_STOP = re.compile(r"""[\s/\\@?#<>"'`()\[\]{}]""")
 _LINK_SPACE = re.compile(r"\s")
 _URL_SYNTAX_END = re.compile(r"""[\s<>"'`]""")
 _BARE_BOUNDARY = re.compile(r"""[\s<"'`]""")
@@ -1703,7 +1708,8 @@ def _added_start(match: re.Match[str]) -> _LinkStart:
         return _LinkStart(match, match.start(), host)
     if (host := match["scp"]) is not None:
         # An opaque scheme's name before the colon is masked as that scheme, unnamed.
-        return _LinkStart(match, match.start(), "" if host.lower() in _OPAQUE_SCHEMES else host)
+        unnamed = host.lower() in _ADDED_OPAQUE_SCHEMES
+        return _LinkStart(match, match.start(), "" if unnamed else host)
     return _LinkStart(match, match.start(), "")
 
 
@@ -1734,6 +1740,14 @@ class _AddedLinks:
                 return _added_start(other)
             position = match.start() + 1
         return None
+
+
+def _added_userinfo(text: str, start: int, previous: int) -> int:
+    """Where an added link's span starts once the userinfo before it, if any, is masked too."""
+    at = text.rfind("@", previous, start)
+    if at < 0 or _USERINFO_STOP.search(text, at + 1, start):
+        return start
+    return max(previous, _userinfo_start(text, at + 1))
 
 
 def _link_target(target: str) -> str:
@@ -1843,8 +1857,7 @@ def _bare_links(text: str) -> Iterator[_LinkSpan]:
                 start = found.start
                 named = found.host and "\\" not in _link_target(text[start:end])
                 host = _validated_link_host("//" + found.host) if named else None
-                if (userinfo := _userinfo_start(text, found.match.start())) < found.match.start():
-                    start = max(previous, userinfo)
+                start = _added_userinfo(text, start, previous)
                 previous = end
                 yield _LinkSpan(start, end, host or _URL_UNNAMED, host)
                 continue
