@@ -908,13 +908,19 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    `--diagnose` shows the refusal. Put exactly one slug in a row's lane cell. The lane takes the
    group of the one row that names it. A lane named by no row, or by two, shows as not measured.
    A cell such as `hull, paint` or `hull.` counts against every lane it mentions, so those lanes
-   also show as not measured.
+   also show as not measured. Plan groups each goal's lanes by state and
+   says how many are done. Dropped lanes and lanes without a known status are listed apart and
+   left out of that count.
    Declare private roots and markers for locations Compass should skip.
 3. Run the dashboard launcher with `--diagnose` and check the plan settings section for refused
    sources. It reports missing or unreadable draft sources and refused lane folders by kind
    and reason. If you configure private roots or marker files, keep the declared Git file's
    parent directories present in the checkout so Compass can check them. See
    [what the local plan route publishes](SECURITY.md#published-plan-fields).
+4. Open the dashboard on the Compass computer. Choose **Plan** in the page links, or open
+   **Menu** on a narrow screen. If Compass refuses the settings, Plan shows why. With no
+   settings file or with `--no-plan`, the destination is hidden.
+
 
 ## Turn a feature off
 

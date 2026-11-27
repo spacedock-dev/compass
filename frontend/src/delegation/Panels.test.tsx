@@ -162,8 +162,8 @@ describe('the Console rail never sends anything', () => {
     });
     expect(page.allPosts()).toEqual([]);
     expect(
-      page.state.requests.every(
-        (request) => request.path === '/api/data' || request.path === '/api/project-context',
+      page.state.requests.every(({ path }) =>
+        ['/api/data', '/api/plan', '/api/project-context'].includes(path),
       ),
     ).toBe(true);
   });

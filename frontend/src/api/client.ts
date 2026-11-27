@@ -1,3 +1,4 @@
+import type { PlanPayload } from './plan';
 import type { ReadingLongHistoryBody, ReadingLongDiscardBody } from './longHistory';
 import type { ReadingLongPlanBody } from './longPlan';
 import { dataPath } from './bootstrap';
@@ -214,6 +215,8 @@ export function createApiClient(deps: {
 
     getAnnotations: (options: { readonly signal?: AbortSignal }) =>
       get<AnnotationsBody>('/api/annotations', options.signal),
+
+    getPlan: (signal?: AbortSignal) => get<PlanPayload>('/api/plan', signal),
 
     getHealth: (signal?: AbortSignal) => get<{ readonly port?: unknown }>('/api/health', signal),
 

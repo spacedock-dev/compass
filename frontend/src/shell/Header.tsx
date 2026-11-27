@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { Button, buttonVariants } from '../ui/button';
 import { Icon } from '../ui/icons';
+import { planShown } from '../api/plan';
 import { AttentionAnnouncer } from '../attention';
 import { selectAttentionSelection } from '../attention/select';
 import { useFocusKey } from '../controls/useFocusKey';
@@ -10,11 +11,19 @@ import { sessionHome, type Route, type TopLevelView } from '../router/grammar';
 import { RouteLink } from './RouteLink';
 import { useDisplayed, useShell } from './context';
 
-const PRIMARY = ['sessions', 'projects', 'attention', 'intent', 'settings', 'help'] as const;
+const PRIMARY = [
+  'sessions',
+  'projects',
+  'attention',
+  'intent',
+  'plan',
+  'settings',
+  'help',
+] as const;
 
 /* The view a route sits under: a session sits under the view it was opened from, a project under Projects. */
-function currentView(route: Route): TopLevelView {
-  if (route.view === 'session') return sessionHome(route);
+function currentView(route: Route, plan: boolean): TopLevelView {
+  if (route.view === 'session') return sessionHome(route, { plan });
   return route.view === 'project' ? 'projects' : route.view;
 }
 
@@ -30,7 +39,13 @@ function PrimaryNavigation({
   readonly open: boolean;
 }) {
   const { controls } = useShell();
-  const here = currentView(route);
+  /* Plan is listed while a plan is shown, and on the Plan page itself while its first read has
+     failed, so the reader still sees where they are. */
+  const hasPlan = useDisplayed(
+    (snapshot) =>
+      planShown(snapshot.plan) || (route.view === 'plan' && snapshot.plan.state === 'failed'),
+  );
+  const here = currentView(route, hasPlan);
   /* The current item is the focus lane's fallback for a control that stands only while something is
      wrong (Retry now), so removing it hands focus to a place the reader can see. */
   const currentRef = useFocusKey<HTMLAnchorElement>(controls.focusLane, 'primary-current');
@@ -41,7 +56,7 @@ function PrimaryNavigation({
       data-compact-open={open || undefined}
       className="next-board-nav flex-wrap items-center gap-x-1"
     >
-      {PRIMARY.map((view) => (
+      {PRIMARY.filter((view) => view !== 'plan' || hasPlan).map((view) => (
         <RouteLink
           className="gap-2 rounded-card px-3 text-body font-medium text-foreground no-underline hover:bg-muted aria-[current=page]:bg-[var(--status-ended-bg)] aria-[current=page]:font-semibold aria-[current=page]:text-[var(--status-ended-ink)] forced-colors:aria-[current=page]:underline"
           key={view}
@@ -155,7 +170,7 @@ export function Header({ route }: { readonly route: Route }) {
       <div className="next-board-compact">
         <Button
           type="button"
-          aria-current={currentView(route) === 'attention' ? 'page' : undefined}
+          aria-current={currentView(route, false) === 'attention' ? 'page' : undefined}
           className="gap-1 px-2 text-label font-semibold"
           onClick={() => router.navigate({ view: 'attention' })}
         >

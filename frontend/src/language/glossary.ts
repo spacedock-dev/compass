@@ -57,6 +57,7 @@ export const SHOWN = {
   breadcrumb: 'Breadcrumb',
   sessions: 'Sessions',
   projects: 'Projects',
+  plan: 'Plan',
   settings: 'Settings',
   help: 'Help',
   session: 'Session',
@@ -139,10 +140,18 @@ export const ACTIVITY_LOG_FILTER_LABELS = {
 } as const;
 
 export const PLAN_WORDS = {
+  askWithoutText: 'An open ask with no text',
   blocked: 'Blocked',
+  done: 'Done',
+  dropped: 'Dropped',
   inProgress: 'In progress',
   lane: 'Lane',
+  notDecidedYet: 'Not decided yet',
+  notMeasured: 'Not measured',
+  planned: 'Planned',
   productDecisions: 'Product decisions',
+  statusNotRecognised: 'Status not recognised',
+  waiting: 'Waiting',
 } as const;
 
 export const GLOSSARY = /* @__PURE__ */ (() =>
@@ -193,6 +202,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Saved choices and their owners',
       "A session's own controls",
       'The settings slug stays',
+    ]),
+    plan: kept([
+      SHOWN.plan,
+      'New destination',
+      'The local plan: goals, lanes, design notes, tracker and diagrams',
+      "A project's plan on its Project page",
+      'Shown only while a plan is configured; the plan slug',
     ]),
     session: kept([
       SHOWN.session,
@@ -1053,11 +1069,32 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       null,
     ),
     // Plan board.
+    planAskWithoutText: kept([
+      PLAN_WORDS.askWithoutText,
+      'New label',
+      'A log ask whose words the Plan settings keep off the board',
+      'No open asks',
+      'Open asks on Plan',
+    ]),
     planBlocked: kept([
       PLAN_WORDS.blocked,
       'New label',
       'A lane with work that cannot continue',
       'A session waiting for a reply',
+      'Plan lane and tracker group',
+    ]),
+    planDone: kept([
+      PLAN_WORDS.done,
+      'New label',
+      'A lane whose tracker row is done',
+      'Ended, a session state',
+      'Plan lane and tracker group; the only group the progress count counts as done',
+    ]),
+    planDropped: kept([
+      PLAN_WORDS.dropped,
+      'New label',
+      'A lane set aside and left out of the progress count',
+      'Done, a finished lane',
       'Plan lane and tracker group',
     ]),
     planInProgress: kept([
@@ -1074,12 +1111,47 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Working, a session state',
       'Plan goals and lane counts',
     ]),
+    planNotDecidedYet: kept([
+      PLAN_WORDS.notDecidedYet,
+      'New label',
+      'A design note the decision log has not marked decided',
+      'Product decisions',
+      'Design section on Plan',
+    ]),
+    planNotMeasured: kept([
+      PLAN_WORDS.notMeasured,
+      'New label',
+      'A lane with no tracker row, two rows, a draft-only row or an unread tracker',
+      'Planned, a lane not started',
+      'Plan lane group, apart and not counted',
+    ]),
+    planPlanned: kept([
+      PLAN_WORDS.planned,
+      'New label',
+      'A lane whose tracker row is not started',
+      'Not measured',
+      'Plan lane and tracker group',
+    ]),
     planProductDecisions: kept([
       PLAN_WORDS.productDecisions,
       'New label',
       'Decisions from the plan design notes',
       'Decisions, the Project tab',
       'Design section on Plan',
+    ]),
+    planStatusNotRecognised: kept([
+      PLAN_WORDS.statusNotRecognised,
+      'New label',
+      'A tracker status word the settings do not list, never echoed',
+      'Not measured',
+      'Plan lane group and tracker row',
+    ]),
+    planWaiting: kept([
+      PLAN_WORDS.waiting,
+      'New label',
+      'A lane paused on something outside it',
+      'Waiting on you, a session state',
+      'Plan lane and tracker group',
     ]),
   }) as const)();
 

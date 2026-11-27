@@ -2,13 +2,14 @@ import type { BoardSnapshot, BoardStore } from '../store/board';
 import { createCommitGate, createMotionHold } from '../store/commit-gate';
 import type { Clock } from '../transport/ports';
 
-/* The fields a poll replaces. They reach a reader only through `paint`, so the
-   two holds below can keep the old board on screen while the store has already
-   accepted the new one. Everything else in a snapshot is the reader's own
+/* The fields a poll replaces, the plan read that follows it included. They reach a reader only
+   through `paint`, so the two holds below can keep the old board on screen while the store has
+   already accepted the new one. Everything else in a snapshot is the reader's own
    action state or a project-context read and is not held by an open list. */
 type BoardLayer = Pick<
   BoardSnapshot,
   | 'data'
+  | 'plan'
   | 'revision'
   | 'acceptedCount'
   | 'failures'
@@ -20,6 +21,7 @@ type BoardLayer = Pick<
 function boardLayer(snapshot: BoardSnapshot): BoardLayer {
   return {
     data: snapshot.data,
+    plan: snapshot.plan,
     revision: snapshot.revision,
     acceptedCount: snapshot.acceptedCount,
     failures: snapshot.failures,
@@ -147,7 +149,15 @@ export function createDisplayGate(options: DisplayGateOptions) {
 
     /* The runtime's `paint` option. Resolves when the result is shown, which a
        reader's own toggle can hold, or at once when an open list defers it. */
-    paint(info: { readonly manual: boolean; readonly accepted: boolean }): Promise<void> {
+    paint(info: {
+      readonly manual: boolean;
+      readonly accepted: boolean;
+      readonly followUp?: boolean;
+    }): Promise<void> {
+      /* A follow-up read (the plan after a poll) rides the poll's paint when an open list still holds
+         it: that paint shows the whole store when it lands, so a second one would only spend the
+         list's deferrals twice as fast. */
+      if (info.followUp && !info.manual && gate.hasPending()) return Promise.resolve();
       return new Promise<void>((resolve) => {
         const done = () => {
           outstanding.delete(done);

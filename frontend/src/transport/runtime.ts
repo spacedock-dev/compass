@@ -1,7 +1,8 @@
 import { readBootstrap } from '../api/bootstrap';
 import { createApiClient, type FetchLike } from '../api/client';
+import { usablePlan, type PlanReading } from '../api/plan';
 import { exactIdentity } from '../api/identity';
-import type { FocusOutcome, SessionIdentity } from '../api/types';
+import type { ApiResult, FocusOutcome, SessionIdentity } from '../api/types';
 import { createBoardStore, type BoardSnapshot } from '../store/board';
 import { createContextLoader, type ContextScope } from './context';
 import { createRecordLoader, type RecordScope } from './record';
@@ -42,6 +43,24 @@ export interface RuntimeOptions {
    Nothing in here issues a POST. Actions are the caller's explicit
    `client.post*` calls, so a reconnect, a poll, a store subscription or a
    remount cannot replay one. */
+const NO_PLAN: PlanReading = Object.freeze({ state: 'none' });
+const PLAN_READ_FAILED: PlanReading = Object.freeze({ state: 'failed' });
+
+/* Only the server's own answer clears a plan: not configured, 404 for --no-plan, or 403 for a reader
+   off the Compass computer. A server error, a timeout, a dropped connection or a reply the page cannot
+   use keeps what is shown, and before any reply says the read failed. An identical reply keeps the
+   shown object, so nothing repaints. */
+function nextPlan(result: ApiResult<unknown>, current: PlanReading): PlanReading {
+  const usable = result.kind === 'ok' ? usablePlan(result.body) : null;
+  if (usable) return JSON.stringify(usable) === JSON.stringify(current) ? current : usable;
+  const absent =
+    (result.kind === 'ok' &&
+      (result.body as { readonly state?: unknown }).state === 'not-configured') ||
+    (result.kind === 'http-error' && (result.status === 404 || result.status === 403));
+  if (absent) return current.state === 'none' ? current : NO_PLAN;
+  return current.state === 'unread' ? PLAN_READ_FAILED : current;
+}
+
 export function createBoardRuntime(options: RuntimeOptions) {
   const { env, storage } = options;
   const bootstrap = readBootstrap(options.search, options.doc);
@@ -58,6 +77,8 @@ export function createBoardRuntime(options: RuntimeOptions) {
     readonly context: ReturnType<typeof createContextLoader>;
     readonly record: ReturnType<typeof createRecordLoader>;
     readonly live: ReturnType<typeof createLiveTransport>;
+    readPlan(manual: boolean): Promise<void>;
+    abortPlan(): void;
   }
 
   const pendingRegistry = createPendingRegistry({
@@ -102,8 +123,42 @@ export function createBoardRuntime(options: RuntimeOptions) {
       paint: options.paint ?? (() => Promise.resolve()),
     };
     const refresh = createRefreshController({ sink, revisions });
+    let cancelPlan: (() => void) | null = null;
+    let stopped = false;
+
+    async function readPlan(manual: boolean): Promise<void> {
+      if (stopped) return;
+      cancelPlan?.();
+      const controller = new AbortController();
+      const timeout = env.clock.setTimeout(() => controller.abort(), 15_000);
+      const cancel = () => {
+        env.clock.clearTimeout(timeout);
+        controller.abort();
+      };
+      cancelPlan = cancel;
+      try {
+        const result = await client.getPlan(controller.signal);
+        // A newer read or a stop replaced this one; a timeout did not, and counts as a failed read.
+        if (cancelPlan !== cancel) return;
+        const current = store.getSnapshot().plan;
+        const next = nextPlan(result, current);
+        if (next === current) return;
+        store.setPlan(next);
+        // A follow-up to the poll's own paint: where that paint is still held, it carries this one.
+        await sink.paint({ manual, accepted: true, followUp: true });
+      } finally {
+        env.clock.clearTimeout(timeout);
+        if (cancelPlan === cancel) cancelPlan = null;
+      }
+    }
     return {
       refresh,
+      readPlan,
+      abortPlan() {
+        stopped = true;
+        cancelPlan?.();
+        cancelPlan = null;
+      },
       context: createContextLoader({ client, store, storage }),
       record: createRecordLoader({ client, store }),
       live: createLiveTransport({
@@ -111,7 +166,8 @@ export function createBoardRuntime(options: RuntimeOptions) {
         storage,
         revisions,
         onWake: (revision) => refresh.wake(revision),
-        onPoll: () => void refresh.poll(),
+        // Plan reads the session-folder sidecar from the board snapshot.
+        onPoll: () => void refresh.poll().then(() => readPlan(false)),
       }),
     };
   }
@@ -131,6 +187,7 @@ export function createBoardRuntime(options: RuntimeOptions) {
     owned = null;
     if (!closing) return;
     closing.live.dispose();
+    closing.abortPlan();
     closing.refresh.dispose();
     closing.context.dispose();
     closing.record.dispose();
@@ -189,8 +246,13 @@ export function createBoardRuntime(options: RuntimeOptions) {
       };
     },
 
-    refresh: (flags: { readonly manual?: boolean } = {}): Promise<void> =>
-      owned?.refresh.refresh(flags) ?? Promise.resolve(),
+    refresh(flags: { readonly manual?: boolean } = {}): Promise<void> {
+      const current = owned;
+      if (!current) return Promise.resolve();
+      const updated = current.refresh.refresh(flags);
+      if (flags.manual) void updated.then(() => current.readPlan(true));
+      return updated;
+    },
     /* Whether this tab holds the live stream: the one tab that raises a stage banner, so two open tabs do not
        both. False before the runtime is owned. */
     isLeader: (): boolean => owned?.live.isLeader() ?? false,

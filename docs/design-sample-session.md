@@ -415,6 +415,23 @@ previous build. Storybook compiles the Plan utilities while the page has no app 
 The page bound follows the measured package. The fixture bound stays at 250,000 bytes.
 
 
+The configured Plan destination packages at 2,512,259 bytes on Node 26.10.0 and pnpm 12.19.0,
+up 22,260 bytes (0.89%). The increase covers the Plan transport, page and styles. The bound
+follows the measured package. The fixture bound stays at 250,000 bytes.
+
+Grouping Plan lanes by their tracker state packages at 2,513,539 bytes on Node 26.12.1 and
+pnpm 12.19.0, up 1,280 bytes (0.05%) for the lane groups, the not-counted note and the two
+glossary words. The bound follows the measured package. The fixture bound stays at 250,000 bytes.
+
+The Plan review fixes package at 2,520,447 bytes on Node 26.12.1 and pnpm 12.19.0, up 6,908
+bytes (0.27%). The increase covers the field-by-field check of the plan reply, the plan read's
+four states, the plain sentence for each source refusal, the undecided design notes and the new
+glossary words. The bound follows the measured package. The fixture bound stays at 250,000 bytes.
+
+Showing an ask with no words and dropping only an unreadable plan item package at 2,521,071 bytes
+on Node 26.12.1 and pnpm 12.19.0, up 624 bytes. The bound follows the measured package. The fixture
+bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

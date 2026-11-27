@@ -495,7 +495,7 @@ const navOrder = [
   'settings',
   'help',
 ] as const satisfies readonly TopLevelView[];
-const headerRoutes: readonly (readonly [RouteInput, TopLevelView])[] = [
+const headerRoutes: readonly (readonly [RouteInput, (typeof navOrder)[number]])[] = [
   ...navOrder.map((view) => [{ view }, view] as const),
   [{ view: 'project', project: 'acme/dashboard' }, 'projects'],
   [
@@ -604,7 +604,9 @@ export const HeaderTracksTheCurrentPageAndBoard: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Publish the first board' }));
     const count = SHOWN.workingCountMany.replace('{count}', '2');
     await waitFor(() => expect(pill).toHaveTextContent(count));
-    await expect(new Set(navOrder)).toEqual(new Set(TOP_LEVEL_VIEWS));
+    await expect(new Set(navOrder)).toEqual(
+      new Set(TOP_LEVEL_VIEWS.filter((view) => view !== 'plan')),
+    );
     for (const [route, current] of headerRoutes) {
       await userEvent.click(
         canvas.getByRole('button', { name: `Visit ${fragmentForRoute(route)}` }),

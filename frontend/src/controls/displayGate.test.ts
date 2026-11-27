@@ -167,6 +167,49 @@ describe("the display gate: acceptance is immediate, paint is the reader's to ho
     expect(gate.getSnapshot().lastFailure).toEqual({ kind: 'network-error' });
   });
 
+  it('holds a plan change behind an open list and a toggle, as it holds a poll', async () => {
+    const { clock, held, store, gate } = setup();
+    const unread = gate.getSnapshot().plan;
+    held.choice = true;
+    store.setPlan({ state: 'none' });
+    expect(gate.getSnapshot().plan).toBe(unread);
+    // A reader's own action shows at once, and must not carry the held plan with it.
+    store.setPending(['save:a']);
+    expect(gate.getSnapshot().pending).toEqual(['save:a']);
+    expect(gate.getSnapshot().plan).toBe(unread);
+    await gate.paint({ manual: false, accepted: true });
+    expect(gate.getSnapshot().plan).toBe(unread);
+    held.choice = false;
+    gate.releaseChoice();
+    expect(gate.getSnapshot().plan).toEqual({ state: 'none' });
+
+    gate.noteToggle();
+    store.setPlan({ state: 'refused', reason: 'malformed settings' });
+    const painted = gate.paint({ manual: false, accepted: true });
+    expect(gate.getSnapshot().plan).toEqual({ state: 'none' });
+    clock.advance(MOTION_HOLD_MS);
+    await painted;
+    expect(gate.getSnapshot().plan).toEqual({ state: 'refused', reason: 'malformed settings' });
+  });
+
+  it("lets a plan read ride the poll's own held paint, so one poll spends one deferral", async () => {
+    const { held, store, gate, arrive } = setup();
+    held.choice = true;
+    await arrive();
+    expect(gate.deferredCount()).toBe(1);
+    store.setPlan({ state: 'none' });
+    await gate.paint({ manual: false, accepted: true, followUp: true });
+    expect(gate.deferredCount()).toBe(1);
+    expect(gate.getSnapshot().plan).toEqual({ state: 'unread' });
+    held.choice = false;
+    gate.releaseChoice();
+    expect(gate.getSnapshot().plan).toEqual({ state: 'none' });
+    // With nothing held back, a follow-up paints on its own.
+    store.setPlan({ state: 'refused', reason: 'malformed settings' });
+    await gate.paint({ manual: false, accepted: true, followUp: true });
+    expect(gate.getSnapshot().plan).toEqual({ state: 'refused', reason: 'malformed settings' });
+  });
+
   it('resolves the awaited paint of a held run on dispose and clears its timer', async () => {
     const { clock, arrive, gate, detach } = setup();
     gate.noteToggle();

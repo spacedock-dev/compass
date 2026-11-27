@@ -264,6 +264,7 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Sessions | Keeps current label | Session list and filters | A single Session page | The sessions slug stays |
 | Projects | Keeps current label | Projects list and grouping evidence | A single Project page | The projects slug stays |
 | Settings | Keeps current label | Saved choices and their owners | A session's own controls | The settings slug stays |
+| Plan | New destination | The local plan: goals, lanes, design notes, tracker and diagrams | A project's plan on its Project page | Shown only while a plan is configured; the plan slug |
 | Session | Keeps current label | Session identity | A reported session title | Crumb when the session cannot be found. The document title may use its ID |
 | Project views | Project cockpit views | Accessible group name for the project tab strip | Primary navigation | Accessible tab list label |
 | Overview | Now | The project's current evidence | Session activity on the board | Default project tab |
@@ -353,10 +354,18 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Read pull request status | Turn off the pull request read | Account-wide GitHub and GitLab check reads | An individual recorded pull request read | The flag and route stay |
 | Show my AI allowance | No dedicated Settings section | Browser-stored usage consent | An account setting | Labelled as kept in this browser |
 | Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |
+| An open ask with no text | New label | A log ask whose words the Plan settings keep off the board | No open asks | Open asks on Plan |
 | Blocked | New label | A lane with work that cannot continue | A session waiting for a reply | Plan lane and tracker group |
+| Done | New label | A lane whose tracker row is done | Ended, a session state | Plan lane and tracker group; the only group the progress count counts as done |
+| Dropped | New label | A lane set aside and left out of the progress count | Done, a finished lane | Plan lane and tracker group |
 | In progress | New label | A lane with work underway | Working, a session state | Plan lane and tracker group |
 | Lane | New label | A line of work serving a plan goal | Working, a session state | Plan goals and lane counts |
+| Not decided yet | New label | A design note the decision log has not marked decided | Product decisions | Design section on Plan |
+| Not measured | New label | A lane with no tracker row, two rows, a draft-only row or an unread tracker | Planned, a lane not started | Plan lane group, apart and not counted |
+| Planned | New label | A lane whose tracker row is not started | Not measured | Plan lane and tracker group |
 | Product decisions | New label | Decisions from the plan design notes | Decisions, the Project tab | Design section on Plan |
+| Status not recognised | New label | A tracker status word the settings do not list, never echoed | Not measured | Plan lane group and tracker row |
+| Waiting | New label | A lane paused on something outside it | Waiting on you, a session state | Plan lane and tracker group |
 
 Check means a Compass progress check on the first layer. Use "tests and builds" for the
 agent's own runs. Allowance belongs to the plan quota. The

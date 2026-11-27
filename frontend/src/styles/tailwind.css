@@ -27,6 +27,7 @@
 @source '../controls/{Disclosure,TechnicalDetails}.tsx';
 @source '../drift/{CitationLink,CitedText,EntrySource,DriftLevelView,DriftStamp,ReadingControl,ReadingResult,WorkListView,ActivityHead,ActivityMarks,CheckRun,ShowMore,SteerBack,DriftBody,CiReadNote}.tsx';
 @source '../project/{ActivityViews,PlanView,ProjectDetail,ProjectsView,ScopeNav,parts}.tsx';
+@source '../plan/{PlanPage,PlanView}.tsx';
 @source '../help/Help.tsx';
 @source '../workstream/ChangesPanel.tsx';
 @source not '../**/*.test.*';

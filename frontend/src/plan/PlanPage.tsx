@@ -1,9 +1,9 @@
 import { type ReactNode, useId } from 'react';
-import { PLAN_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
+import { PLAN_WORDS, SESSION_ROW_WORDS, SHOWN } from '../language/glossary';
 import { cn } from '../lib/utils';
-import { fragmentForRoute } from '../router/grammar';
+import { fragmentForRoute, type SessionRoute } from '../router/grammar';
+import { RouteAnchor } from '../sessions/RouteAnchor';
 import { Badge } from '../ui/badge';
-import { buttonVariants } from '../ui/button';
 import { Card } from '../ui/card';
 import { Icon, SESSION_TILE_ICONS } from '../ui/icons';
 import { titleLink } from '../ui/link';
@@ -12,17 +12,33 @@ import type {
   PlanLaneState,
   PlanModel,
   PlanNote,
-  PlanRefusalReason,
   PlanRepoDate,
   PlanSessionReference,
+  PlanTrackerStatus,
 } from './model';
+import { SOURCE_REFUSALS } from './model';
 
-const stateLabels = {
+/* Group order on a goal card. The counted groups come first; the count is done lanes over the
+   lanes rendered in them. Dropped lanes, then lanes whose status is unknown, sit apart below. */
+const countedLaneLabels = {
   blocked: PLAN_WORDS.blocked,
-  'in-progress': PLAN_WORDS.inProgress,
-  planned: 'Planned',
-  done: 'Done',
-} satisfies Record<PlanLaneState, string>;
+  waiting: PLAN_WORDS.waiting,
+  running: PLAN_WORDS.inProgress,
+  not_started: PLAN_WORDS.planned,
+  done: PLAN_WORDS.done,
+} as const;
+const trackerLabels = {
+  ...countedLaneLabels,
+  dropped: PLAN_WORDS.dropped,
+} as const satisfies Record<Exclude<PlanTrackerStatus, 'Status not recognised'>, string>;
+const laneGroups: readonly { readonly state: PlanLaneState; readonly label: string }[] = [
+  ...(Object.keys(trackerLabels) as (keyof typeof trackerLabels)[]).map((state) => ({
+    state,
+    label: trackerLabels[state],
+  })),
+  { state: 'Status not recognised', label: PLAN_WORDS.statusNotRecognised },
+  { state: null, label: PLAN_WORDS.notMeasured },
+];
 
 const sessionStates = {
   working: { word: SESSION_ROW_WORDS.working, ink: 'text-[var(--status-working-ink)]' },
@@ -33,20 +49,6 @@ const sessionStates = {
 } as const;
 
 const rowLayout = 'flex min-w-0 flex-col items-start gap-x-6 gap-y-1 leading-6 sm:flex-row';
-
-const refusalReasons = {
-  unreadable: 'The source could not be read.',
-  malformed: 'The source did not have the expected format.',
-  symlink: 'The file is a symbolic link.',
-  'hard-link': 'The same file has another name.',
-  private: 'Marked private.',
-  'unknown-structural-status': 'Compass did not recognise a required status.',
-} satisfies Record<PlanRefusalReason, string>;
-
-const limitLabels = {
-  'health-information': 'health information',
-  'confidential-text': 'confidential text',
-} as const;
 
 function PlanSection({
   title,
@@ -66,7 +68,7 @@ function PlanSection({
         </h2>
         {sourceLabels.length > 0 && (
           <p className="m-0 text-label text-muted-foreground">
-            From {[...new Set(sourceLabels)].join(', ')}
+            From <span data-authored>{[...new Set(sourceLabels)].join(', ')}</span>
           </p>
         )}
       </div>
@@ -76,17 +78,20 @@ function PlanSection({
 }
 
 function RepoDate({ date }: { readonly date: PlanRepoDate }) {
-  const parsed = new Date(date.at);
-  const hasDate = !Number.isNaN(parsed.getTime());
+  const parsed = date.at ? new Date(date.at) : null;
+  const hasDate = parsed !== null && !Number.isNaN(parsed.getTime());
   if (date.kind === 'changed' && !hasDate) return null;
 
   return (
     <p className="m-0 flex flex-wrap gap-x-2 text-label text-muted-foreground">
       {date.kind === 'proposed' && <span>Proposed, not merged</span>}
       {hasDate && (
-        <time dateTime={date.at}>
+        <time dateTime={date.at ?? undefined}>
           {date.kind === 'changed' && 'Changed '}
-          {parsed.toLocaleDateString(undefined, { dateStyle: 'medium' })}
+          {parsed.toLocaleDateString(undefined, {
+            dateStyle: 'medium',
+            ...(/^\d{4}-\d{2}-\d{2}$/.test(date.at ?? '') ? { timeZone: 'UTC' } : {}),
+          })}
         </time>
       )}
     </p>
@@ -94,17 +99,16 @@ function RepoDate({ date }: { readonly date: PlanRepoDate }) {
 }
 
 function PlanSessionRef({
-  href,
+  route,
   name,
   state,
-}: Pick<PlanSessionReference, 'name' | 'state'> & { readonly href: string }) {
+}: Pick<PlanSessionReference, 'name' | 'state'> & { readonly route: SessionRoute }) {
   const { word, ink } = sessionStates[state];
   return (
-    <a
-      href={href}
-      aria-label={`Open session ${name}, ${word}`}
+    <RouteAnchor
+      route={route}
+      label={`Open session ${name}, ${word}`}
       className={cn(
-        buttonVariants({ variant: 'native' }),
         titleLink,
         'inline-flex items-center justify-start gap-1.5 rounded-control text-label text-muted-foreground sm:justify-end',
       )}
@@ -112,21 +116,36 @@ function PlanSessionRef({
       <span role="img" aria-label={word} className={cn('grid shrink-0 place-items-center', ink)}>
         <Icon name={SESSION_TILE_ICONS[word]} size={16} />
       </span>
-      <span className="max-w-[28ch] truncate">{name}</span>
-    </a>
+      <span className="max-w-[28ch] truncate" data-authored>
+        {name}
+      </span>
+    </RouteAnchor>
   );
 }
 
-function SessionReferences({ sessions }: { readonly sessions: readonly PlanSessionReference[] }) {
-  if (sessions.length === 0) return null;
+/* A session opened from Plan names Plan as its origin, so its crumb and Escape come back here. */
+function fromPlan(key: SessionRoute): SessionRoute {
+  return { ...key, from: 'plan' };
+}
+
+function SessionReferences({
+  sessions,
+}: {
+  readonly sessions: readonly PlanSessionReference[] | null;
+}) {
+  if (!sessions?.length) return null;
   const shown = sessions.slice(0, 3);
   const remaining = sessions.length - shown.length;
   return (
     <div className="flex max-w-full flex-none flex-col items-start sm:items-end">
-      {shown.map(({ key, ...session }) => {
-        const href = fragmentForRoute(key);
-        return <PlanSessionRef key={href} href={href} {...session} />;
-      })}
+      {shown.map(({ key, name, state }) => (
+        <PlanSessionRef
+          key={fragmentForRoute(key)}
+          route={fromPlan(key)}
+          name={name}
+          state={state}
+        />
+      ))}
       {remaining > 0 && (
         <p className="m-0 text-label text-muted-foreground">and {remaining} more</p>
       )}
@@ -151,38 +170,46 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                 Open asks
               </h3>
               <ul role="list" aria-label="Open asks" className="m-0 grid list-none gap-3 p-0">
-                {asks.map(({ id, text, at, source, lane, sessions }) => {
-                  const date = new Date(at);
-                  const hasDate = !Number.isNaN(date.getTime());
+                {asks.map(({ id, text, at, timeLabel, source, lane, sessions }) => {
+                  const date = at && timeLabel ? new Date(at) : null;
+                  const hasDate = date !== null && !Number.isNaN(date.getTime());
                   return (
                     <li key={id} className={rowLayout}>
                       <div
                         className={cn(
                           'grid min-w-0 flex-1 gap-1',
-                          sessions.length > 0 && 'sm:mt-2.5',
+                          !!sessions?.length && 'sm:mt-2.5',
                         )}
                       >
-                        <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
+                        {text === null ? (
+                          <p className="m-0 max-w-[var(--measure)] font-semibold">
+                            {PLAN_WORDS.askWithoutText}
+                          </p>
+                        ) : (
+                          <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
+                            {text}
+                          </p>
+                        )}
                         <p className="m-0 text-label leading-relaxed text-muted-foreground">
                           {hasDate ? (
                             <>
                               Asked{' '}
-                              <time dateTime={at}>
+                              <time dateTime={at ?? undefined}>
                                 {date.toLocaleString(undefined, {
                                   dateStyle: 'medium',
                                   timeStyle: 'short',
                                 })}
                               </time>
-                              {' · from the log · '}
+                              {` · ${timeLabel} · `}
                             </>
                           ) : (
-                            'From the log · '
+                            ''
                           )}
-                          {source}
+                          <span data-authored>{source}</span>
                         </p>
                         {lane && (
                           <p className="m-0 text-label leading-relaxed text-muted-foreground">
-                            {PLAN_WORDS.lane}: {lane.title}
+                            {PLAN_WORDS.lane}: <span data-authored>{lane.title}</span>
                           </p>
                         )}
                       </div>
@@ -204,38 +231,45 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                 aria-label="Sessions waiting for a reply"
                 className="m-0 grid list-none gap-3 p-0"
               >
-                {waitingSessions.map(({ key, title, harnessLabel, request }, index) => {
-                  const href = fragmentForRoute(key);
-                  const descriptorId = `${waitingId}-${index}-descriptor`;
-                  const requestId = `${waitingId}-${index}-request`;
-                  return (
-                    <li key={href}>
-                      <a
-                        href={href}
-                        aria-label={title}
-                        aria-describedby={`${descriptorId} ${requestId}`}
-                        className={cn(
-                          buttonVariants({ variant: 'native' }),
-                          'group grid gap-1 rounded-control text-foreground no-underline',
-                        )}
-                      >
-                        <span className="max-w-[var(--measure)] font-semibold underline-offset-[3px] group-hover:underline group-focus-visible:underline">
-                          {title}
-                        </span>
-                        <span id={descriptorId} className="text-label text-muted-foreground">
-                          {harnessLabel}
-                          {key.project.trim() && ` · ${key.project}`}
-                        </span>
-                        <span
-                          id={requestId}
-                          className="max-w-[var(--measure)] text-muted-foreground"
+                {waitingSessions.map(
+                  ({ key, title, harnessLabel, request, requestAuthored }, index) => {
+                    const descriptorId = `${waitingId}-${index}-descriptor`;
+                    const requestId = `${waitingId}-${index}-request`;
+                    return (
+                      <li key={fragmentForRoute(key)}>
+                        <RouteAnchor
+                          route={fromPlan(key)}
+                          label={title}
+                          extra={{ 'aria-describedby': `${descriptorId} ${requestId}` }}
+                          className="group grid gap-1 rounded-control text-foreground no-underline"
                         >
-                          {request}
-                        </span>
-                      </a>
-                    </li>
-                  );
-                })}
+                          <span
+                            className="max-w-[var(--measure)] font-semibold underline-offset-[3px] group-hover:underline group-focus-visible:underline"
+                            data-authored
+                          >
+                            {title}
+                          </span>
+                          <span id={descriptorId} className="text-label text-muted-foreground">
+                            {harnessLabel}
+                            {key.project.trim() && (
+                              <>
+                                {' · '}
+                                <span data-authored>{key.project}</span>
+                              </>
+                            )}
+                          </span>
+                          <span
+                            id={requestId}
+                            className="max-w-[var(--measure)] text-muted-foreground"
+                            data-authored={requestAuthored || undefined}
+                          >
+                            {request}
+                          </span>
+                        </RouteAnchor>
+                      </li>
+                    );
+                  },
+                )}
               </ul>
             </div>
           )}
@@ -245,38 +279,70 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
   );
 }
 
+function notCountedNote(dropped: boolean, unknown: boolean) {
+  if (dropped && unknown) return 'Dropped lanes and lanes without a known status are not counted.';
+  return dropped
+    ? 'Dropped lanes are not counted.'
+    : 'Lanes without a known status are not counted.';
+}
+
 function GoalCard({ goal }: { readonly goal: PlanGoal }) {
   const headingId = useId();
-  const groups = Object.entries(stateLabels)
-    .map(([state, label]) => ({
+  const groups = laneGroups
+    .map(({ state, label }) => ({
       state,
       label,
       lanes: goal.lanes.filter((lane) => lane.state === state),
     }))
     .filter(({ lanes }) => lanes.length > 0);
-  const total = groups.reduce((count, { lanes }) => count + lanes.length, 0);
-  const done = groups.find(({ state }) => state === 'done')?.lanes.length ?? 0;
+  const counted = groups.filter(
+    ({ state }) => state !== null && Object.hasOwn(countedLaneLabels, state),
+  );
+  const total = counted.reduce((count, { lanes }) => count + lanes.length, 0);
+  const done = counted.find(({ state }) => state === 'done')?.lanes.length ?? 0;
+  const apart = groups.filter((group) => !counted.includes(group));
+  const dropped = apart.some(({ state }) => state === 'dropped');
+  const unknown = apart.some(({ state }) => state !== 'dropped');
 
   return (
     <Card as="article" aria-labelledby={headingId} className="grid gap-4 max-sm:p-4">
-      <h3 id={headingId} className="m-0 text-value font-bold">
+      <h3 id={headingId} className="m-0 text-value font-bold" data-authored>
         {goal.title}
       </h3>
+      {goal.proposal && <p className="m-0 text-label text-muted-foreground">{goal.proposal}</p>}
       <dl className="m-0 grid gap-1">
         <dt className="text-label font-semibold text-muted-foreground">Done when</dt>
-        <dd className="m-0 max-w-[var(--measure)]">{goal.doneWhen}</dd>
+        <dd
+          className="m-0 max-w-[var(--measure)]"
+          data-authored={goal.doneWhen !== null || undefined}
+        >
+          {goal.doneWhen ?? 'No completion condition is listed.'}
+        </dd>
       </dl>
-      {total === 0 ? (
+      {groups.length === 0 ? (
         <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
       ) : (
         <>
-          <p className="m-0 font-semibold">
-            {done} of {total} {total === 1 ? 'lane is' : 'lanes are'} done
-          </p>
+          {total === 0 ? (
+            <p className="m-0 text-muted-foreground">
+              {unknown ? 'Lane progress is not measured.' : notCountedNote(dropped, false)}
+            </p>
+          ) : (
+            <div className="grid gap-1">
+              <p className="m-0 font-semibold">
+                {done} of {total} {total === 1 ? 'lane is' : 'lanes are'} done
+              </p>
+              {apart.length > 0 && (
+                <p className="m-0 text-label text-muted-foreground">
+                  {notCountedNote(dropped, unknown)}
+                </p>
+              )}
+            </div>
+          )}
           <div className="grid gap-3">
-            {groups.map(({ state, label, lanes }) => (
+            {groups.map(({ label, lanes }) => (
               <div
-                key={state}
+                key={label}
                 className="grid min-w-0 gap-1 border-0 border-solid border-[var(--rule)] not-first:border-t not-first:pt-3"
               >
                 <h4 className="m-0 text-label font-semibold text-muted-foreground">{label}</h4>
@@ -292,8 +358,9 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
                       <span
                         className={cn(
                           'min-w-0 flex-1 text-body',
-                          sessions.length > 0 && 'sm:mt-2.5',
+                          !!sessions?.length && 'sm:mt-2.5',
                         )}
+                        data-authored
                       >
                         {title}
                       </span>
@@ -310,15 +377,31 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
   );
 }
 
-function NotesList({ notes }: { readonly notes: readonly PlanNote[] }) {
+function NotesList({
+  notes,
+  label,
+}: {
+  readonly notes: readonly PlanNote[];
+  readonly label?: string;
+}) {
   return (
-    <ul role="list" className="m-0 grid list-none gap-4 p-0">
-      {notes.map(({ id, title, summary, date, linkHost }) => (
+    <ul role="list" aria-label={label} className="m-0 grid list-none gap-4 p-0">
+      {notes.map(({ id, title, summary, date, linkHosts }) => (
         <li key={id} className="grid gap-1">
-          <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
-          <p className="m-0 max-w-[var(--measure)] text-muted-foreground">{summary}</p>
+          <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
+            {title}
+          </p>
+          {summary && (
+            <p className="m-0 max-w-[var(--measure)] text-muted-foreground" data-authored>
+              {summary}
+            </p>
+          )}
           {date && <RepoDate date={date} />}
-          {linkHost && <p className="m-0 text-label text-muted-foreground">{linkHost}</p>}
+          {linkHosts && linkHosts.length > 0 && (
+            <p className="m-0 text-label text-muted-foreground" data-authored>
+              {linkHosts.join(', ')}
+            </p>
+          )}
         </li>
       ))}
     </ul>
@@ -333,17 +416,20 @@ function Tracker({ items }: { readonly items: PlanModel['tracker'] }) {
       ) : (
         <Card className="max-sm:p-4">
           <ul role="list" className="m-0 grid list-none gap-4 p-0">
-            {items.map(({ id, title, status, date, linkHost }) => (
+            {items.map(({ id, title, status, date }) => (
               <li key={id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5">
                 <div className="grid min-w-0 gap-1">
-                  <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
+                  <p className="m-0 max-w-[var(--measure)] font-semibold" data-authored>
+                    {title}
+                  </p>
                   {date && <RepoDate date={date} />}
-                  {linkHost && <p className="m-0 text-label text-muted-foreground">{linkHost}</p>}
                 </div>
-                {status === 'unrecognised' ? (
-                  <span className="text-label text-muted-foreground">Status not recognised</span>
+                {status === 'Status not recognised' ? (
+                  <span className="text-label text-muted-foreground">
+                    {PLAN_WORDS.statusNotRecognised}
+                  </span>
                 ) : (
-                  <Badge>{stateLabels[status]}</Badge>
+                  <Badge>{trackerLabels[status]}</Badge>
                 )}
               </li>
             ))}
@@ -364,14 +450,16 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
           <ul role="list" className="m-0 grid list-none gap-2 p-0">
             {sources.map((source) => (
               <li key={source.id} className="flex flex-wrap items-baseline gap-x-3">
-                <span className="font-semibold">{source.name}</span>
+                <span className="font-semibold" data-authored>
+                  {source.name}
+                </span>
                 {source.status === 'ok' ? (
                   <span className="text-label text-muted-foreground">Read</span>
                 ) : (
                   <>
                     <span className="text-label font-semibold text-muted-foreground">Refused</span>
                     <span className="text-label text-muted-foreground">
-                      {refusalReasons[source.reason]}
+                      {SOURCE_REFUSALS[source.reason]}
                     </span>
                   </>
                 )}
@@ -381,38 +469,99 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
         )}
       </PlanSection>
       <PlanSection title="What Compass can't see">
-        <p className="m-0 max-w-[var(--measure)] text-muted-foreground">
-          Compass cannot detect {limits.map((limit) => limitLabels[limit]).join(' or ')} typed into
-          these sources.
-        </p>
+        <p className="m-0 max-w-[var(--measure)] text-muted-foreground">{limits}</p>
       </PlanSection>
     </footer>
   );
 }
 
-export function PlanPage({ model }: { readonly model: PlanModel }) {
+const pageLayout =
+  'mx-auto max-w-5xl px-4 py-6 leading-relaxed [overflow-wrap:anywhere] sm:px-8 sm:py-8';
+
+export function RefusedPlanPage({ reason }: { readonly reason: string }) {
+  const detail: Readonly<Record<string, string>> = {
+    'malformed settings': 'The Plan settings did not have the expected format.',
+    'could not identify a private root':
+      'Compass could not identify a private root in the Plan settings.',
+    'settings are inside a repository': 'Keep the Plan settings outside a Git repository.',
+    'symbolic link': 'The Plan settings file is a symbolic link.',
+    'hard link': 'The Plan settings file has another name.',
+    private: 'The Plan settings file is marked private.',
+    'not an owned regular file': 'Use a regular Plan settings file you own.',
+    'over the byte cap': 'The Plan settings file exceeds the size limit.',
+    'file changed before it could be read': 'The Plan settings file changed during the read.',
+    'guarded plan reads are unavailable on this platform':
+      'Compass cannot read Plan settings on this platform.',
+  };
+  return (
+    <PlanNotice>
+      {Object.hasOwn(detail, reason) ? detail[reason] : 'The Plan settings could not be read.'}
+    </PlanNotice>
+  );
+}
+
+/* A Plan page that has no plan to draw: the heading and one sentence, as a region named Plan. */
+function PlanNotice({ children }: { readonly children: ReactNode }) {
   const headingId = useId();
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6 leading-relaxed [overflow-wrap:anywhere] sm:px-8 sm:py-8">
-      <main aria-labelledby={headingId} className="grid gap-8">
+    <section
+      aria-labelledby={headingId}
+      data-next-view-body="plan"
+      className={cn(pageLayout, 'grid gap-3')}
+    >
+      <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
+        {SHOWN.plan}
+      </h1>
+      <p className="m-0 text-muted-foreground">{children}</p>
+    </section>
+  );
+}
+
+export function PlanReadFailed() {
+  return (
+    <PlanNotice>Compass could not read the plan. It tries again on the next refresh.</PlanNotice>
+  );
+}
+
+export function PlanPage({ model }: { readonly model: PlanModel }) {
+  const headingId = useId();
+  // A note the decision log has not marked decided never sits under Product decisions.
+  const decided = model.design.filter((note) => note.decided !== false);
+  const undecided = model.design.filter((note) => note.decided === false);
+  return (
+    <div className={pageLayout} data-next-view-body="plan">
+      <section aria-labelledby={headingId} className="grid gap-8">
         <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
-          Plan
+          {SHOWN.plan}
         </h1>
         <WaitingOnYou asks={model.asks} waitingSessions={model.waitingSessions} />
         <PlanSection title="Goals">
           {model.goals.length === 0 ? (
             <p className="m-0 text-muted-foreground">No goals are listed.</p>
           ) : (
-            model.goals.map((goal) => <GoalCard key={goal.id} goal={goal} />)
+            // Goal ids come from headings in the plan files, and two files may share one.
+            model.goals.map((goal, index) => <GoalCard key={`${goal.id}:${index}`} goal={goal} />)
           )}
         </PlanSection>
         <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>
           {model.design.length === 0 ? (
             <p className="m-0 text-muted-foreground">No product decisions are listed.</p>
           ) : (
-            <Card className="grid gap-3 max-sm:p-4">
-              <h3 className="m-0 text-value font-bold">{PLAN_WORDS.productDecisions}</h3>
-              <NotesList notes={model.design} />
+            <Card className="grid gap-4 max-sm:p-4">
+              {[
+                { label: PLAN_WORDS.productDecisions, notes: decided },
+                { label: PLAN_WORDS.notDecidedYet, notes: undecided },
+              ]
+                .filter(({ notes }) => notes.length > 0)
+                .map(({ label, notes }) => (
+                  <div
+                    key={label}
+                    className="grid gap-3 border-0 border-solid border-[var(--rule)] not-first:border-t not-first:pt-4"
+                  >
+                    <h3 className="m-0 text-value font-bold">{label}</h3>
+                    <NotesList notes={notes} label={label} />
+                  </div>
+                ))}
             </Card>
           )}
         </PlanSection>
@@ -426,7 +575,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
             </Card>
           )}
         </PlanSection>
-      </main>
+      </section>
       <PlanSources sources={model.sources} limits={model.limits} />
     </div>
   );

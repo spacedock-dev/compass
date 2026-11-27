@@ -40,10 +40,14 @@ export function keyIsTaken(event: Omit<KeyEventLike, 'key'>): boolean {
    key. That last case is Escape closing a popover, which must mean "close this" before it can mean
    "leave this view"; the legacy page ran the popover handler first and returned, and here the
    shortcut listener sits on the window so every document-level handler has run before it. */
-export function shortcutTarget(event: KeyEventLike, route: RouteInput): RouteInput | null {
+export function shortcutTarget(
+  event: KeyEventLike,
+  route: RouteInput,
+  options: { readonly plan?: boolean } = {},
+): RouteInput | null {
   if (keyIsTaken(event)) return null;
   if (event.key === 'Escape') {
-    const home = route.view === 'session' ? sessionHome(route) : 'sessions';
+    const home = route.view === 'session' ? sessionHome(route, options) : 'sessions';
     if (home === 'projects' && route.project)
       return { view: 'project', project: route.project, session: null };
     return { view: home, project: null, session: null };

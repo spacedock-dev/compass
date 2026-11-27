@@ -1,3 +1,4 @@
+import { PlanView } from '../plan/PlanView';
 import { Help } from '../help/Help';
 import { SampleInvite } from '../sample/SampleInvite';
 import { payloadSessions } from '../api/bootstrap';
@@ -101,6 +102,7 @@ function TopLevelView({ route }: { readonly route: TopLevelRoute }) {
         <SessionsBranch />
       </>
     );
+  if (route.view === 'plan') return <PlanView />;
   if (route.view === 'projects') return <ProjectsBranch />;
   /* The Intent log states its own absences (annotations off, store unreadable, still reading), so it
      draws before the first payload as well: it names what it is waiting for rather than a blank. */

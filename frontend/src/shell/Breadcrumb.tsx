@@ -2,6 +2,7 @@ import { RouteLink } from './RouteLink';
 import { Icon } from '../ui/icons';
 import { SHOWN } from '../language/glossary';
 import { sessionHome, type Route } from '../router/grammar';
+import { planShown } from '../api/plan';
 import type { PayloadData } from '../api/types';
 import { SAMPLE_FIXTURE } from '../sample/fixture';
 import { isSampleRoute } from '../sample/ids';
@@ -17,6 +18,7 @@ import type { Row } from '../observed';
    nothing about a board nobody has read. */
 export function Breadcrumb({ route }: { readonly route: Route }) {
   const data = useDisplayed((snapshot) => snapshot.data);
+  const plan = useDisplayed((snapshot) => planShown(snapshot.plan));
   if (route.view !== 'project' && route.view !== 'session') return null;
   const projects = (
     <RouteLink className="next-crumb" route={{ view: 'projects' }}>
@@ -53,7 +55,7 @@ export function Breadcrumb({ route }: { readonly route: Route }) {
         </span>
       </>
     );
-    const home = sessionHome(route);
+    const home = sessionHome(route, { plan });
     if (home !== 'projects') {
       trail = (
         <>

@@ -195,6 +195,7 @@ even on a project page.
 | Projects | `p` | Sessions grouped by project. Each project has a page with a briefing and the views Overview, Timeline, Decisions and Usage and alerts. |
 | Needs you | `n` | Waiting on you comes first, followed by Worth a look and Ready to wrap up. The badge counts the first two queues. Open What Compass can't see for coverage and its limits. |
 | Goal history | none | Search current and older goals by their text or by session title where available. Each goal shows its source and time. Open How long goals are kept for the limits. |
+| Plan | none | Open asks, sessions waiting for a reply, goals and their lanes, product decisions, tracker items and diagram captions. Available on the Compass computer after [plan setup](../HOW_TO_USE.md#set-up-the-plan-board). |
 | Settings | none | AI use controls, browser notifications, progress check limits, and what Forget everything deletes and keeps. Changes save as you make them. |
 | Help | none | How Compass works, See an example, the icon legend, progress check terms and common questions. |
 

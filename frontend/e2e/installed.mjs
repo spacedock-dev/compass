@@ -181,7 +181,7 @@ try {
         probe.requests.every(
           (url) =>
             url.startsWith('data:') ||
-            ['/', '/api/data', '/api/stream'].includes(new URL(url).pathname),
+            ['/', '/api/data', '/api/plan', '/api/stream'].includes(new URL(url).pathname),
         ),
       );
       receipts.push({

@@ -453,8 +453,10 @@ describe('the page is React’s alone and starts nothing on its own', () => {
     expect(page.env.streamOpens()).toBe(1);
     expect(page.env.openStreams()).toBe(1);
     expect(page.posts()).toBe(0);
-    // The board read carries `usage=1`, since the quota fetch is on until turned off; nothing else is asked.
-    expect(page.backend.requests.filter((r) => r.url.split('?')[0] !== '/api/data')).toEqual([]);
+    expect(page.backend.requests).toEqual([
+      { method: 'GET', url: '/api/data?usage=1' },
+      { method: 'GET', url: '/api/plan' },
+    ]);
   });
 
   it('stops the board’s resources when the page unmounts', async () => {

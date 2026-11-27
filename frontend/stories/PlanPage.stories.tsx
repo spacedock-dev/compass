@@ -1,5 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { type ReactNode, useEffect, useState } from 'react';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
+import { createRouter } from '../src/router/router';
+import { fakeRouterEnvironment } from '../src/router/testing';
+import { ShellContext } from '../src/shell/context';
+import { createShell } from '../src/shell/createShell';
+import { createFakeClock, createFakeEnvironment } from '../src/transport/testing';
+import { fakeBackend } from '../test/storage_backends';
+import { planLimits } from '../test/plan-fixtures';
 import { PlanPage } from '../src/plan/PlanPage';
 import type { PlanModel } from '../src/plan/model';
 import { hasFocusRing, restingRing, rgbOf } from './a11y.audit';
@@ -52,7 +60,7 @@ const longLane = {
   id: 'extended-collection',
   title:
     'Confirm the staffing and access arrangements for readers collecting reserved books after the main desk closes',
-  state: 'in-progress',
+  state: 'running',
   sessions: [
     {
       ...sundaySession,
@@ -71,14 +79,26 @@ const goal = {
   lanes: [
     { id: 'shelf', title: 'Set up the pickup shelf', state: 'done', sessions: [shelfSession] },
     { id: 'signs', title: 'Put up signs at the entrance', state: 'done', sessions: [] },
-    { id: 'reminders', title: 'Update the pickup reminders', state: 'in-progress', sessions: [] },
+    { id: 'reminders', title: 'Update the pickup reminders', state: 'running', sessions: [] },
     {
       id: 'weekends',
       title: 'Agree on weekend hours',
       state: 'blocked',
       sessions: [hoursSession, rotaSession],
     },
-    { id: 'trial', title: 'Run a pickup trial', state: 'planned', sessions: [] },
+    { id: 'trial', title: 'Run a pickup trial', state: 'not_started', sessions: [] },
+  ],
+} as const;
+// Waiting is counted with the live groups; dropped and unmeasured lanes are shown apart and not counted.
+const goalWithLanesApart = {
+  id: 'reading-room',
+  title: 'Open the quiet reading room',
+  doneWhen: 'Readers can book a desk in the quiet reading room.',
+  lanes: [
+    { id: 'desks', title: 'Order the reading desks', state: 'waiting', sessions: [] },
+    { id: 'lamps', title: 'Fit the desk lamps', state: 'done', sessions: [] },
+    { id: 'phone', title: 'Take desk bookings by phone', state: 'dropped', sessions: [] },
+    { id: 'quiet', title: 'Put up quiet signs', state: null, sessions: [] },
   ],
 } as const;
 const goalWithoutLanes = {
@@ -89,9 +109,9 @@ const goalWithoutLanes = {
 } as const;
 const ask = {
   id: 'hours',
-  verb: 'ask',
   text: 'Should the pickup shelf stay open on Sundays?',
   at: loggedAt,
+  timeLabel: 'from the log',
   source: sourceByKind.log.name,
   sessions: [],
 } as const;
@@ -106,17 +126,20 @@ const waitingSession = {
   title: shelfSession.name,
   harnessLabel: 'Codex',
   request: 'Please confirm which shelves to keep clear.',
+  requestAuthored: true,
 } as const;
 const waitingHoursSession = {
   key: hoursSession.key,
   title: hoursSession.name,
   harnessLabel: 'Claude Code',
   request: 'Please confirm the closing time.',
+  requestAuthored: true,
 } as const;
 const changedDesign = {
   id: 'entrance',
   title: 'Use the entrance alcove for pickups',
   summary: 'Readers can see the shelf as soon as they arrive.',
+  decided: true,
   date: { kind: 'changed', at: changedAt },
   source: sourceByKind.design.name,
 } as const;
@@ -124,7 +147,15 @@ const proposedDesign = {
   id: 'sign',
   title: 'Add a sign beside the return slot',
   summary: 'The sign would direct readers to the pickup shelf.',
+  decided: true,
   date: { kind: 'proposed', at: proposedAt },
+  source: sourceByKind.design.name,
+} as const;
+const undecidedDesign = {
+  id: 'lockers',
+  title: 'Add pickup lockers by the side door',
+  summary: 'Lockers would let readers collect after hours.',
+  decided: false,
   source: sourceByKind.design.name,
 } as const;
 const knownTrackerRow = {
@@ -137,7 +168,7 @@ const knownTrackerRow = {
 const unknownTrackerRow = {
   id: 'rota',
   title: 'Confirm the Saturday rota',
-  status: 'unrecognised',
+  status: 'Status not recognised',
   rawStatus: 'Parked in orbit',
   source: sourceByKind.tracker.name,
 } as const;
@@ -145,7 +176,7 @@ const pickupDiagram = {
   id: 'pickup-route',
   title: 'From the library entrance to the pickup shelf',
   summary: 'The route from the entrance, past the desk, to the shelf.',
-  linkHost: 'diagrams.example.org',
+  linkHosts: ['diagrams.example.org'],
   source: sourceByKind.diagrams.name,
 } as const;
 const refusedSource = {
@@ -163,23 +194,55 @@ const empty: PlanModel = {
   tracker: [],
   diagrams: [],
   sources: [],
-  limits: ['health-information', 'confidential-text'],
+  limits: planLimits,
 };
 const complete: PlanModel = {
   ...empty,
   asks: [askWithLane],
   waitingSessions: [waitingSession],
-  goals: [goal, goalWithoutLanes],
-  design: [changedDesign, proposedDesign],
+  goals: [goal, goalWithLanesApart, goalWithoutLanes],
+  design: [changedDesign, proposedDesign, undecidedDesign],
   tracker: [knownTrackerRow, unknownTrackerRow],
   diagrams: [pickupDiagram],
   sources: [...sourceList, refusedSource],
 };
 
+/* The page's session links go through the shell's router, so each story draws it inside a shell that
+   sits on Plan and never starts its runtime. */
+function PlanShell({ children }: { readonly children: ReactNode }) {
+  const [shell] = useState(() =>
+    createShell({
+      env: createFakeEnvironment({ clock: createFakeClock() }),
+      router: createRouter(fakeRouterEnvironment('#n=plan').env),
+      provider: () => fakeBackend(),
+      events: { addEventListener: () => undefined, removeEventListener: () => undefined },
+      search: '',
+      doc: null,
+      reducedMotion: () => true,
+      fetch: async () => new Response(null, { status: 404 }),
+    }),
+  );
+  useEffect(
+    () => () => {
+      shell.runtime.dispose();
+      shell.display.dispose();
+    },
+    [shell],
+  );
+  return <ShellContext.Provider value={shell}>{children}</ShellContext.Provider>;
+}
+
 const meta = {
   title: 'Pages/Plan',
   component: PlanPage,
   parameters: { layout: 'fullscreen' },
+  decorators: [
+    (Story) => (
+      <PlanShell>
+        <Story />
+      </PlanShell>
+    ),
+  ],
 } satisfies Meta<typeof PlanPage>;
 export default meta;
 type Story = StoryObj<typeof meta>;
@@ -191,6 +254,13 @@ const proposed = 'Proposed, not merged';
 const fromLog = 'from the log';
 const changed = /^Changed /;
 const progressCount = /\d+ of \d+ lanes?/;
+const notMeasured = 'Lane progress is not measured.';
+const notCounted = {
+  both: 'Dropped lanes and lanes without a known status are not counted.',
+  dropped: 'Dropped lanes are not counted.',
+  unknown: 'Lanes without a known status are not counted.',
+} as const;
+const anyNotCounted = /not counted\.$|^Lane progress is not measured\.$/;
 const goalMetadata = /\d+\s*%|Changed |Proposed, not merged|from the log/;
 
 async function expectProgress(card: ReturnType<typeof within>, text: string) {
@@ -207,6 +277,13 @@ async function expectLinksBelowHeading(heading: HTMLElement, list: HTMLElement) 
   }
 }
 
+/* The element whose whole text is this, though authored words sit in their own span inside it. */
+function fullText(text: string) {
+  return (_: string, element: Element | null) =>
+    element?.textContent === text &&
+    ![...element.children].some((child) => child.textContent === text);
+}
+
 function section(element: HTMLElement, name: string) {
   return within(within(element).getByRole('region', { name }));
 }
@@ -219,7 +296,7 @@ export const FullPage: Story = {
   args: { model: complete },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const main = within(canvas.getByRole('main', { name: 'Plan' }));
+    const main = within(canvas.getByRole('region', { name: 'Plan' }));
     await expect(main.getByRole('heading', { level: 1, name: 'Plan' })).toBeVisible();
     await expect(main.getAllByRole('heading', { level: 2 }).map((el) => el.textContent)).toEqual([
       'Waiting on you',
@@ -240,6 +317,11 @@ export const FullPage: Story = {
       queue.getByRole('list', { name: 'Open asks' }),
     );
     await expectRowPlacement(canvasElement, 'right');
+    const apart = within(
+      section(canvasElement, 'Goals').getByRole('article', { name: goalWithLanesApart.title }),
+    );
+    await expectProgress(apart, '1 of 2 lanes are done');
+    await expect(apart.getByText(notCounted.both, { exact: true })).toBeVisible();
   },
 };
 
@@ -319,12 +401,12 @@ export const GoalWithNoDoneLanes: Story = {
   },
 };
 
-const shelfHref = '#n=session:Library%20pickup:codex:shelf%3Areview';
-const hoursHref = '#n=session:Library%20pickup:claude:hours-review';
-const rotaHref = '#n=session:Library%20pickup:codex:rota-review';
+const shelfHref = '#n=session:Library%20pickup:codex:shelf%3Areview&from=plan';
+const hoursHref = '#n=session:Library%20pickup:claude:hours-review&from=plan';
+const rotaHref = '#n=session:Library%20pickup:codex:rota-review&from=plan';
 
-const sundayHref = '#n=session:Library%20pickup:codex:sunday-cover';
-const schoolHref = '#n=session:Library%20pickup:claude:school-holidays';
+const sundayHref = '#n=session:Library%20pickup:codex:sunday-cover&from=plan';
+const schoolHref = '#n=session:Library%20pickup:claude:school-holidays&from=plan';
 const sessionIcons = {
   Working: ['working', '--status-working-ink'],
   'Waiting on you': ['waiting', '--status-waiting-ink'],
@@ -407,6 +489,229 @@ async function expectRowPlacement(canvas: HTMLElement, side: 'right' | 'below') 
     }
   }
 }
+
+const everyLaneState = [
+  ['Blocked', { id: 'b', title: 'Agree on weekend hours', state: 'blocked' }],
+  ['Waiting', { id: 'w', title: 'Order the reading desks', state: 'waiting' }],
+  ['In progress', { id: 'i', title: 'Update the pickup reminders', state: 'running' }],
+  ['Planned', { id: 'p', title: 'Run a pickup trial', state: 'not_started' }],
+  ['Done', { id: 'd', title: 'Set up the pickup shelf', state: 'done' }],
+  ['Dropped', { id: 'x', title: 'Take desk bookings by phone', state: 'dropped' }],
+  [
+    'Status not recognised',
+    { id: 'u', title: 'Confirm the Saturday rota', state: 'Status not recognised' },
+  ],
+  ['Not measured', { id: 'n', title: 'Put up quiet signs', state: null }],
+] as const;
+
+function laneGroup(card: ReturnType<typeof within>, name: string) {
+  return within(card.getByRole('list', { name }));
+}
+
+export const GoalWithEveryLaneState: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [
+        {
+          ...goal,
+          // Reversed so the page, not the fixture, puts the groups in order.
+          lanes: [...everyLaneState].reverse().map(([, lane]) => ({ ...lane, sessions: [] })),
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    await expect(card.getAllByRole('heading', { level: 4 }).map((el) => el.textContent)).toEqual(
+      everyLaneState.map(([word]) => word),
+    );
+    for (const [word, lane] of everyLaneState) {
+      const rows = laneGroup(card, word).getAllByRole('listitem');
+      await expect(rows).toHaveLength(1);
+      await expect(rows[0]).toHaveTextContent(new RegExp(`^${lane.title}$`));
+      await expect(card.getByRole('heading', { name: word, level: 4 })).toHaveClass(
+        'text-muted-foreground',
+      );
+    }
+    // Blocked, Waiting, In progress, Planned and Done are counted; the three groups after them are not.
+    await expectProgress(card, '1 of 5 lanes are done');
+    const note = card.getByText(notCounted.both, { exact: true });
+    await expect(note).toBeVisible();
+    await expect(note).toHaveClass('text-muted-foreground');
+    const count = await settledRect(card.getByText(progressCount));
+    await expect((await settledRect(note)).top).toBeGreaterThanOrEqual(count.bottom);
+    const lastCounted = await settledRect(card.getByRole('list', { name: 'Done' }));
+    for (const word of ['Dropped', 'Status not recognised', 'Not measured']) {
+      await expect((await settledRect(card.getByRole('list', { name: word }))).top).toBeGreaterThan(
+        lastCounted.bottom,
+      );
+    }
+    await expect(card.queryByText('Status not published')).toBeNull();
+    await expect(card.queryByText(notMeasured, { exact: true })).toBeNull();
+  },
+};
+
+export const GoalWithUnmeasuredLanes: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [
+        {
+          ...goal,
+          lanes: [
+            goal.lanes[0],
+            goal.lanes[2],
+            { ...goal.lanes[4], state: null },
+            { ...goal.lanes[1], state: 'Status not recognised' },
+          ],
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    // The unrecognised lane is a done-looking title; it is never counted as done.
+    await expectProgress(card, '1 of 2 lanes are done');
+    await expect(card.getByText(notCounted.unknown, { exact: true })).toBeVisible();
+    await expect(laneGroup(card, 'Done').getAllByRole('listitem')).toHaveLength(1);
+    await expect(laneGroup(card, 'Not measured').getByRole('listitem')).toHaveTextContent(
+      /^Run a pickup trial$/,
+    );
+    await expect(laneGroup(card, 'Status not recognised').getByRole('listitem')).toHaveTextContent(
+      /^Put up signs at the entrance$/,
+    );
+    await expect(card.queryByRole('list', { name: 'Planned' })).toBeNull();
+    await expect(card.queryByText(notCounted.both, { exact: true })).toBeNull();
+  },
+};
+
+export const GoalWithDroppedLane: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [{ ...goal, lanes: [goal.lanes[0], { ...goal.lanes[4], state: 'dropped' }] }],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    await expectProgress(card, '1 of 1 lane is done');
+    await expect(card.getByText(notCounted.dropped, { exact: true })).toBeVisible();
+    await expect(laneGroup(card, 'Dropped').getByRole('listitem')).toHaveTextContent(
+      /^Run a pickup trial$/,
+    );
+  },
+};
+
+export const GoalWithEveryLaneUnmeasured: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [
+        {
+          ...goal,
+          lanes: [
+            { ...goal.lanes[0], state: null },
+            { ...goal.lanes[1], state: null },
+            { ...goal.lanes[3], state: 'Status not recognised' },
+          ],
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const article = section(canvasElement, 'Goals').getByRole('article', { name: goal.title });
+    const card = within(article);
+    await expect(card.queryByText(progressCount)).toBeNull();
+    await expect(article).not.toHaveTextContent(/\b0 of /);
+    const line = card.getByText(notMeasured, { exact: true });
+    await expect(line).toBeVisible();
+    await expect(line).toHaveClass('text-muted-foreground');
+    await expect(card.getAllByText(anyNotCounted)).toEqual([line]);
+    await expect(card.getAllByRole('heading', { level: 4 }).map((el) => el.textContent)).toEqual([
+      'Status not recognised',
+      'Not measured',
+    ]);
+    await expect(laneGroup(card, 'Not measured').getAllByRole('listitem')).toHaveLength(2);
+    // The session links stay on an unmeasured lane.
+    await expectSessionLink(
+      laneGroup(card, 'Not measured'),
+      shelfSession.name,
+      'Waiting on you',
+      shelfHref,
+    );
+  },
+};
+
+export const GoalWithEveryLaneDropped: Story = {
+  args: {
+    model: {
+      ...empty,
+      goals: [{ ...goal, lanes: [{ ...goal.lanes[0], state: 'dropped' }] }],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const card = within(section(canvasElement, 'Goals').getByRole('article', { name: goal.title }));
+    await expect(card.queryByText(progressCount)).toBeNull();
+    await expect(card.getAllByText(anyNotCounted).map((el) => el.textContent)).toEqual([
+      notCounted.dropped,
+    ]);
+  },
+};
+
+export const GoalWithLanesApart: Story = {
+  args: { model: { ...empty, goals: [goalWithLanesApart] } },
+  play: async ({ canvasElement }) => {
+    const card = within(
+      section(canvasElement, 'Goals').getByRole('article', { name: goalWithLanesApart.title }),
+    );
+    await expectProgress(card, '1 of 2 lanes are done');
+    await expect(card.getByText(notCounted.both, { exact: true })).toBeVisible();
+    await expect(card.getAllByRole('heading', { level: 4 }).map((el) => el.textContent)).toEqual([
+      'Waiting',
+      'Done',
+      'Dropped',
+      'Not measured',
+    ]);
+  },
+};
+
+// Words a person wrote into their plan files are theirs: the first-layer audit reads them as authored.
+const authoredWords = 'Fix SHELF LABELS from 3f9c2ab [2]';
+export const AuthoredPlanText: Story = {
+  args: {
+    model: {
+      ...empty,
+      asks: [{ ...askWithLane, text: authoredWords, lane: { id: 'a', title: authoredWords } }],
+      goals: [
+        {
+          ...goal,
+          title: authoredWords,
+          doneWhen: authoredWords,
+          lanes: [
+            {
+              ...goal.lanes[0],
+              title: authoredWords,
+              // A session name reaches the link's accessible name, which the audit cannot mark as authored.
+              sessions: [shelfSession],
+            },
+          ],
+        },
+      ],
+      design: [{ ...changedDesign, title: authoredWords, summary: authoredWords }],
+      tracker: [{ ...knownTrackerRow, title: authoredWords }],
+      diagrams: [{ ...pickupDiagram, title: authoredWords, summary: authoredWords }],
+      sources: [{ ...sourceByKind.goals, name: authoredWords }],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const body = canvasElement.querySelector('[data-next-view-body="plan"]');
+    await expect(body).not.toBeNull();
+    for (const node of within(canvasElement).getAllByText(authoredWords, { exact: false })) {
+      await expect(node.closest('[data-authored]'), node.outerHTML).not.toBeNull();
+    }
+  },
+};
 
 export const LaneWithOneSession: Story = {
   args: { model: { ...empty, goals: [{ ...goal, lanes: [goal.lanes[0]] }] } },
@@ -568,7 +873,7 @@ export const AskWithLaneSessions: Story = {
       section(canvasElement, 'Waiting on you').getByRole('list', { name: 'Open asks' }),
     );
     await expect(asks.getByText(ask.text, { exact: true })).toBeVisible();
-    await expect(asks.getByText('Lane: Agree on weekend hours', { exact: true })).toBeVisible();
+    await expect(asks.getByText(fullText('Lane: Agree on weekend hours'))).toBeVisible();
     await expectAskMetadata(asks);
     await expect(asks.getAllByRole('link')).toHaveLength(1);
     await expectSessionLink(asks, hoursSession.name, 'Waiting on you', hoursHref);
@@ -655,7 +960,7 @@ export const AskWithGoalsSourceRefused: Story = {
   },
   play: async ({ canvasElement }) => {
     const asks = openAsks(canvasElement);
-    await expect(asks.getByText('Lane: Agree on weekend hours', { exact: true })).toBeVisible();
+    await expect(asks.getByText(fullText('Lane: Agree on weekend hours'))).toBeVisible();
     await expectAskMetadata(asks);
     await expectSessionLink(asks, hoursSession.name, 'Waiting on you', hoursHref);
     await expectSessionLink(asks, rotaSession.name, 'Working', rotaHref);
@@ -663,6 +968,17 @@ export const AskWithGoalsSourceRefused: Story = {
     const sources = section(canvasElement, 'Sources');
     await expect(rowWithText(sources, sourceByKind.goals.name).getByText('Refused')).toBeVisible();
     await expect(rowWithText(sources, sourceByKind.log.name).getByText('Read')).toBeVisible();
+  },
+};
+
+export const AskWithoutText: Story = {
+  args: { model: { ...empty, asks: [{ ...ask, text: null }] } },
+  play: async ({ canvasElement }) => {
+    const asks = openAsks(canvasElement);
+    const words = asks.getByText('An open ask with no text', { exact: true });
+    await expect(words).toBeVisible();
+    await expect(words.closest('[data-authored]')).toBeNull();
+    await expectAskMetadata(asks);
   },
 };
 
@@ -701,7 +1017,7 @@ export const WaitingRowsLinkToSessions: Story = {
       const link = row.getByRole('link', { name });
       await expect(link).toBeVisible();
       await expect(link).toHaveAttribute('href', href);
-      await expect(row.getByText(descriptor, { exact: true })).toBeVisible();
+      await expect(row.getByText(fullText(descriptor))).toBeVisible();
       await expect(row.getByText(request, { exact: true })).toBeVisible();
       await expect(link).toHaveAccessibleDescription(`${descriptor} ${request}`);
       await expectKeyboardLink(link, name, href);
@@ -740,7 +1056,7 @@ export const SectionSources: Story = {
       ['Diagrams', 'From Library diagrams'],
     ] as const) {
       const view = section(canvasElement, name);
-      await expect(view.getByText(label, { exact: true })).toBeVisible();
+      await expect(view.getByText(fullText(label))).toBeVisible();
       await expect(view.queryByRole('link')).toBeNull();
     }
   },
@@ -812,18 +1128,25 @@ const trackerStates = [
     'Blocked',
   ],
   [
-    { ...knownTrackerRow, id: 'shelf', title: 'Measure the shelf', status: 'in-progress' },
+    { ...knownTrackerRow, id: 'shelf', title: 'Measure the shelf', status: 'running' },
     'In progress',
   ],
   [
-    { ...knownTrackerRow, id: 'trial', title: 'Schedule the pickup trial', status: 'planned' },
+    { ...knownTrackerRow, id: 'trial', title: 'Schedule the pickup trial', status: 'not_started' },
     'Planned',
+  ],
+  [
+    { ...knownTrackerRow, id: 'carts', title: 'Order the book carts', status: 'waiting' },
+    'Waiting',
+  ],
+  [
+    { ...knownTrackerRow, id: 'kiosk', title: 'Build a pickup kiosk', status: 'dropped' },
+    'Dropped',
   ],
 ] as const;
 const trackerWithMetadata = {
   ...knownTrackerRow,
   date: changedDesign.date,
-  linkHost: 'work.example.org',
 };
 
 export const TrackerStatesAndMetadata: Story = {
@@ -836,7 +1159,6 @@ export const TrackerStatesAndMetadata: Story = {
     const date = changedRow.getByText(`Changed ${shortDate(changedAt)}`, { exact: true });
     await expect(date).toBeVisible();
     await expect(date).toHaveAttribute('datetime', changedAt);
-    await expect(changedRow.getByText(trackerWithMetadata.linkHost, { exact: true })).toBeVisible();
     for (const [item, word] of trackerStates) {
       const row = rowWithText(tracker, item.title);
       await expect(row.getByText(word, { exact: true })).toBeVisible();
@@ -862,14 +1184,16 @@ export const RefusedSource: Story = {
 const refusedSources = [
   ['unreadable', 'Library goals', 'The source could not be read.'],
   ['malformed', 'Library design notes', 'The source did not have the expected format.'],
-  ['symlink', 'Pickup work tracker', 'The file is a symbolic link.'],
-  ['hard-link', 'Library diagrams', 'The same file has another name.'],
+  ['symbolic link', 'Pickup work tracker', 'The file is a symbolic link.'],
+  ['hard link', 'Library diagrams', 'The same file has another name.'],
   ['private', 'Annex design notes', 'Marked private.'],
   [
-    'unknown-structural-status',
+    'Status not recognised',
     'Pickup lane briefs',
-    'Compass did not recognise a required status.',
+    'Compass did not recognise a status the source needs.',
   ],
+  ['branch missing', 'Library plan log', 'The branch is missing.'],
+  ['git timed out', 'Annex tracker', 'Git did not answer in time.'],
 ] as const;
 
 export const SourceRefusalReasons: Story = {
@@ -908,14 +1232,43 @@ export const UnusableDates: Story = {
   },
   play: async ({ canvasElement }) => {
     const askRow = rowWithText(openAsks(canvasElement), ask.text);
-    await expect(
-      askRow.getByText('From the log · Library plan log', { exact: true }),
-    ).toBeVisible();
+    await expect(askRow.getByText('Library plan log', { exact: true })).toBeVisible();
     const design = section(canvasElement, 'Design');
     const proposedRow = rowWithText(design, proposedDesign.title);
     await expect(proposedRow.getByText(proposed, { exact: true })).toBeVisible();
     await expect(within(canvasElement).queryByRole('time')).toBeNull();
     await expect(canvasElement).not.toHaveTextContent(/Invalid Date|Asked |Changed /);
+  },
+};
+
+export const UndecidedDesignNotes: Story = {
+  args: { model: { ...empty, design: [changedDesign, undecidedDesign] } },
+  play: async ({ canvasElement }) => {
+    const design = section(canvasElement, 'Design');
+    await expect(design.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)).toEqual([
+      'Product decisions',
+      'Not decided yet',
+    ]);
+    const decided = within(design.getByRole('list', { name: 'Product decisions' }));
+    await expect(decided.getAllByRole('listitem')).toHaveLength(1);
+    await expect(decided.getByText(changedDesign.title, { exact: true })).toBeVisible();
+    await expect(decided.queryByText(undecidedDesign.title, { exact: true })).toBeNull();
+    const open = within(design.getByRole('list', { name: 'Not decided yet' }));
+    await expect(open.getByText(undecidedDesign.title, { exact: true })).toBeVisible();
+    await expect(open.getByText(undecidedDesign.summary, { exact: true })).toBeVisible();
+    const rule = design.getByRole('heading', { name: 'Not decided yet' }).parentElement;
+    await expect(rule).toHaveStyle({ borderTopWidth: '1px' });
+  },
+};
+
+export const OnlyUndecidedDesignNotes: Story = {
+  args: { model: { ...empty, design: [undecidedDesign] } },
+  play: async ({ canvasElement }) => {
+    const design = section(canvasElement, 'Design');
+    await expect(design.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)).toEqual([
+      'Not decided yet',
+    ]);
+    await expect(design.queryByRole('heading', { name: 'Product decisions' })).toBeNull();
   },
 };
 

@@ -197,6 +197,9 @@ exposes it to your network with no password, so read that section before you use
 what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a
 completed check on the board, choose See an example above the Sessions list or in Help.
 
+Open Plan from the dashboard's menu or page links after you
+[set up the plan board](HOW_TO_USE.md#set-up-the-plan-board).
+
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.
 Its bundled references cover [data sources and session states](compass/skills/compass/reference/dashboard.md),
 [Goals and progress checks](compass/skills/compass/reference/intent-and-drift.md),
