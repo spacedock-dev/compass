@@ -140,6 +140,7 @@ export const ACTIVITY_LOG_FILTER_LABELS = {
 
 export const PLAN_WORDS = {
   blocked: 'Blocked',
+  inProgress: 'In progress',
   lane: 'Lane',
   productDecisions: 'Product decisions',
 } as const;
@@ -1057,6 +1058,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'New label',
       'A lane with work that cannot continue',
       'A session waiting for a reply',
+      'Plan lane and tracker group',
+    ]),
+    planInProgress: kept([
+      PLAN_WORDS.inProgress,
+      'New label',
+      'A lane with work underway',
+      'Working, a session state',
       'Plan lane and tracker group',
     ]),
     planLane: kept([

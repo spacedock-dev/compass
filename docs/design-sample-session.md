@@ -409,6 +409,12 @@ On 2026-11-26, the notice for an action refused through a web proxy or network a
 packaged at 2,489,131 bytes on Node 26.12.1 and pnpm 12.19.0, up 588 bytes. The page bound
 rises to that measurement. The fixture bound stays at 250,000 bytes.
 
+The Plan glossary rows package at 2,489,999 bytes on Node 26.12.1 and pnpm 12.19.0,
+868 bytes above the previous page. The production stylesheet is byte-identical to the
+previous build. Storybook compiles the Plan utilities while the page has no app route.
+The page bound follows the measured package. The fixture bound stays at 250,000 bytes.
+
+
 ## View only
 
 Two layers hold it, and either alone is enough.

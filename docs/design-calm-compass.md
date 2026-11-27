@@ -354,6 +354,7 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Show my AI allowance | No dedicated Settings section | Browser-stored usage consent | An account setting | Labelled as kept in this browser |
 | Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |
 | Blocked | New label | A lane with work that cannot continue | A session waiting for a reply | Plan lane and tracker group |
+| In progress | New label | A lane with work underway | Working, a session state | Plan lane and tracker group |
 | Lane | New label | A line of work serving a plan goal | Working, a session state | Plan goals and lane counts |
 | Product decisions | New label | Decisions from the plan design notes | Decisions, the Project tab | Design section on Plan |
 

@@ -66,6 +66,15 @@ describe('the first-layer glossary', () => {
     expect(designColumns(mutated)).not.toEqual(moduleColumns);
   });
 
+  it('keeps the Plan glossary rows in order', () => {
+    expect(
+      Object.entries(GLOSSARY)
+        .filter(([key]) => /^plan[A-Z]/.test(key))
+        .map(([, { plain }]) => plain),
+    ).toEqual(['Blocked', 'In progress', 'Lane', 'Product decisions']);
+    expect(GLOSSARY).toHaveProperty('planInProgress.distinctFrom', 'Working, a session state');
+  });
+
   it('has no open rows and keeps the Needs you navigation name', () => {
     expect(Object.values(GLOSSARY).filter(({ status }) => status === 'open')).toEqual([]);
     expect(GLOSSARY.attention.plain).toBe('Needs you');

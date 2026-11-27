@@ -18,7 +18,7 @@ export interface PlanSessionReference {
   readonly key: SessionRoute;
   readonly name: string;
   // Synthetic here. The server will supply the matched session's state.
-  readonly state: 'working' | 'waiting' | 'quiet' | 'ended';
+  readonly state: 'working' | 'waiting' | 'quiet' | 'ended' | 'unknown';
 }
 
 export interface PlanGoal {
@@ -40,7 +40,9 @@ export interface PlanAsk {
   readonly text: string;
   readonly at: string;
   readonly source: string;
-  readonly lane?: string;
+  readonly lane?: { readonly id: string; readonly title: string };
+  // The plan payload resolves these against the lane id and published session keys.
+  readonly sessions: readonly PlanSessionReference[];
 }
 
 interface PlanWaitingSession {

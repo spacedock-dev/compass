@@ -5,7 +5,7 @@ import { fragmentForRoute } from '../router/grammar';
 import { Badge } from '../ui/badge';
 import { buttonVariants } from '../ui/button';
 import { Card } from '../ui/card';
-import { Icon, SESSION_STATE_ICONS } from '../ui/icons';
+import { Icon, SESSION_TILE_ICONS } from '../ui/icons';
 import { titleLink } from '../ui/link';
 import type {
   PlanGoal,
@@ -19,7 +19,7 @@ import type {
 
 const stateLabels = {
   blocked: PLAN_WORDS.blocked,
-  'in-progress': 'In progress',
+  'in-progress': PLAN_WORDS.inProgress,
   planned: 'Planned',
   done: 'Done',
 } satisfies Record<PlanLaneState, string>;
@@ -29,9 +29,10 @@ const sessionStates = {
   waiting: { word: SESSION_ROW_WORDS.waitingOnYou, ink: 'text-[var(--status-waiting-ink)]' },
   quiet: { word: SESSION_ROW_WORDS.quiet, ink: 'text-[var(--status-quiet-ink)]' },
   ended: { word: SESSION_ROW_WORDS.ended, ink: 'text-[var(--status-ended-ink)]' },
+  unknown: { word: SESSION_ROW_WORDS.stateNotKnown, ink: 'text-[var(--ink2)]' },
 } as const;
 
-const rowLayout = 'flex min-w-0 flex-col items-start gap-x-6 gap-y-3 leading-6 sm:flex-row';
+const rowLayout = 'flex min-w-0 flex-col items-start gap-x-6 gap-y-1 leading-6 sm:flex-row';
 
 const refusalReasons = {
   unreadable: 'The source could not be read.',
@@ -75,11 +76,19 @@ function PlanSection({
 }
 
 function RepoDate({ date }: { readonly date: PlanRepoDate }) {
-  const label = new Date(date.at).toLocaleDateString(undefined, { dateStyle: 'medium' });
+  const parsed = new Date(date.at);
+  const hasDate = !Number.isNaN(parsed.getTime());
+  if (date.kind === 'changed' && !hasDate) return null;
+
   return (
     <p className="m-0 flex flex-wrap gap-x-2 text-label text-muted-foreground">
       {date.kind === 'proposed' && <span>Proposed, not merged</span>}
-      <time dateTime={date.at}>{date.kind === 'changed' ? `Changed ${label}` : label}</time>
+      {hasDate && (
+        <time dateTime={date.at}>
+          {date.kind === 'changed' && 'Changed '}
+          {parsed.toLocaleDateString(undefined, { dateStyle: 'medium' })}
+        </time>
+      )}
     </p>
   );
 }
@@ -97,11 +106,11 @@ function PlanSessionRef({
       className={cn(
         buttonVariants({ variant: 'native' }),
         titleLink,
-        'inline-flex items-center justify-end gap-1.5 rounded-control text-label text-muted-foreground',
+        'inline-flex items-center justify-start gap-1.5 rounded-control text-label text-muted-foreground sm:justify-end',
       )}
     >
       <span role="img" aria-label={word} className={cn('grid shrink-0 place-items-center', ink)}>
-        <Icon name={SESSION_STATE_ICONS[word]} size={16} />
+        <Icon name={SESSION_TILE_ICONS[word]} size={16} />
       </span>
       <span className="max-w-[28ch] truncate">{name}</span>
     </a>
@@ -113,8 +122,7 @@ function SessionReferences({ sessions }: { readonly sessions: readonly PlanSessi
   const shown = sessions.slice(0, 3);
   const remaining = sessions.length - shown.length;
   return (
-    // Only the outside margins are negative, so stacked 44 px targets never overlap.
-    <div className="-my-2.5 flex max-w-full flex-none flex-col items-start sm:items-end">
+    <div className="flex max-w-full flex-none flex-col items-start sm:items-end">
       {shown.map(({ key, ...session }) => {
         const href = fragmentForRoute(key);
         return <PlanSessionRef key={href} href={href} {...session} />;
@@ -126,12 +134,8 @@ function SessionReferences({ sessions }: { readonly sessions: readonly PlanSessi
   );
 }
 
-function WaitingOnYou({
-  asks,
-  waitingSessions,
-  goals,
-}: Pick<PlanModel, 'asks' | 'waitingSessions' | 'goals'>) {
-  const lanes = goals.flatMap((goal) => goal.lanes);
+function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waitingSessions'>) {
+  const waitingId = useId();
   return (
     <PlanSection title={SESSION_ROW_WORDS.waitingOnYou}>
       {asks.length === 0 && waitingSessions.length === 0 ? (
@@ -147,32 +151,45 @@ function WaitingOnYou({
                 Open asks
               </h3>
               <ul role="list" aria-label="Open asks" className="m-0 grid list-none gap-3 p-0">
-                {asks.map(({ id, text, at, source, lane }) => (
-                  <li key={id} className={rowLayout}>
-                    <div className="grid min-w-0 flex-1 gap-1">
-                      <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
-                      <p className="m-0 text-label leading-relaxed text-muted-foreground">
-                        Asked{' '}
-                        <time dateTime={at}>
-                          {new Date(at).toLocaleString(undefined, {
-                            dateStyle: 'medium',
-                            timeStyle: 'short',
-                          })}
-                        </time>
-                        {' · from the log · '}
-                        {source}
-                      </p>
-                      {lane && (
+                {asks.map(({ id, text, at, source, lane, sessions }) => {
+                  const date = new Date(at);
+                  const hasDate = !Number.isNaN(date.getTime());
+                  return (
+                    <li key={id} className={rowLayout}>
+                      <div
+                        className={cn(
+                          'grid min-w-0 flex-1 gap-1',
+                          sessions.length > 0 && 'sm:mt-2.5',
+                        )}
+                      >
+                        <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
                         <p className="m-0 text-label leading-relaxed text-muted-foreground">
-                          {PLAN_WORDS.lane}: {lane}
+                          {hasDate ? (
+                            <>
+                              Asked{' '}
+                              <time dateTime={at}>
+                                {date.toLocaleString(undefined, {
+                                  dateStyle: 'medium',
+                                  timeStyle: 'short',
+                                })}
+                              </time>
+                              {' · from the log · '}
+                            </>
+                          ) : (
+                            'From the log · '
+                          )}
+                          {source}
                         </p>
-                      )}
-                    </div>
-                    <SessionReferences
-                      sessions={lanes.find(({ title }) => title === lane)?.sessions ?? []}
-                    />
-                  </li>
-                ))}
+                        {lane && (
+                          <p className="m-0 text-label leading-relaxed text-muted-foreground">
+                            {PLAN_WORDS.lane}: {lane.title}
+                          </p>
+                        )}
+                      </div>
+                      <SessionReferences sessions={sessions} />
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -187,13 +204,16 @@ function WaitingOnYou({
                 aria-label="Sessions waiting for a reply"
                 className="m-0 grid list-none gap-3 p-0"
               >
-                {waitingSessions.map(({ key, title, harnessLabel, request }) => {
+                {waitingSessions.map(({ key, title, harnessLabel, request }, index) => {
                   const href = fragmentForRoute(key);
+                  const descriptorId = `${waitingId}-${index}-descriptor`;
+                  const requestId = `${waitingId}-${index}-request`;
                   return (
                     <li key={href}>
                       <a
                         href={href}
                         aria-label={title}
+                        aria-describedby={`${descriptorId} ${requestId}`}
                         className={cn(
                           buttonVariants({ variant: 'native' }),
                           'group grid gap-1 rounded-control text-foreground no-underline',
@@ -202,11 +222,14 @@ function WaitingOnYou({
                         <span className="max-w-[var(--measure)] font-semibold underline-offset-[3px] group-hover:underline group-focus-visible:underline">
                           {title}
                         </span>
-                        <span className="text-label text-muted-foreground">
+                        <span id={descriptorId} className="text-label text-muted-foreground">
                           {harnessLabel}
                           {key.project.trim() && ` · ${key.project}`}
                         </span>
-                        <span className="max-w-[var(--measure)] text-muted-foreground">
+                        <span
+                          id={requestId}
+                          className="max-w-[var(--measure)] text-muted-foreground"
+                        >
                           {request}
                         </span>
                       </a>
@@ -266,7 +289,14 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
                         'border-0 border-solid border-[var(--rule)] py-3 first:pt-0 last:pb-0 not-first:border-t',
                       )}
                     >
-                      <span className="min-w-0 flex-1 text-body">{title}</span>
+                      <span
+                        className={cn(
+                          'min-w-0 flex-1 text-body',
+                          sessions.length > 0 && 'sm:mt-2.5',
+                        )}
+                      >
+                        {title}
+                      </span>
                       <SessionReferences sessions={sessions} />
                     </li>
                   ))}
@@ -368,11 +398,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
         <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
           Plan
         </h1>
-        <WaitingOnYou
-          asks={model.asks}
-          waitingSessions={model.waitingSessions}
-          goals={model.goals}
-        />
+        <WaitingOnYou asks={model.asks} waitingSessions={model.waitingSessions} />
         <PlanSection title="Goals">
           {model.goals.length === 0 ? (
             <p className="m-0 text-muted-foreground">No goals are listed.</p>
