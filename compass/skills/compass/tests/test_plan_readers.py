@@ -1150,6 +1150,46 @@ class PlanLaneStateTest(PlanRepoTestCase):
                 )
                 self.assertEqual({lane.state for lane in model.lanes}, {None})
 
+    def test_a_later_table_that_looks_like_a_tracker_but_lacks_a_status_column_is_refused(
+        self,
+    ) -> None:
+        first = "| Item | Lane | Status |\n| --- | --- | --- |\n| Cut the hull | hull | fixed |\n\n"
+        for name, later in (
+            (
+                "misspelt status",
+                "| Item | Lane | Statuz |\n| --- | --- | --- |\n| Rig | hull | open |\n",
+            ),
+            ("title only", "| Item | Notes |\n| --- | --- |\n| Rig | later |\n"),
+            ("lane only", "| Lane | Notes |\n| --- | --- |\n| hull | later |\n"),
+        ):
+            with self.subTest(name):
+                self.write_sources({"tracker": first + later})
+                model = readers.read_plan(self.configure()).model
+                self.assertEqual(model.tracker, ())
+                self.assertEqual(
+                    [s.reason for s in model.sources if s.kind == "tracker"], ["malformed"]
+                )
+                self.assertEqual({lane.state for lane in model.lanes}, {None})
+
+    def test_adjacent_tables_that_cannot_be_separated_refuse_the_tracker(self) -> None:
+        first = "| Item | Lane | Status |\n| --- | --- | --- |\n| Cut the hull | hull | fixed |\n"
+        second = "| Itme | Lane | Status |\n| --- | --- | --- |\n| Rig | hull | open |\n"
+        self.write_sources({"tracker": first + second})
+        model = readers.read_plan(self.configure()).model
+        self.assertEqual(model.tracker, ())
+        self.assertEqual([s.reason for s in model.sources if s.kind == "tracker"], ["malformed"])
+        self.assertEqual({lane.state for lane in model.lanes}, {None})
+
+    def test_a_table_with_none_of_the_declared_columns_is_ignored(self) -> None:
+        unrelated = "| Notes | Owner |\n| --- | --- |\n| Item | Lane |\n| later | hull |\n"
+        first = "| Item | Lane | Status |\n| --- | --- | --- |\n| Cut the hull | hull | fixed |\n"
+        for text in (first + "\n" + unrelated, first + unrelated):
+            with self.subTest(text=text):
+                self.write_sources({"tracker": text})
+                result = readers.read_plan(self.configure())
+                self.assertEqual([row.lane for row in result.model.tracker], ["hull"])
+                self.assertEqual(self.states(self.configure())["hull"], "done")
+
     def test_a_repeated_lane_column_withdraws_the_tracker(self) -> None:
         self.write_sources(
             {

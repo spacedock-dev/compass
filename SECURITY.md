@@ -1197,7 +1197,9 @@ characters that fits the lane ID rule names that lane, and credential redaction 
 before and after folding, because some credential shapes are case-sensitive. Any other cell names
 no lane. Each lane-ID-shaped word in it, read after credentials are masked, makes that lane
 ambiguous, so the lane is not measured. Once the column is declared, every tracker table must have
-it exactly once; a table that lacks or repeats it makes the tracker source malformed. The lane
+it exactly once; a table that lacks or repeats it makes the tracker source malformed. So does any
+table whose header names the declared title or lane column but lacks the status column, and so do
+adjacent tables a header row cannot separate. A table with none of those columns is ignored. The lane
 cell itself is never published.
 
 ### Plan reads of committed files

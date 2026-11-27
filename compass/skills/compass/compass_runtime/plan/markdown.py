@@ -378,14 +378,20 @@ def _table(
     text: str, state_columns: tuple[str, ...], title_column: str, lane_column: str | None = None
 ) -> Iterator[tuple[str, str, int, str | None]]:
     lines = prose(text)
+    declared = set(state_columns)
+    declared |= {title_column} | ({lane_column} if lane_column is not None else set())
     index = 0
     found = False
     while index + 1 < len(lines):
         head = _cells(lines[index].text)
-        if not any(cell in state_columns for cell in head):
+        if not any(cell in state_columns for cell in head) and not (
+            any(cell in declared for cell in head) and _divider(lines[index + 1], len(head))
+        ):
             index += 1
             continue
-        # A neighboring table can start without an intervening blank line.
+        # A header that names a declared column is a tracker table. One that lacks a declared
+        # column (a misspelt status, title or lane) refuses the source rather than being skipped
+        # with its rows, which could name a lane a second time.
         states = _column(head, state_columns)
         titles = _column(head, (title_column,))
         # A declared lane column is required like the title, so a header typo refuses the
@@ -396,12 +402,9 @@ def _table(
         found = True
         index += 2
         while index < len(lines) and (cells := _cells(lines[index].text)):
-            if (
-                title_column in cells
-                and any(cell in state_columns for cell in cells)
-                and index + 1 < len(lines)
-                and _divider(lines[index + 1], len(cells))
-            ):
+            # A row followed by a divider of its own width is the next table's header, whatever
+            # it is called: end this table there and let the loop above judge that header.
+            if index + 1 < len(lines) and _divider(lines[index + 1], len(cells)):
                 break
             if len(cells) != len(head):
                 raise ParseError
