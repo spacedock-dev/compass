@@ -303,16 +303,21 @@ NON_STATE_READ_GAPS = frozenset(
 )
 
 # These calls admit settings and source bytes only through plan's validated declarations.
-PLAN_FILE_CALLS = {
+PLAN_FILE_CALLS: dict[tuple[str, str, str], tuple[int, str]] = {
     ("compass_runtime/plan/settings.py", "load", "read_plan_settings"): (
-        "Reads the fixed Compass-home settings leaf through the checkout and link guards."
+        1,
+        "Reads the fixed Compass-home settings leaf through the checkout and link guards.",
     ),
     ("compass_runtime/plan/sources.py", "Sources._read", "read_plan_source"): (
-        "Reads the exact event log or a direct brief admitted by the filename grammar, "
-        "with checked ancestors and a byte cap."
+        1,
+        (
+            "Reads the exact event log or a direct brief admitted by the filename grammar,"
+            " with checked ancestors and a byte cap."
+        ),
     ),
     ("compass_runtime/plan/sources.py", "Sources.brief_names", "list_plan_names"): (
-        "Lists names only inside the declared, guarded brief folder under an entry cap."
+        1,
+        "Lists names only inside the declared, guarded brief folder under an entry cap.",
     ),
 }
 PLAN_FILE_PRIMITIVES = {name for _, _, name in PLAN_FILE_CALLS} | {"open_plan_source"}
@@ -346,16 +351,21 @@ def _name(node: ast.expr, imports: dict[str, str]) -> str:
 
 
 def _sensitive_name(name: str) -> bool:
-    return name == "open" or name.split(".", maxsplit=1)[0] in {
-        "subprocess",
-        "urllib",
-        "os",
-        "io",
-        "builtins",
-        "pathlib",
-        "asyncio",
-        "pty",
-    }
+    return (
+        name in {"open", "compass_runtime.io"}
+        or name.startswith("compass_runtime.io.")
+        or name.split(".", maxsplit=1)[0]
+        in {
+            "subprocess",
+            "urllib",
+            "os",
+            "io",
+            "builtins",
+            "pathlib",
+            "asyncio",
+            "pty",
+        }
+    )
 
 
 def _process(name: str) -> bool:
@@ -375,7 +385,18 @@ def _process(name: str) -> bool:
     } or name.startswith(("os.exec", "os.spawn", "os.posix_spawn"))
 
 
-def _imports(tree: ast.AST) -> dict[str, str]:
+def _import_base(node: ast.ImportFrom, module: str) -> str:
+    """Absolute dotted module of a from-import; a relative level is read against the file's package."""
+    if node.level == 0:
+        return node.module or ""
+    package = module.removesuffix(".py").split("/")[:-1]
+    if node.level - 1 > len(package):
+        return ""
+    base = package[: len(package) - (node.level - 1)]
+    return ".".join([*base, *([node.module] if node.module else [])])
+
+
+def _imports(tree: ast.AST, module: str) -> dict[str, str]:
     found = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -383,20 +404,25 @@ def _imports(tree: ast.AST) -> dict[str, str]:
                 found[alias.asname or alias.name.split(".")[0]] = (
                     alias.name if alias.asname else alias.name.split(".")[0]
                 )
-        elif isinstance(node, ast.ImportFrom) and node.module:
+        elif isinstance(node, ast.ImportFrom) and (base := _import_base(node, module)):
             for alias in node.names:
-                found[alias.asname or alias.name] = node.module + "." + alias.name
+                found[alias.asname or alias.name] = base + "." + alias.name
     return _assigned_aliases(tree, found)
 
 
 def _assigned_aliases(tree: ast.AST, found: dict[str, str]) -> dict[str, str]:
-    assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+    assignments = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) or (isinstance(node, ast.AnnAssign) and node.value)
+    ]
     # Bound the lexical fixed point by the number of assignments; no execution or inference.
     for _ in assignments:
         previous = found.copy()
         for node in assignments:
-            for target in node.targets:
-                if isinstance(target, ast.Name):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and node.value is not None:
                     resolved = _name(node.value, found)
                     if _sensitive_name(resolved):
                         found[target.id] = resolved
@@ -435,11 +461,12 @@ def _runner_defaults(
 
 def violations(source: str, module: str) -> list[str]:
     tree = ast.parse(source)
-    imports = _imports(tree)
+    imports = _imports(tree, module)
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     found = _runner_defaults(tree, imports, module, parents)
     counts: dict[tuple[str, str], int] = {}
     process_counts: dict[tuple[str, str], int] = {}
+    plan_counts: dict[tuple[str, str, str], int] = {}
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -448,12 +475,8 @@ def violations(source: str, module: str) -> list[str]:
         name = _name(node.func, imports)
         prefix = f"{module}:{node.lineno} {function}: "
         plan_primitive = name.removeprefix("compass_runtime.io.")
-        if (
-            name.startswith("compass_runtime.io.")
-            and plan_primitive in PLAN_FILE_PRIMITIVES
-            and (*key, plan_primitive) not in PLAN_FILE_CALLS
-        ):
-            found.append(prefix + "unreviewed plan file operation")
+        if name.startswith("compass_runtime.io.") and plan_primitive in PLAN_FILE_PRIMITIVES:
+            found.extend(_count_plan_call(plan_counts, (*key, plan_primitive), prefix))
         resolved = _name(node, imports)
         if any(
             value.endswith(".<dynamic>") and _sensitive_name(value) for value in (name, resolved)
@@ -485,12 +508,15 @@ def violations(source: str, module: str) -> list[str]:
             maximum, _reason = RAW_FILES.get(key, (0, ""))
             if counts[key] > maximum:
                 found.append(prefix + "unreviewed raw file operation")
-    found.extend(_stale_entries(module, counts, process_counts))
+    found.extend(_stale_entries(module, counts, process_counts, plan_counts))
     return found
 
 
 def _stale_entries(
-    module: str, counts: dict[tuple[str, str], int], process_counts: dict[tuple[str, str], int]
+    module: str,
+    counts: dict[tuple[str, str], int],
+    process_counts: dict[tuple[str, str], int],
+    plan_counts: dict[tuple[str, str, str], int],
 ) -> list[str]:
     found = []
     for key, (maximum, reason) in RAW_FILES.items():
@@ -501,7 +527,28 @@ def _stale_entries(
     for key, (arguments, _reason) in PROCESSES.items():
         if key[0] == module and process_counts.get(key, 0) < len(arguments):
             found.append(f"{module} {key[1]}: stale process inventory")
+    for plan_key, (maximum, _reason) in PLAN_FILE_CALLS.items():
+        if plan_key[0] == module and plan_counts.get(plan_key, 0) < maximum:
+            found.append(f"{module} {plan_key[1]} ({plan_key[2]}): stale plan-file inventory")
     return found
+
+
+def _count_plan_call(
+    plan_counts: dict[tuple[str, str, str], int], plan_key: tuple[str, str, str], prefix: str
+) -> list[str]:
+    plan_counts[plan_key] = plan_counts.get(plan_key, 0) + 1
+    if plan_counts[plan_key] > PLAN_FILE_CALLS.get(plan_key, (0, ""))[0]:
+        return [prefix + "unreviewed plan file operation"]
+    return []
+
+
+def _unscanned_plan_entries(scanned: set[str]) -> list[str]:
+    """Plan entries whose module was never scanned, so no per-module stale check could run."""
+    return [
+        f"{module} {owner} ({primitive}): stale plan-file inventory, module not scanned"
+        for module, owner, primitive in PLAN_FILE_CALLS
+        if module not in scanned
+    ]
 
 
 class SecurityPrimitivesTest(unittest.TestCase):
@@ -511,6 +558,57 @@ class SecurityPrimitivesTest(unittest.TestCase):
             "compass_runtime/new.py",
         )
         self.assertTrue(any("unreviewed plan file operation" in error for error in found))
+
+    def test_a_relative_import_of_a_plan_primitive_requires_review(self) -> None:
+        for source, module in (
+            (
+                "from .. import io; io.read_plan_source('/p', policy, 7)",
+                "compass_runtime/plan/new.py",
+            ),
+            (
+                "from ..io import read_plan_source as r; r('/p', policy, 7)",
+                "compass_runtime/plan/new.py",
+            ),
+            ("from . import io; io.open_plan_source('/p', policy, 7)", "compass_runtime/new.py"),
+        ):
+            with self.subTest(source=source):
+                found = violations(source, module)
+                self.assertTrue(any("unreviewed plan file operation" in e for e in found), found)
+
+    def test_an_assigned_alias_of_a_plan_primitive_requires_review(self) -> None:
+        for source in (
+            "from compass_runtime import io\nfn = io.read_plan_source\nfn('/p', policy, 7)",
+            "from compass_runtime import io\nmod = io\nfn = mod.list_plan_names\nfn('/p', 1)",
+            "from .. import io\nfn: object = getattr(io, 'read_plan_source')\nfn('/p', policy, 7)",
+            "from compass_runtime import io\ndef f(cb=None):\n fn = cb or io.read_plan_source\n fn('/p', policy, 7)",
+        ):
+            with self.subTest(source=source):
+                found = violations(source, "compass_runtime/plan/new.py")
+                self.assertTrue(any("unreviewed plan file operation" in e for e in found), found)
+        found = violations(
+            "from .. import io\ndef f(m): return getattr(io, m)('/p')",
+            "compass_runtime/plan/new.py",
+        )
+        self.assertTrue(any("unresolved primitive attribute" in e for e in found), found)
+
+    def test_a_second_plan_call_from_a_reviewed_owner_requires_review(self) -> None:
+        source = (
+            "from compass_runtime import io\n"
+            "def load():\n io.read_plan_settings('/a', 1)\n io.read_plan_settings('/b', 1)"
+        )
+        found = violations(source, "compass_runtime/plan/settings.py")
+        self.assertTrue(any("load: unreviewed plan file operation" in e for e in found), found)
+        self.assertFalse(any("stale" in e for e in found), found)
+
+    def test_a_stale_plan_inventory_entry_is_refused(self) -> None:
+        found = violations("def load():\n return None", "compass_runtime/plan/settings.py")
+        self.assertTrue(any("stale plan-file inventory" in e for e in found), found)
+
+    def test_a_plan_entry_for_a_missing_module_is_refused(self) -> None:
+        key = ("compass_runtime/plan/missing.py", "load", "read_plan_settings")
+        with mock.patch.dict(PLAN_FILE_CALLS, {key: (1, "stale")}):
+            found = _unscanned_plan_entries(set())
+        self.assertTrue(any("stale plan-file inventory" in e for e in found), found)
 
     def test_a_raw_open_in_any_shipped_top_level_script_requires_review(self) -> None:
         modules = [
@@ -601,8 +699,10 @@ class SecurityPrimitivesTest(unittest.TestCase):
 
     def test_production_tree_uses_reviewed_primitives(self) -> None:
         found = []
+        scanned: set[str] = set()
         for path in sorted(ROOT.rglob("*.py")):
             if "tests" not in path.relative_to(ROOT).parts:
+                scanned.add(path.relative_to(ROOT).as_posix())
                 found.extend(
                     violations(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix())
                 )
@@ -614,6 +714,7 @@ class SecurityPrimitivesTest(unittest.TestCase):
                         path.read_text(encoding="utf-8"), path.relative_to(repository).as_posix()
                     )
                 )
+        found.extend(_unscanned_plan_entries(scanned))
         self.assertEqual([], found, "\n".join(found))
 
     def test_new_openers_are_refused_even_through_import_aliases(self) -> None:
