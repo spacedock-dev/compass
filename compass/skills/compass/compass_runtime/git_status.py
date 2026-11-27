@@ -677,8 +677,13 @@ class PlanTreeReader:
     _environ: Mapping[str, str]
     _resolved: str | None
     _runner: Callable[..., Any]
+    request_deadline: float | None = None
 
     def _run(self, args: tuple[str, ...], deadline: float) -> bytes:
+        if self.request_deadline is not None:
+            deadline = min(deadline, self.request_deadline)
+        if time.monotonic() >= deadline:
+            raise PlanGitError("git timed out")
         if self._resolved is None:
             raise PlanGitError("git unavailable")
         try:

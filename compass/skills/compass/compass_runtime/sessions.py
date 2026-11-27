@@ -7,16 +7,34 @@ import ntpath
 import os
 import posixpath
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     from .config import RuntimeConfig
 
 type Session = dict[str, Any]
+type CapturedFolders = dict[int, tuple[Session, str]]
+
+_collected_folders: ContextVar[CapturedFolders | None] = ContextVar(
+    "compass_collected_folders", default=None
+)
+
+
+@contextmanager
+def capture_folders(*, enabled: bool) -> Iterator[CapturedFolders]:
+    """Keep the working folder of each collected row until the snapshot selects its rows."""
+    folders: CapturedFolders = {}
+    token = _collected_folders.set(folders if enabled else None)
+    try:
+        yield folders
+    finally:
+        _collected_folders.reset(token)
 
 
 def encoded_home_prefix(home: str) -> str:
@@ -319,6 +337,10 @@ def apply_project_identity(config: RuntimeConfig, session: Session, cwd: str) ->
     """Attach a measured hidden key and short name without replacing legacy display data."""
     if not cwd or not os.path.isabs(cwd):
         return
+    captured = _collected_folders.get()
+    if captured is not None:
+        # Retain the row during collection so a discarded row's object ID cannot be reused.
+        captured[id(session)] = (session, cwd)
     # One read serves the key, the label and the worktree name, per
     # [D-7](docs/design-session-identity.md#d-7-a-session-in-a-linked-worktree-files-under-its-repository).  # noqa: E501
     checkout, main = _git_checkout(cwd)

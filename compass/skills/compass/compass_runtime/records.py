@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import itertools
 import json
 import math
@@ -18,7 +19,7 @@ from bisect import bisect_left, bisect_right
 from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, NamedTuple, Protocol
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator
@@ -52,6 +53,40 @@ _UNSAFE_CHARS = re.compile(
 # The line breaks among them, which `safe_text` turns into spaces before redaction rather than
 # after: the PEM body and the cued shapes are tuned to read a space there.
 _UNSAFE_BREAKS = re.compile("[\\t\\n\\x0b\\x0c\\r\\u2028\\u2029]+")
+
+
+# A host label as both parsers read it alike. The CLI parses a base URL with
+# the WHATWG parser and this build with `urlsplit`, and the two differ on a
+# backslash (WHATWG reads it as `/`), on tabs and newlines (stripped
+# anywhere), on percent-escapes and non-ASCII (decoded and mapped to another
+# host), and on a numeric last label (read as an IPv4 address). Measured on
+# Claude Code 2.1.287 (consent F1, ui5): `http://127.0.0.1:4597\@127.0.0.1:4598`
+# sent every request to 4597 where `urlsplit` reads 4598. So a URL is named only
+# when nothing in it is read differently, and anything else is unnamed.
+_HOST_LABEL = re.compile(r"[a-z0-9_-]+")
+_NUMERIC_HOST_LABEL = re.compile(r"[0-9]+|0[xX][0-9a-fA-F]*")
+
+
+def plain_url_host(hostname: str, *, bracketed: bool) -> str | None:
+    """The host as both parsers name it, or refused where they could differ."""
+    if bracketed:
+        try:
+            return f"[{ipaddress.IPv6Address(hostname).compressed}]"
+        except ValueError:
+            return None
+    labels = hostname.split(".")
+    if not all(_HOST_LABEL.fullmatch(label) for label in labels):
+        return None
+    if _NUMERIC_HOST_LABEL.fullmatch(labels[-1]):
+        # WHATWG reads any host ending in a number as an IPv4 address, in
+        # forms `ipaddress` refuses (`127.1`, `0x7f.1`, `010.0.0.1`), so only
+        # the one canonical dotted quad, which alone `ipaddress` takes, is a
+        # name both give.
+        try:
+            ipaddress.IPv4Address(hostname)
+        except ValueError:
+            return None
+    return hostname
 
 
 # ---------------------------------------------------------------------------
@@ -1457,6 +1492,64 @@ def _redaction_spans(
         derived.extend(_curl_secret_matches(view, source_slice=derived_source))
         found.extend(project(derived))
     return found
+
+
+# Match a whole candidate before parsing it, so even a malformed authority or a
+# credential that redaction marked inside the URL cannot leave the path behind.
+_URL_CANDIDATE = re.compile(
+    r"""(?ix)(?<![\w.+-])(?:[a-z][a-z0-9+.-]*:[/\\]+|[/\\]{2}|www\.|
+    (?:mailto|data|tel|urn|javascript|blob):)[^\s<>"'`]*"""
+)
+_MARKDOWN_LINK_TARGET = re.compile(
+    r"""\]\(\s*(?:<(?P<angle>[^<>\r\n]*)>|(?P<bare>[^()\s<>]+))"""
+    r"""(?:[ \t]+(?:"[^"\r\n]*"|'[^'\r\n]*'))?\s*\)"""
+)
+_URL_UNNAMED: Final = "[link]"
+
+
+def link_host(target: str) -> str | None:
+    """Name a link's host without a scheme, port, userinfo, path, query or fragment."""
+    if "\\" in target:
+        return None
+    if target.lower().startswith("www."):
+        target = "//" + target
+    try:
+        parts = urlsplit(target)
+        authority = parts.netloc.rpartition("@")[2]
+        hostname = parts.hostname
+    except ValueError:
+        return None
+    if not hostname or len(hostname) > 253 or redact_secrets(authority) != authority:
+        return None
+    return plain_url_host(hostname.removesuffix("."), bracketed=authority.startswith("["))
+
+
+def hosts_only(text: str) -> tuple[str, tuple[str, ...]]:
+    """Replace links in redacted text and return the host names in encounter order."""
+    hosts: dict[str, None] = {}
+
+    def replace(target: str) -> str:
+        host = link_host(target)
+        if host is None:
+            return _URL_UNNAMED
+        hosts[host] = None
+        return host
+
+    def markdown(match: re.Match[str]) -> str:
+        # Close the label and drop hostless destinations, including relative files.
+        host = replace(match["angle"] if match["angle"] is not None else match["bare"])
+        return "]" if host == _URL_UNNAMED else f"] ({host})"
+
+    def bare(match: re.Match[str]) -> str:
+        candidate = match[0]
+        target = candidate.rstrip(".,;)}]")
+        # A bare IPv6 literal includes its closing bracket.
+        if "[" in target and "]" not in target:
+            target += "]"
+        return replace(target) + candidate[len(target) :]
+
+    text = _MARKDOWN_LINK_TARGET.sub(markdown, text)
+    return _URL_CANDIDATE.sub(bare, text), tuple(hosts)
 
 
 def redact_clip(text: str, limit: int) -> str:

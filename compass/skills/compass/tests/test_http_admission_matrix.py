@@ -23,6 +23,7 @@ GET = {
     "/assets/xterm.js",
     "/assets/xterm.css",
     "/api/data",
+    "/api/plan",
     "/api/session",
     "/api/live-monitor",
     "/api/summary",
@@ -346,6 +347,7 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
         signed_in = [*board_fetch, ("X-ExeDev-Email", "reader@example.com")]
         headers = {
             "lan": named,
+            "allowed-name": named + board_fetch,
             "login-proxy": named + forwarded,
             "signed-in": named + forwarded + signed_in,
             "signed-in-remote": named + signed_in,
@@ -632,6 +634,13 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 body = {"harness": "claude", "sid": "aaaaaaaa", "group": "Local team", **control}
                 self.assertEqual(400, self.request("POST", "/api/annotate", "local", body))
                 save.assert_not_called()
+
+    def test_plan_a_direct_fetch_is_admitted_and_named_or_forwarded_reads_are_refused(self) -> None:
+        self.assertEqual(200, self.request("GET", "/api/plan", "direct"))
+        self.assertEqual({"state": "not-configured"}, json.loads(self.last_body))
+        for kind in ("lan", "allowed-name", "proxy", "signed-in"):
+            with self.subTest(kind=kind):
+                self.assertEqual(403, self.request("GET", "/api/plan", kind))
 
     def test_duplicate_host_is_refused_on_every_route(self) -> None:
         self.check_class("duplicate")

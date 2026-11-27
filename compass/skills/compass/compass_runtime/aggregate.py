@@ -1805,7 +1805,8 @@ class Application:
             # write it may have missed, so its body is not kept (DRC-4760).
             generation = self.snapshot.generation()
             stamp = row_progress.annotation_stamp(self.config) if self.state.row_progress else None
-            collection = self.collect(show_all=show_all)
+            with sessions.capture_folders(enabled=self.config.plan_enabled) as captured:
+                collection = self.collect(show_all=show_all)
             validate = row_progress.publish(collection, self.config, self.state, self.clock, stamp)
             # A footer check can find a collision the collector missed. Use its decision
             # before encoding the response and keep the generation fence for concurrent clears.
@@ -1822,6 +1823,11 @@ class Application:
                 monotonic_now=built_monotonic,
                 generation=generation,
                 validate=snapshot_check,
+                folders=tuple(
+                    (row["harness"], row["sid"], captured[id(row)][1])
+                    for row in collection.get("sessions", ())
+                    if id(row) in captured
+                ),
             )
             # Only a freshly minted revision that was kept is worth announcing. A
             # warm reuse returns above without reaching this line, so a connected

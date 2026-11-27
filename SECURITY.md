@@ -603,7 +603,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, switching off Read pull request status in Settings, and the refusals every press meets first (`--no-observer-model`, Pause all AI use, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
 | The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), plus `merge-base --is-ancestor` for a merged pull request, inside an admitted progress check that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
 | The native long-source Git identity probes | `reading_source_collect` supplies the subprocess runner to the existing `ci_read.probe_session` / `git_status.identity` owner: fixed `rev-parse --verify --quiet HEAD` and `config --get remote.origin.url`, with hooks/fsmonitor disabled and optional locks off, in at most four admitted native directories. Each keeps the configured Git timeout (10 seconds by default); the full pair must fit remaining preparation time, with live checkpoints before and after each call. Elapsed work and retained inputs share the source account; Git I/O is not counted as native transcript bytes. Nothing leaves the machine from these probes. | `--no-git`, source cancellation/currentness and preparation/graph limits. Network CI acquisition remains separately governed by `--no-ci-read`. | `test_launch_and_send_pins.TheNativeLongGitIdentityTest.test_native_ci_probe_uses_only_fixed_git_identity_argv`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_caps_disabled_missing_identity_and_default_are_explicit`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_requires_remaining_timeout_and_checks_cancel_between_git_calls`; `test_reading_source_ci.FrozenCiBindingTest.test_current_input_graph_and_elapsed_probe_work_remain_in_original_allowance` |
-| Plan files and dates | The resolved Git executable reads declared files at local branch tips and supplies first-parent line attribution and committer timestamps. Nothing leaves the machine. [Plan reads of committed files](#plan-reads-of-committed-files) lists the commands and bounds. | `--no-git` or `--no-plan` | `test_plan_dates.PlanDatesTest.test_no_git_and_no_plan_start_no_plan_commands` and `test_git_status.PlanTreeGitTest.test_plan_history_uses_only_short_blame_and_no_walk_commit_times` |
+| Plan files and dates | A loopback plan fetch or diagnosis can run the resolved Git executable to read declared files at local branch tips and date their lines. A fetch gives all Git work one deadline. Nothing leaves the machine. [Plan reads of committed files](#plan-reads-of-committed-files) lists the commands and bounds. | `--no-git` or `--no-plan` | `test_plan_dates.PlanDatesTest.test_no_git_and_no_plan_start_no_plan_commands`, `test_git_status.PlanTreeGitTest.test_plan_history_uses_only_short_blame_and_no_walk_commit_times`, and `test_plan_publish.PlanPublicationTest.test_slow_git_shares_the_request_deadline_across_commands_and_repos` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
 | A native notification | On macOS, `/usr/bin/osascript` with text Compass composes. Other platforms have no native notifier. Nothing leaves the machine. | `--quiet-hours` holds it back inside a window you name. No switch turns it off outright. | None: the program is meant to launch. `test_notifications.NoNativeNotificationTest` only keeps this repository's own test run from launching one. |
@@ -1212,8 +1212,47 @@ Each command uses the resolved executable, disables fsmonitor and hooks, and pas
 `GIT_NO_REPLACE_OBJECTS=1`, `GIT_LITERAL_PATHSPECS=1`, `GIT_TERMINAL_PROMPT=0` and
 `GIT_NO_LAZY_FETCH=1`. An empty `GIT_ALLOW_PROTOCOL` also prevents transport on older Git versions.
 `GIT_CEILING_DIRECTORIES` stops discovery at the declared repository's parent. Tip resolution and
-each file read have their own deadline. `--no-git` stops these commands while leaving the brief
+each file read have their own timeout. For `GET /api/plan`, all Git commands also share one
+monotonic deadline of ten seconds. `--no-git` stops these commands while leaving the brief
 and log readers available. `--no-plan` disables the entire plan read.
+
+### Published plan fields
+
+`GET /api/plan` reads the plan on demand and serves the JSON with `Cache-Control: no-store`.
+Only a direct loopback peer with a loopback Host can read it. Forwarding headers, a trusted
+login proxy, an `--allow-host` name or a wider `--host` bind grant no access. Browser
+navigations and cross-origin fetches are refused. An admitted request gets 404 under
+`--no-plan`. A missing settings file returns only `state: not-configured`. Refused settings
+return `state: refused` and a closed `reason`.
+
+A configured reply has `state: ready` and the following fields.
+
+| Field | Published contents |
+|---|---|
+| `goals` | `id`, `title`, `doneWhen` and `lanes` (stable lane IDs). |
+| `lanes` | `id` (the brief slug), `title`, `doneWhen`, `state` (null because the brief does not supply one), `date` and `sessions` (board session keys). |
+| `asks` | `id`, `text`, `at` (the log time or null), `timeLabel`, `source` and `lane` (its `id` and `title`, or null). |
+| `design` | `title`, `summary` (null because the parser admits headings), `decided`, `source` and `date`. |
+| `tracker`, `inventory` | `title`, `group` (including the closed fallback `Status not recognised`), `source` and `date`. |
+| `diagrams` | `title`, `caption`, `kind`, `source`, `date`, `linkHosts` and `body`. |
+| `sources` | `label`, `kind`, `state` and a closed `reason` when a source was refused. |
+| `logRejected` | The count of rejected log lines, or null if the log could not be read. |
+| `limits` | Compass cannot detect health information or confidential text typed into these sources. |
+
+A date contains `label` and `at`. Unavailable dates are null. Compass applies its credential
+redaction to source text, then replaces links with their host only before capping text. It
+drops link destinations with no usable host. The cap is 512 characters per text field and
+8,192 for a diagram body, with up to 32 distinct hosts per diagram. The JSON excludes source
+paths, refs, commit IDs, line numbers and raw status words that the grammar did not recognise.
+
+The session join uses working folders held in memory with the current board snapshot. Compass
+compares the device and inode of each folder and its ancestors to the declared lane folders.
+Compass links a session when exactly one lane folder appears in that ancestry. The JSON
+excludes the working folders. A cold snapshot or a row without folder evidence yields no link.
+
+Plan text and its source diagnostics stay out of the board's session rows, event stream and
+[local history](#local-history-the-session-history-store). Fetching the plan does not collect
+session rows or write to disk.
 
 ## Reaching a session's terminal (the focus command)
 
@@ -5032,7 +5071,7 @@ What is never written to it, under any circumstances and with no exception avail
 
 - Tool input, in whole or in part, including any substring of a command.
 - Paths. Neither a session's working directory nor any path a tool touched.
-- File contents, of any file.
+- File contents, of any file. This includes all text and source records from the [Plan board](#published-plan-fields).
 
 **Prompt-derived text is avoided by default and allowlisted per field when a feature needs it.**
 Until 2026-09-04 this was a fourth outright prohibition, and DEC-13 replaced it with the allowlist

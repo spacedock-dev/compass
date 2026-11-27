@@ -585,6 +585,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/plan/grammar.py",
     "skills/compass/compass_runtime/plan/markdown.py",
     "skills/compass/compass_runtime/plan/model.py",
+    "skills/compass/compass_runtime/plan/publish.py",
     "skills/compass/compass_runtime/plan/readers.py",
     "skills/compass/compass_runtime/plan/settings.py",
     "skills/compass/compass_runtime/plan/sources.py",

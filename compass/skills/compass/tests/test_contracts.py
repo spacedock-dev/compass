@@ -2044,6 +2044,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         # question and option text it stores. The register route builds the
         # `PendingAsk` and is therefore the one place that bounding can happen.
         "compass_runtime.http_api": {
+            "compass_runtime.plan.publish",
             "compass_runtime.reading_evidence",
             # One derivation keeps the page and the Sessions progress memo in agreement.
             "compass_runtime.row_progress",
@@ -2361,6 +2362,14 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.settings",
         },
         "compass_runtime.plan.model": set(),
+        "compass_runtime.plan.publish": {
+            "compass_runtime.config",
+            "compass_runtime.plan.model",
+            "compass_runtime.plan.readers",
+            "compass_runtime.plan.settings",
+            "compass_runtime.records",
+            "compass_runtime.state",
+        },
         "compass_runtime.plan.readers": {
             "compass_runtime.git_status",
             "compass_runtime.plan.dates",

@@ -130,11 +130,14 @@ def _repo_files(
     config: settings.Settings,
     timeout_sec: float,
     state: RuntimeState | None,
+    git_deadline: float | None,
 ) -> list[_FileRows]:
     declared = [_tree_source(repo, config, repo.ref, kind, path) for kind, path in repo.files]
     if not any(source.reason is None for source in declared):
         return [_FileRows(source) for source in declared]
-    tree = git_status.plan_reader(repo.path, timeout_sec=timeout_sec)
+    tree = replace(
+        git_status.plan_reader(repo.path, timeout_sec=timeout_sec), request_deadline=git_deadline
+    )
     try:
         tip = tree.tip(repo.ref)
     except git_status.PlanGitError as exc:
@@ -285,12 +288,16 @@ def _link_goals(
 
 
 def read_plan(
-    config: settings.Settings, *, git_timeout_sec: float = 5.0, state: RuntimeState | None = None
+    config: settings.Settings,
+    *,
+    git_timeout_sec: float = 5.0,
+    state: RuntimeState | None = None,
+    git_deadline: float | None = None,
 ) -> model.PlanResult:
     files = [
         file
         for repo in config.sources.repositories
-        for file in _repo_files(repo, config, git_timeout_sec, state)
+        for file in _repo_files(repo, config, git_timeout_sec, state, git_deadline)
     ]
     states = [file.source for file in files]
     rows = [row for file in files for row in file.rows]
