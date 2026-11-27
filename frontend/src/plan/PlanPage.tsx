@@ -1,5 +1,6 @@
 import { type ReactNode, useId } from 'react';
 import { PLAN_WORDS, SESSION_ROW_WORDS } from '../language/glossary';
+import { fragmentForRoute } from '../router/grammar';
 import { Badge } from '../ui/badge';
 import { Card } from '../ui/card';
 import { Icon } from '../ui/icons';
@@ -10,6 +11,7 @@ import type {
   PlanNote,
   PlanRefusalReason,
   PlanRepoDate,
+  PlanSessionReference,
 } from './model';
 
 const stateLabels = {
@@ -35,17 +37,26 @@ const limitLabels = {
 
 function PlanSection({
   title,
+  sourceLabels = [],
   children,
 }: {
   readonly title: string;
+  readonly sourceLabels?: readonly string[];
   readonly children: ReactNode;
 }) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="grid min-w-0 gap-3">
-      <h2 id={headingId} className="m-0 text-head font-bold">
-        {title}
-      </h2>
+      <div>
+        <h2 id={headingId} className="m-0 text-head font-bold">
+          {title}
+        </h2>
+        {sourceLabels.length > 0 && (
+          <p className="m-0 text-label text-muted-foreground">
+            From {[...new Set(sourceLabels)].join(', ')}
+          </p>
+        )}
+      </div>
       {children}
     </section>
   );
@@ -61,7 +72,35 @@ function RepoDate({ date }: { readonly date: PlanRepoDate }) {
   );
 }
 
-function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waitingSessions'>) {
+function SessionLinks({ sessions }: { readonly sessions: readonly PlanSessionReference[] }) {
+  if (sessions.length === 0) return null;
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {sessions.map(({ key, name }) => {
+        const href = fragmentForRoute(key);
+        const label = `Open session ${name}`;
+        return (
+          <a
+            key={href}
+            href={href}
+            aria-label={label}
+            title={label}
+            className="inline-grid size-8 place-items-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <Icon name="go-to-page" />
+          </a>
+        );
+      })}
+    </span>
+  );
+}
+
+function WaitingOnYou({
+  asks,
+  waitingSessions,
+  goals,
+}: Pick<PlanModel, 'asks' | 'waitingSessions' | 'goals'>) {
+  const lanes = goals.flatMap((goal) => goal.lanes);
   return (
     <PlanSection title={SESSION_ROW_WORDS.waitingOnYou}>
       {asks.length === 0 && waitingSessions.length === 0 ? (
@@ -77,10 +116,10 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                 Open asks
               </h3>
               <ul role="list" aria-label="Open asks" className="m-0 grid list-none gap-3 p-0">
-                {asks.map(({ id, text, at }) => (
+                {asks.map(({ id, text, at, source, lane }) => (
                   <li key={id} className="grid gap-1">
                     <p className="m-0 max-w-[var(--measure)] font-semibold">{text}</p>
-                    <p className="m-0 flex flex-wrap gap-x-2 text-label text-muted-foreground">
+                    <p className="m-0 flex flex-wrap items-center gap-x-2 text-label text-muted-foreground">
                       <time dateTime={at}>
                         {new Date(at).toLocaleString(undefined, {
                           dateStyle: 'medium',
@@ -88,6 +127,13 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                         })}
                       </time>
                       <span>from the log</span>
+                      <span>
+                        {source}
+                        {lane && ` · ${PLAN_WORDS.lane.toLowerCase()} ${lane}`}
+                      </span>
+                      <SessionLinks
+                        sessions={lanes.find(({ title }) => title === lane)?.sessions ?? []}
+                      />
                     </p>
                   </li>
                 ))}
@@ -105,12 +151,29 @@ function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waiti
                 aria-label="Sessions waiting for a reply"
                 className="m-0 grid list-none gap-3 p-0"
               >
-                {waitingSessions.map(({ id, title, request }) => (
-                  <li key={id} className="grid gap-1">
-                    <p className="m-0 max-w-[var(--measure)] font-semibold">{title}</p>
-                    <p className="m-0 max-w-[var(--measure)] text-muted-foreground">{request}</p>
-                  </li>
-                ))}
+                {waitingSessions.map(({ key, title, harnessLabel, request }) => {
+                  const href = fragmentForRoute(key);
+                  return (
+                    <li key={href}>
+                      <a
+                        href={href}
+                        aria-label={title}
+                        className="group grid gap-1 rounded-control text-foreground no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                      >
+                        <span className="max-w-[var(--measure)] font-semibold underline decoration-[var(--line)] underline-offset-[3px] group-hover:decoration-current">
+                          {title}
+                        </span>
+                        <span className="text-label text-muted-foreground">
+                          {harnessLabel}
+                          {key.project.trim() && ` · ${key.project}`}
+                        </span>
+                        <span className="max-w-[var(--measure)] text-muted-foreground">
+                          {request}
+                        </span>
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           )}
@@ -153,8 +216,11 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
               <div key={state} className="min-w-0 rounded-control bg-muted px-3 py-2">
                 <h4 className="m-0 text-label font-semibold">{label}</h4>
                 <ul role="list" aria-label={label} className="m-0 mt-1 grid list-none gap-1 p-0">
-                  {lanes.map(({ id, title }) => (
-                    <li key={id}>{title}</li>
+                  {lanes.map(({ id, title, sessions }) => (
+                    <li key={id} className="flex flex-wrap items-center gap-x-1">
+                      <span>{title}</span>
+                      <SessionLinks sessions={sessions} />
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -183,7 +249,7 @@ function NotesList({ notes }: { readonly notes: readonly PlanNote[] }) {
 
 function Tracker({ items }: { readonly items: PlanModel['tracker'] }) {
   return (
-    <PlanSection title="Tracker">
+    <PlanSection title="Tracker" sourceLabels={items.map((item) => item.source)}>
       {items.length === 0 ? (
         <p className="m-0 text-muted-foreground">No tracker items are listed.</p>
       ) : (
@@ -254,7 +320,11 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
         <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
           Plan
         </h1>
-        <WaitingOnYou asks={model.asks} waitingSessions={model.waitingSessions} />
+        <WaitingOnYou
+          asks={model.asks}
+          waitingSessions={model.waitingSessions}
+          goals={model.goals}
+        />
         <PlanSection title="Goals">
           {model.goals.length === 0 ? (
             <p className="m-0 text-muted-foreground">No goals are listed.</p>
@@ -262,7 +332,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
             model.goals.map((goal) => <GoalCard key={goal.id} goal={goal} />)
           )}
         </PlanSection>
-        <PlanSection title="Design">
+        <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>
           {model.design.length === 0 ? (
             <p className="m-0 text-muted-foreground">No product decisions are listed.</p>
           ) : (
@@ -273,7 +343,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
           )}
         </PlanSection>
         <Tracker items={model.tracker} />
-        <PlanSection title="Diagrams">
+        <PlanSection title="Diagrams" sourceLabels={model.diagrams.map((note) => note.source)}>
           {model.diagrams.length === 0 ? (
             <p className="m-0 text-muted-foreground">No diagrams are listed.</p>
           ) : (

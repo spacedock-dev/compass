@@ -8,16 +8,42 @@ import { settledRect } from './settled-layout';
 const changedAt = '2026-11-24T12:00:00Z';
 const proposedAt = '2026-11-25T12:00:00Z';
 const loggedAt = '2026-11-26T13:15:00Z';
+const sourceByKind = {
+  goals: { id: 'goals', name: 'Library goals', status: 'ok' },
+  design: { id: 'design', name: 'Library design notes', status: 'ok' },
+  tracker: { id: 'tracker', name: 'Pickup work tracker', status: 'ok' },
+  diagrams: { id: 'diagrams', name: 'Library diagrams', status: 'ok' },
+  lanes: { id: 'lanes', name: 'Pickup lane briefs', status: 'ok' },
+  log: { id: 'log', name: 'Library plan log', status: 'ok' },
+} as const;
+const sourceList = Object.values(sourceByKind);
+const shelfSession = {
+  key: { view: 'session', project: 'Library pickup', harness: 'codex', session: 'shelf:review' },
+  name: 'Review the shelf layout',
+} as const;
+const hoursSession = {
+  key: { view: 'session', project: 'Library pickup', harness: 'claude', session: 'hours-review' },
+  name: 'Review the weekend hours',
+} as const;
+const rotaSession = {
+  key: { view: 'session', project: 'Library pickup', harness: 'codex', session: 'rota-review' },
+  name: 'Check the weekend rota',
+} as const;
 const goal = {
   id: 'pickup',
   title: 'Make library pickup easier',
   doneWhen: 'Readers can collect a reserved book without joining the main queue.',
   lanes: [
-    { id: 'shelf', title: 'Set up the pickup shelf', state: 'done' },
-    { id: 'signs', title: 'Put up signs at the entrance', state: 'done' },
-    { id: 'reminders', title: 'Update the pickup reminders', state: 'in-progress' },
-    { id: 'weekends', title: 'Agree on weekend hours', state: 'blocked' },
-    { id: 'trial', title: 'Run a pickup trial', state: 'planned' },
+    { id: 'shelf', title: 'Set up the pickup shelf', state: 'done', sessions: [shelfSession] },
+    { id: 'signs', title: 'Put up signs at the entrance', state: 'done', sessions: [] },
+    { id: 'reminders', title: 'Update the pickup reminders', state: 'in-progress', sessions: [] },
+    {
+      id: 'weekends',
+      title: 'Agree on weekend hours',
+      state: 'blocked',
+      sessions: [hoursSession, rotaSession],
+    },
+    { id: 'trial', title: 'Run a pickup trial', state: 'planned', sessions: [] },
   ],
 } as const;
 const goalWithoutLanes = {
@@ -31,28 +57,40 @@ const ask = {
   verb: 'ask',
   text: 'Should the pickup shelf stay open on Sundays?',
   at: loggedAt,
+  source: sourceByKind.log.name,
 } as const;
+const askWithLane = { ...ask, lane: 'Agree on weekend hours' } as const;
 const waitingSession = {
-  id: 'shelf-review',
-  title: 'Review the shelf layout',
+  key: shelfSession.key,
+  title: shelfSession.name,
+  harnessLabel: 'Codex',
   request: 'Please confirm which shelves to keep clear.',
+} as const;
+const waitingHoursSession = {
+  key: hoursSession.key,
+  title: hoursSession.name,
+  harnessLabel: 'Claude Code',
+  request: 'Please confirm the closing time.',
 } as const;
 const changedDesign = {
   id: 'entrance',
   title: 'Use the entrance alcove for pickups',
   summary: 'Readers can see the shelf as soon as they arrive.',
   date: { kind: 'changed', at: changedAt },
+  source: sourceByKind.design.name,
 } as const;
 const proposedDesign = {
   id: 'sign',
   title: 'Add a sign beside the return slot',
   summary: 'The sign would direct readers to the pickup shelf.',
   date: { kind: 'proposed', at: proposedAt },
+  source: sourceByKind.design.name,
 } as const;
 const knownTrackerRow = {
   id: 'labels',
   title: 'Print labels for the pickup shelf',
   status: 'done',
+  source: sourceByKind.tracker.name,
 } as const;
 // The unexpected source word stays outside the published model.
 const unknownTrackerRow = {
@@ -60,15 +98,15 @@ const unknownTrackerRow = {
   title: 'Confirm the Saturday rota',
   status: 'unrecognised',
   rawStatus: 'Parked in orbit',
+  source: sourceByKind.tracker.name,
 } as const;
-const sourceList = [
-  { id: 'goals', name: 'Library goals', status: 'ok' },
-  { id: 'design', name: 'Library design notes', status: 'ok' },
-  { id: 'tracker', name: 'Pickup work tracker', status: 'ok' },
-  { id: 'diagrams', name: 'Library diagrams', status: 'ok' },
-  { id: 'lanes', name: 'Pickup lane briefs', status: 'ok' },
-  { id: 'log', name: 'Library plan log', status: 'ok' },
-] as const;
+const pickupDiagram = {
+  id: 'pickup-route',
+  title: 'From the library entrance to the pickup shelf',
+  summary: 'The route from the entrance, past the desk, to the shelf.',
+  linkHost: 'diagrams.example.org',
+  source: sourceByKind.diagrams.name,
+} as const;
 const refusedSource = {
   id: 'annex',
   name: 'Annex design notes',
@@ -88,19 +126,12 @@ const empty: PlanModel = {
 };
 const complete: PlanModel = {
   ...empty,
-  asks: [ask],
+  asks: [askWithLane],
   waitingSessions: [waitingSession],
   goals: [goal, goalWithoutLanes],
   design: [changedDesign, proposedDesign],
   tracker: [knownTrackerRow, unknownTrackerRow],
-  diagrams: [
-    {
-      id: 'pickup-route',
-      title: 'From the library entrance to the pickup shelf',
-      summary: 'The route from the entrance, past the desk, to the shelf.',
-      linkHost: 'diagrams.example.org',
-    },
-  ],
+  diagrams: [pickupDiagram],
   sources: [...sourceList, refusedSource],
 };
 
@@ -143,7 +174,7 @@ export const FullPage: Story = {
     await expect(main.getByRole('heading', { name: 'Product decisions' })).toBeVisible();
     await expect(main.queryByRole('heading', { name: 'Decisions' })).toBeNull();
     await expect(main.getByText('diagrams.example.org', { exact: true })).toBeVisible();
-    await expect(canvasElement.textContent).not.toMatch(/https?:\/\//);
+    await expect(canvasElement.textContent).not.toMatch(/https?:\/\/|#n=session:/);
     await expect(canvas.queryByRole('dialog')).toBeNull();
     await expect(main.queryByText(absentQueue, { exact: true })).toBeNull();
   },
@@ -190,8 +221,139 @@ export const GoalWithoutLanes: Story = {
   },
 };
 
+const shelfHref = '#n=session:Library%20pickup:codex:shelf%3Areview';
+const hoursHref = '#n=session:Library%20pickup:claude:hours-review';
+const rotaHref = '#n=session:Library%20pickup:codex:rota-review';
+
+async function expectSessionLink(scope: ReturnType<typeof within>, name: string, href: string) {
+  const link = scope.getByRole('link', { name });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute('href', href);
+  await expect(link).toHaveAttribute('title', name);
+  await expect(link.querySelector('svg[data-icon="go-to-page"]')).toBeVisible();
+}
+
+export const LaneWithOneSession: Story = {
+  args: { model: { ...empty, goals: [{ ...goal, lanes: [goal.lanes[0]] }] } },
+  play: async ({ canvasElement }) => {
+    const done = within(section(canvasElement, 'Goals').getByRole('list', { name: 'Done' }));
+    const lane = within(done.getByRole('listitem'));
+    await expect(lane.getByText('Set up the pickup shelf', { exact: true })).toBeVisible();
+    await expect(lane.getAllByRole('link')).toHaveLength(1);
+    await expectSessionLink(lane, 'Open session Review the shelf layout', shelfHref);
+  },
+};
+
+export const LaneWithTwoSessions: Story = {
+  args: { model: { ...empty, goals: [{ ...goal, lanes: [goal.lanes[3]] }] } },
+  play: async ({ canvasElement }) => {
+    const lane = within(
+      within(section(canvasElement, 'Goals').getByRole('list', { name: 'Blocked' })).getByRole(
+        'listitem',
+      ),
+    );
+    await expect(lane.getByText('Agree on weekend hours', { exact: true })).toBeVisible();
+    await expect(lane.getAllByRole('link')).toHaveLength(2);
+    await expectSessionLink(lane, 'Open session Review the weekend hours', hoursHref);
+    await expectSessionLink(lane, 'Open session Check the weekend rota', rotaHref);
+  },
+};
+
+export const LaneWithoutSessions: Story = {
+  args: { model: { ...empty, goals: [{ ...goal, lanes: [goal.lanes[1], goal.lanes[3]] }] } },
+  play: async ({ canvasElement }) => {
+    const done = within(section(canvasElement, 'Goals').getByRole('list', { name: 'Done' }));
+    const signs = done.getByRole('listitem');
+    await expect(signs).toHaveTextContent(/^Put up signs at the entrance$/);
+    await expect(within(signs).queryByRole('link')).toBeNull();
+    await expect(signs.querySelector('svg')).toBeNull();
+  },
+};
+
+export const AskWithLaneSessions: Story = {
+  args: {
+    model: {
+      ...empty,
+      asks: [askWithLane],
+      goals: [
+        {
+          ...goal,
+          lanes: [goal.lanes[0], { ...goal.lanes[3], sessions: [hoursSession] }],
+        },
+      ],
+      sources: sourceList,
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const asks = within(
+      section(canvasElement, 'Waiting on you').getByRole('list', { name: 'Open asks' }),
+    );
+    await expect(
+      asks.getByText('Library plan log · lane Agree on weekend hours', { exact: true }),
+    ).toBeVisible();
+    await expect(asks.getByText(fromLog, { exact: true })).toBeVisible();
+    await expect(asks.getAllByRole('link')).toHaveLength(1);
+    await expectSessionLink(asks, 'Open session Review the weekend hours', hoursHref);
+  },
+};
+
+export const AskWithoutLane: Story = {
+  args: { model: { ...empty, asks: [ask], goals: [goal], sources: sourceList } },
+  play: async ({ canvasElement }) => {
+    const asks = within(
+      section(canvasElement, 'Waiting on you').getByRole('list', { name: 'Open asks' }),
+    );
+    await expect(asks.getByText('Library plan log', { exact: true })).toBeVisible();
+    await expect(asks.queryByText(/· lane/)).toBeNull();
+    await expect(asks.queryByRole('link')).toBeNull();
+  },
+};
+
+export const WaitingRowsLinkToSessions: Story = {
+  args: { model: { ...empty, waitingSessions: [waitingSession, waitingHoursSession] } },
+  play: async ({ canvasElement }) => {
+    const replies = within(
+      section(canvasElement, 'Waiting on you').getByRole('list', {
+        name: 'Sessions waiting for a reply',
+      }),
+    );
+    await expect(replies.getAllByRole('link')).toHaveLength(2);
+    for (const [name, descriptor, href] of [
+      ['Review the shelf layout', 'Codex · Library pickup', shelfHref],
+      ['Review the weekend hours', 'Claude Code · Library pickup', hoursHref],
+    ] as const) {
+      const link = replies.getByRole('link', { name });
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute('href', href);
+      await expect(within(link).getByText(descriptor, { exact: true })).toBeVisible();
+    }
+  },
+};
+
+export const SectionSources: Story = {
+  args: { model: complete },
+  play: async ({ canvasElement }) => {
+    for (const [name, label] of [
+      ['Design', 'From Library design notes'],
+      ['Tracker', 'From Pickup work tracker'],
+      ['Diagrams', 'From Library diagrams'],
+    ] as const) {
+      const view = section(canvasElement, name);
+      await expect(view.getByText(label, { exact: true })).toBeVisible();
+      await expect(view.queryByRole('link')).toBeNull();
+    }
+  },
+};
+
 export const AsksThenWaitingSessions: Story = {
-  args: { model: { ...empty, asks: [ask], waitingSessions: [waitingSession] } },
+  args: {
+    model: {
+      ...empty,
+      asks: [ask],
+      waitingSessions: [waitingSession],
+      sources: [sourceByKind.log],
+    },
+  },
   play: async ({ canvasElement }) => {
     const queue = section(canvasElement, 'Waiting on you');
     await expect(queue.getAllByRole('heading', { level: 3 }).map((el) => el.textContent)).toEqual([
@@ -201,7 +363,7 @@ export const AsksThenWaitingSessions: Story = {
     const askRow = within(queue.getByRole('list', { name: 'Open asks' }));
     const replyRow = within(queue.getByRole('list', { name: 'Sessions waiting for a reply' }));
     await expect(askRow.getByText(ask.text, { exact: true })).toBeVisible();
-    await expect(replyRow.getByText(waitingSession.title, { exact: true })).toBeVisible();
+    await expect(replyRow.getByRole('link', { name: waitingSession.title })).toBeVisible();
     await expect(replyRow.getByText(waitingSession.request, { exact: true })).toBeVisible();
     await expect(queue.queryByText(absentQueue, { exact: true })).toBeNull();
   },
@@ -236,7 +398,7 @@ export const UnrecognisedTrackerStatus: Story = {
 };
 
 export const RefusedSource: Story = {
-  args: { model: { ...empty, sources: [sourceList[0], refusedSource] } },
+  args: { model: { ...empty, sources: [sourceByKind.goals, refusedSource] } },
   play: async ({ canvasElement }) => {
     const sources = section(canvasElement, 'Sources');
     const [read, refused] = sources.getAllByRole('listitem');
@@ -276,7 +438,7 @@ export const ProposedDate: Story = {
 };
 
 export const LogDate: Story = {
-  args: { model: { ...empty, asks: [ask] } },
+  args: { model: { ...empty, asks: [ask], sources: [sourceByKind.log] } },
   play: async ({ canvasElement }) => {
     const queue = section(canvasElement, 'Waiting on you');
     const logged = queue.getByText(fromLog, { exact: true });
