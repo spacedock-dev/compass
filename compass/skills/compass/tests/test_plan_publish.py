@@ -1133,7 +1133,10 @@ class LinkProjectionTimingTest(unittest.TestCase):
             with self.subTest(name=name):
                 started = time.monotonic()
                 records.hosts_only(text)
-                self.assertLess(time.monotonic() - started, 1.0)
+                # The slow shapes took 90 to 105 s before; linear projection takes under 0.4 s
+                # here and up to 1.1 s on CI's 3.12 runner (measured 2026-11-27), so 5 s separates
+                # them without failing on a slow runner.
+                self.assertLess(time.monotonic() - started, 5.0)
 
     def test_an_added_link_before_a_known_one_scans_in_linear_time(self) -> None:
         # Linear time quadruples from 250 KB to 1 MB; a rescan to the line end for each added
@@ -1146,5 +1149,5 @@ class LinkProjectionTimingTest(unittest.TestCase):
                     started = time.monotonic()
                     records.hosts_only(text)
                     took.append(time.monotonic() - started)
-                self.assertLess(took[0], 1.0)
+                self.assertLess(took[0], 5.0)
                 self.assertLess(took[1], 8 * took[0])
