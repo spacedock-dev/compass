@@ -388,12 +388,9 @@ def _table(
         # A neighboring table can start without an intervening blank line.
         states = _column(head, state_columns)
         titles = _column(head, (title_column,))
-        # A table without the declared lane column names no lanes; a repeated one is ambiguous.
-        lanes = (
-            _column(head, (lane_column,))
-            if lane_column is not None and lane_column in head
-            else None
-        )
+        # A declared lane column is required like the title, so a header typo refuses the
+        # source instead of reading as every lane unmeasured.
+        lanes = _column(head, (lane_column,)) if lane_column is not None else None
         if not _divider(lines[index + 1], len(head)):
             raise ParseError
         found = True

@@ -1180,8 +1180,9 @@ other unknown values it shows `Status not recognised`.
 
 An optional tracker lane column names the lane a row belongs to. Compass strips the declared
 decorations from that cell, folds its case when the tracker folds status words, and keeps it
-only when it fits the lane ID rule. A table without that column names no lanes, and a table
-that repeats it is malformed. The lane cell itself is never published.
+only when it fits the lane ID rule. Once the column is declared, every tracker table must have
+it exactly once; a table that lacks or repeats it makes the tracker source malformed. The lane
+cell itself is never published.
 
 ### Plan reads of committed files
 

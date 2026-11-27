@@ -232,7 +232,7 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.write_sources({"tracker": LANE_TRACKER})
         for slug in ("hull", "paint", "mast", "keel"):
             (self.briefs / f"{slug}.md").write_text("## Goal\nSample lane\n", encoding="utf-8")
-        self.configure()
+        self.configure(tracker={"lane_column": "Lane"})
         plan, body = self.payload()
         self.assertEqual(
             {lane["id"]: lane["state"] for lane in plan["lanes"]},

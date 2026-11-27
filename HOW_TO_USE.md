@@ -903,8 +903,10 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    Set the lane-brief folder and log file, then adapt their filename and line templates to your
    formats. To link sessions to a lane, add its brief slug and working folder under
    `briefs.lane_folders`. To show each lane's state, add a column to your tracker table that
-   holds the lane's brief slug and name its header in `tracker.lane_column`. The lane takes the
-   group of the one row that names it. A lane named by no row, or by two, shows as not measured.
+   holds the lane's brief slug and name its header in `tracker.lane_column`. Every tracker table
+   needs that column once you declare it; a table without it is refused as malformed, and
+   `--diagnose` shows the refusal. The lane takes the group of the one row that names it. A lane
+   named by no row, or by two, shows as not measured.
    Declare private roots and markers for locations Compass should skip.
 3. Run the dashboard launcher with `--diagnose` and check the plan settings section for refused
    sources. It reports missing or unreadable draft sources and refused lane folders by kind

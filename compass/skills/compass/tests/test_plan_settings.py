@@ -187,8 +187,11 @@ class PlanSettingsTest(unittest.TestCase):
         )
 
     def test_tracker_lane_column_is_optional_and_distinct(self) -> None:
-        self.assertEqual(self.loaded(self.fixture()).tracker.lane_column, "Lane")
+        self.assertIsNone(self.loaded(self.fixture()).tracker.lane_column)
         self.assertIsNone(self.loaded(self.fixture("variant")).tracker.lane_column)
+        declared = self.fixture()
+        declared["tracker"]["lane_column"] = "Lane"
+        self.assertEqual(self.loaded(declared).tracker.lane_column, "Lane")
         for value in ("", " ", "Item", "item", "STATE", ["Lane"], 7, None, "L" * 129, "La\nne"):
             with self.subTest(value=value):
                 doc = self.fixture()

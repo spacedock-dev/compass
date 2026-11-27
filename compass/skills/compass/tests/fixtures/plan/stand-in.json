@@ -29,7 +29,6 @@
     "form": "table",
     "status_column": ["Status", "State"],
     "title_column": "Item",
-    "lane_column": "Lane",
     "case": "fold",
     "strip": [
       "emoji",

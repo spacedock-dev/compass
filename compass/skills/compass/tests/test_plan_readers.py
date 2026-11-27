@@ -681,7 +681,7 @@ LANE_TRACKER = (
     "| Rig the mast again | mast | driving |\n"
     "| Unassigned work | | open |\n"
     "| Not a lane id | Not a lane | open |\n\n"
-    "| State | Item |\n| --- | --- |\n| open | Buy sandpaper |\n"
+    "| State | Item | Lane |\n| --- | --- | --- |\n| open | Buy sandpaper | |\n"
 )
 
 
@@ -691,6 +691,10 @@ class PlanLaneStateTest(PlanRepoTestCase):
         super().setUp()
         for slug in ("hull", "paint", "mast", "keel"):
             (self.briefs / f"{slug}.md").write_text("## Goal\nSample lane\n", encoding="utf-8")
+
+    def configure(self, fixture: str = "stand-in", **overrides: Any) -> settings.Settings:
+        overrides.setdefault("tracker", {"lane_column": "Lane"})
+        return super().configure(fixture, **overrides)
 
     def states(self, config: settings.Settings) -> dict[str, str | None]:
         return {lane.slug: lane.state for lane in readers.read_plan(config).model.lanes}
@@ -714,22 +718,27 @@ class PlanLaneStateTest(PlanRepoTestCase):
 
     def test_no_declared_lane_column_measures_no_lane(self) -> None:
         self.write_sources({"tracker": LANE_TRACKER})
-        file = self.home / settings.FILENAME
-        self.configure()
-        doc = json.loads(file.read_bytes())
-        del doc["tracker"]["lane_column"]
-        file.write_text(json.dumps(doc), encoding="utf-8")
-        loaded = settings.load(str(self.home))
-        assert loaded.settings is not None
-        model = readers.read_plan(loaded.settings).model
-        self.assertEqual(set(self.states(loaded.settings).values()), {None})
+        config = super().configure()
+        self.assertIsNone(config.tracker.lane_column)
+        model = readers.read_plan(config).model
+        self.assertEqual(len(model.tracker), 7)
+        self.assertEqual(set(self.states(config).values()), {None})
         self.assertEqual({row.lane for row in model.tracker}, {None})
 
-    def test_a_table_without_the_lane_column_names_no_lane(self) -> None:
-        self.write_sources({"tracker": STAND_IN["tracker"]})
-        model = readers.read_plan(self.configure()).model
-        self.assertEqual(len(model.tracker), 4)
-        self.assertEqual({lane.state for lane in model.lanes}, {None})
+    def test_a_table_without_the_declared_lane_column_withdraws_the_tracker(self) -> None:
+        # A header typo must show as a refused source, not as every lane quietly unmeasured.
+        for text in (
+            STAND_IN["tracker"],
+            LANE_TRACKER.replace("| State | Item | Lane |", "| State | Item | Lame |"),
+        ):
+            with self.subTest(text=text):
+                self.write_sources({"tracker": text})
+                model = readers.read_plan(self.configure()).model
+                self.assertEqual(model.tracker, ())
+                self.assertEqual(
+                    [s.reason for s in model.sources if s.kind == "tracker"], ["malformed"]
+                )
+                self.assertEqual({lane.state for lane in model.lanes}, {None})
 
     def test_a_repeated_lane_column_withdraws_the_tracker(self) -> None:
         self.write_sources(
