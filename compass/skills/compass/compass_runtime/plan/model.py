@@ -61,6 +61,8 @@ class Item:
     status: str
     origin: Origin
     lane: str | None = None
+    # Lane IDs inside a lane cell that is not exactly one ID. They only make a lane ambiguous.
+    mentions: tuple[str, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)

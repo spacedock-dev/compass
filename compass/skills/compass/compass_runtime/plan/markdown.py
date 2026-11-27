@@ -38,6 +38,7 @@ _DIRECTIVE = re.compile(
 )
 _FLOW = re.compile(r"(flowchart|graph) +(?:LR|RL|TB|TD|BT)")
 _TRAILING_DATE = re.compile(r" +[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+_LANE_TOKEN = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 
 
 class ParseError(ValueError):
@@ -426,12 +427,18 @@ def _status_word(cell: str, spec: settings.WordGrammar) -> str | None:
     return _undecorated(word, spec)
 
 
-def _lane_id(cell: str | None, spec: settings.WordGrammar) -> str | None:
-    if cell is None or len(cell) > MAX_TEXT_CHARS:
-        return None
+def _lane_names(cell: str | None, spec: settings.WordGrammar) -> tuple[str | None, tuple[str, ...]]:
+    """The one lane a cell names, or else every lane ID it could plausibly name."""
+    if cell is None:
+        return None, ()
     word = _undecorated(cell.strip(), spec)
-    lane = grammar.folded(word) if spec.case == "fold" else word
-    return lane if grammar.is_safe_lane_id(lane) else None
+    text = grammar.folded(word) if spec.case == "fold" else word
+    if grammar.is_safe_lane_id(text):
+        return text, ()
+    # Fail closed: "hull, paint" or "hull." still counts against each lane it could name, so
+    # another row naming that lane cannot set its state alone.
+    tokens = (token for token in _LANE_TOKEN.findall(text) if grammar.is_safe_lane_id(token))
+    return None, tuple(dict.fromkeys(tokens))
 
 
 def _undecorated(word: str, spec: settings.WordGrammar) -> str:
@@ -468,7 +475,8 @@ def _items(
         key = grammar.folded(word) if word is not None and spec.case == "fold" else word
         status = spec.words.get(key, STATUS_UNKNOWN) if key is not None else STATUS_UNKNOWN
         origin = model.Origin(source, line)
-        items.append(model.Item(_text(title), status, origin, _lane_id(lane, spec)))
+        named, mentions = _lane_names(lane, spec)
+        items.append(model.Item(_text(title), status, origin, named, mentions))
         if status == STATUS_UNKNOWN:
             if not word:
                 detail = "empty status" if word == "" else "over the status word cap"

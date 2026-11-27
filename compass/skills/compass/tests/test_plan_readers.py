@@ -784,6 +784,32 @@ class PlanLaneStateTest(PlanRepoTestCase):
             {"hull": None, "paint": "Status not recognised", "mast": None, "keel": "running"},
         )
 
+    def test_a_lane_cell_that_is_not_one_lane_id_makes_named_lanes_ambiguous(self) -> None:
+        head = "| Item | Lane | Status |\n| --- | --- | --- |\n| Cut the hull | hull | fixed |\n"
+        for rows, expected in (
+            ("| Paint both | hull, paint | open |\n", {"hull": None, "paint": None}),
+            ("| Sand the hull | hull. | open |\n", {"hull": None, "paint": None}),
+            ("| Sand the hull | **Hull**; | open |\n", {"hull": None, "paint": None}),
+            ("| Stray work | Not a lane | open |\n", {"hull": "done", "paint": None}),
+            ("| Stray work | hull-paint | open |\n", {"hull": "done", "paint": None}),
+        ):
+            with self.subTest(rows=rows):
+                self.write_sources({"tracker": head + rows})
+                states = self.states(self.configure())
+                self.assertEqual({lane: states[lane] for lane in expected}, expected)
+
+    def test_a_lane_cell_naming_several_lanes_never_sets_a_state_alone(self) -> None:
+        self.write_sources(
+            {
+                "tracker": "| Item | Lane | Status |\n| --- | --- | --- |\n"
+                "| Paint both | hull, paint | fixed |\n"
+            }
+        )
+        self.assertEqual(
+            self.states(self.configure()),
+            {"hull": None, "paint": None, "mast": None, "keel": None},
+        )
+
     def test_a_draft_only_row_does_not_set_a_lane_state(self) -> None:
         self.write_sources({"tracker": LANE_TRACKER})
         git(self.repo, "switch", "-qc", "draft/plan")

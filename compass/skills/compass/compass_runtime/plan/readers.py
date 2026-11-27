@@ -349,11 +349,18 @@ def _lane_states(files: list[_FileRows], config: settings.Settings) -> dict[str,
     ):
         return {}
     named: dict[str, list[str]] = defaultdict(list)
+    mentioned: set[str] = set()
     for file in trackers:
         for row in file.rows:
-            if isinstance(row, model.Item) and row.lane is not None:
-                named[row.lane].append(row.status)
-    return {lane: groups[0] for lane, groups in named.items() if len(groups) == 1}
+            if isinstance(row, model.Item):
+                if row.lane is not None:
+                    named[row.lane].append(row.status)
+                mentioned.update(row.mentions)
+    return {
+        lane: groups[0]
+        for lane, groups in named.items()
+        if len(groups) == 1 and lane not in mentioned
+    }
 
 
 def read_plan(

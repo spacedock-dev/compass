@@ -1179,8 +1179,9 @@ can show up to 32 characters of ordinary unknown tracker and inventory status wo
 other unknown values it shows `Status not recognised`.
 
 An optional tracker lane column names the lane a row belongs to. Compass strips the declared
-decorations from that cell, folds its case when the tracker folds status words, and keeps it
-only when it fits the lane ID rule. Once the column is declared, every tracker table must have
+decorations from that cell and folds its case when the tracker folds status words. A cell that
+fits the lane ID rule names that lane. Any other cell names no lane, but each lane-ID-shaped
+word in it makes that lane ambiguous, so the lane is not measured. Once the column is declared, every tracker table must have
 it exactly once; a table that lacks or repeats it makes the tracker source malformed. The lane
 cell itself is never published.
 
