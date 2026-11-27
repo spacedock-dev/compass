@@ -361,6 +361,47 @@ class PlanSettingsTest(unittest.TestCase):
         self.assertIsNone(read.data)
         self.assertEqual(read.reason, "file changed before it could be read")
 
+    def rewrite_during_read(self, path: Path, old: bytes, new: bytes) -> Any:
+        """Return part of the file, then rewrite it in place to the same size."""
+        self.assertEqual(len(old), len(new))
+        original_read = os.read
+        rewritten: list[bool] = []
+
+        def read(fd: int, size: int) -> bytes:
+            if rewritten:
+                return original_read(fd, size)
+            rewritten.append(True)
+            chunk = original_read(fd, min(size, 16))
+            data = path.read_bytes()
+            self.assertIn(old, data[16:])
+            with path.open("r+b") as stream:
+                stream.write(data.replace(old, new))
+            info = path.stat()
+            os.utime(path, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
+            self.assertEqual(path.stat().st_size, len(data))
+            return chunk
+
+        self.addCleanup(lambda: self.assertTrue(rewritten, "the read was not intercepted"))
+        return mock.patch("compass_runtime.io.os.read", side_effect=read)
+
+    def test_settings_refuse_a_same_size_rewrite_during_the_read(self) -> None:
+        self.path.write_text(json.dumps(self.fixture()), encoding="utf-8")
+        with self.rewrite_during_read(self.path, b'"ref": "main"', b'"ref": "next"'):
+            loaded = settings.load(str(self.home))
+        self.assertEqual(loaded.reason, "file changed before it could be read")
+        self.assertIsNone(loaded.settings)
+        # The finished rewrite is read whole on the next load.
+        repo = self.loaded(json.loads(self.path.read_text(encoding="utf-8"))).sources
+        self.assertEqual(repo.repositories[0].ref, "next")
+
+    def test_log_refuses_a_same_size_rewrite_during_the_read(self) -> None:
+        plan = self.loaded(self.fixture())
+        with self.rewrite_during_read(self.log, b"on this", b"on that"):
+            read = plan.sources.read_log()
+        self.assertIsNone(read.data)
+        self.assertEqual(read.reason, "file changed before it could be read")
+        self.assertEqual(plan.sources.read_log().data, b"ask lane:one Check on that")
+
     def test_brief_listing_refuses_an_overfull_folder_without_opening_briefs(self) -> None:
         doc = self.fixture()
         doc["briefs"]["max_files"] = 1

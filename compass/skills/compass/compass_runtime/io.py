@@ -1019,12 +1019,41 @@ def open_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> int:
     return fd
 
 
+def _content_stamp(info: os.stat_result) -> tuple[int, ...]:
+    # The change time is the one field a same-size rewrite cannot restore: utime sets it too.
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_nlink,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
 def read_plan_source(path: str, policy: PlanPathPolicy, max_bytes: int) -> bytes:
+    """Read the held leaf, then refuse it if its metadata moved while it was read."""
+    chunks: list[bytes] = []
+    remaining = max_bytes + 1
+    fd = open_plan_source(path, policy, max_bytes)
     try:
-        with os.fdopen(open_plan_source(path, policy, max_bytes), "rb") as stream:
-            data = stream.read(max_bytes + 1)
+        before = os.fstat(fd)
+        while remaining > 0:
+            chunk = os.read(fd, min(remaining, 64 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        after = os.fstat(fd)
     except OSError as exc:
         raise _plan_refusal(exc) from None
+    finally:
+        os.close(fd)
+    data = b"".join(chunks)
+    # A same-size rewrite in place keeps the inode, so the read could join two versions.
+    if _content_stamp(before) != _content_stamp(after) or len(data) != after.st_size:
+        raise PlanReadError(PlanRefusal.CHANGED)
     if len(data) > max_bytes:
         raise PlanReadError(PlanRefusal.TOO_LARGE)
     return data

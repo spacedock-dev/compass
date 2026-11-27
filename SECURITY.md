@@ -1168,7 +1168,11 @@ scan or one that exceeds the cap refuses the source.
 The local reader uses held POSIX directory descriptors and refuses directory and file symlinks,
 apart from the root-owned macOS ancestor aliases for `/tmp`, `/var` and `/etc`. The identity checks
 cover the target ancestry of those aliases too. The leaf must be an owned regular file with one
-hard link. Compass checks its identity again after opening and reads under the byte cap.
+hard link. Compass checks its identity again after opening and reads under the byte cap. It
+compares the open file's device, inode, size, link count, modification time and change time
+before and after the read, and refuses a file that changed while it was read. That refuses a
+same-size rewrite in place, which could otherwise mix the old and new contents. A rewrite that
+finishes within one tick of a coarse filesystem clock keeps the same times and is not detected.
 Platforms without the guarded traversal refuse the read.
 
 `--no-plan` skips plan settings, sources and working-folder capture for the run. `--diagnose` reports the settings path,
