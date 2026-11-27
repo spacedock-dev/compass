@@ -361,7 +361,6 @@ async function expectSessionLink(
 
 async function expectKeyboardLink(link: HTMLElement, name: string, href: string) {
   const resting = restingRing(link);
-  const previousUrl = location.href;
   await userEvent.tab();
   await expect(link).toHaveFocus();
   await expect(link).toHaveAccessibleName(name);
@@ -371,11 +370,21 @@ async function expectKeyboardLink(link: HTMLElement, name: string, href: string)
   await expect(outline.outlineStyle).toBe('solid');
   await expect(outline.outlineWidth).toBe('2px');
   await expect(rgbOf(outline.outlineColor)).toEqual(rgbOf(outline.getPropertyValue('--accent')));
+  /* Letting Enter navigate moves the Vitest tester page itself, which closes the browser connection
+     and fails the whole shard. Keyboard activation fires a click on the focused link, so the play
+     records that click's target and stops it there. */
+  const activated: string[] = [];
+  const stop = (event: MouseEvent) => {
+    const anchor = (event.target as Element | null)?.closest('a');
+    if (anchor) activated.push(anchor.getAttribute('href') ?? '');
+    event.preventDefault();
+  };
+  link.addEventListener('click', stop);
   try {
     await userEvent.keyboard('{Enter}');
-    await waitFor(() => expect(location.hash).toBe(href));
+    await waitFor(() => expect(activated).toEqual([href]));
   } finally {
-    history.replaceState(history.state, '', previousUrl);
+    link.removeEventListener('click', stop);
   }
 }
 
