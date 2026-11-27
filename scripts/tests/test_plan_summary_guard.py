@@ -13,16 +13,15 @@ import sys
 import unittest
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO))
+ROOT = Path(__file__).resolve().parents[2] / "compass" / "skills" / "compass"
+# The dashboard tests are the `tests` package under the skill folder, the name mypy gives them.
+sys.path.insert(0, str(ROOT))
 
-from compass.skills.compass.tests.support import make_config  # noqa: E402
-from compass.skills.compass.tests.test_history import stub_application  # noqa: E402
-from compass.skills.compass.tests.test_plan_publish import request  # noqa: E402
-from compass.skills.compass.tests.test_plan_readers import PlanRepoTestCase  # noqa: E402
-from compass.skills.compass.tests.test_project_script_checks import GIT  # noqa: E402
-
-ROOT = REPO / "compass" / "skills" / "compass"
+from tests.support import make_config  # noqa: E402
+from tests.test_history import stub_application  # noqa: E402
+from tests.test_plan_publish import request  # noqa: E402
+from tests.test_plan_readers import PlanRepoTestCase  # noqa: E402
+from tests.test_project_script_checks import GIT  # noqa: E402
 
 
 @unittest.skipIf(GIT is None or os.name == "nt", "Needs Git and POSIX directory descriptors")
