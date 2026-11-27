@@ -61,7 +61,23 @@ def _tree_source(
     directory: int | None,
 ) -> model.Source:
     checked = config.sources.tree_source(repo.label, ref, path, kind=kind, directory=directory)
-    return model.Source(kind, repo.label, path, ref, reason=checked.reason, draft=ref != repo.ref)
+    return _file_source(repo, ref, kind, path, checked.reason)
+
+
+def _file_source(
+    repo: sources.Repository, ref: str, kind: str, path: str, reason: str | None
+) -> model.Source:
+    file_label, position = repo.file_place(kind, path)
+    return model.Source(
+        kind,
+        repo.label,
+        path,
+        ref,
+        reason=reason,
+        draft=ref != repo.ref,
+        file_label=file_label,
+        position=position,
+    )
 
 
 def _read_file(
@@ -146,12 +162,8 @@ def _repo_files(
     git_deadline: float | None,
 ) -> list[_FileRows]:
     declared = [
-        model.Source(
-            kind,
-            repo.label,
-            path,
-            repo.ref,
-            reason=config.sources.declared_tree_source(repo, kind, path).reason,
+        _file_source(
+            repo, repo.ref, kind, path, config.sources.declared_tree_source(repo, kind, path).reason
         )
         for kind, path in repo.files
     ]

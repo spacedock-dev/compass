@@ -55,17 +55,33 @@ def _ref(value: object) -> str:
     return ref
 
 
+def _repository_file(value: object) -> tuple[str, str | None]:
+    """A tree path, optionally with a short label the Plan page shows instead of the file's kind."""
+    if isinstance(value, str):
+        return sources.tree_path(value), None
+    raw = keys(value, "path label")
+    label = string(raw["label"], 40)
+    # The label is published; the path never is, so a label may not look like one.
+    if not label.strip() or "/" in label or "\\" in label:
+        raise SettingsError
+    return sources.tree_path(raw["path"]), label
+
+
 def _repository(value: object) -> sources.Repository:
     raw = keys(value, "label path ref files", optional="draft_ref")
     files = grammar.dictionary(raw["files"])
     if not files or not files.keys() <= set(sources.FILE_KINDS):
         raise SettingsError
-    declared = tuple(
-        (kind, sources.tree_path(path))
-        for kind, paths in files.items()
-        for path in array(paths, 32, min_items=1)
+    entries = tuple(
+        (kind, *_repository_file(item))
+        for kind, items in files.items()
+        for item in array(items, 32, min_items=1)
     )
+    declared = tuple((kind, path) for kind, path, _ in entries)
     if len(declared) != len(set(declared)) or len(declared) > 32:
+        raise SettingsError
+    file_labels = tuple(((kind, path), label) for kind, path, label in entries if label is not None)
+    if len({grammar.folded(label) for _, label in file_labels}) != len(file_labels):
         raise SettingsError
     ref = _ref(raw["ref"])
     draft = _ref(raw["draft_ref"]) if "draft_ref" in raw else None
@@ -74,7 +90,9 @@ def _repository(value: object) -> sources.Repository:
     label = string(raw["label"], 80)
     if not label.strip():
         raise SettingsError
-    return sources.Repository(label, sources.absolute_path(raw["path"]), ref, draft, declared)
+    return sources.Repository(
+        label, sources.absolute_path(raw["path"]), ref, draft, declared, file_labels=file_labels
+    )
 
 
 @dataclass(frozen=True)

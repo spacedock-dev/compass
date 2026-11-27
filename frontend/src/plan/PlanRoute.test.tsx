@@ -2,6 +2,8 @@ import { act, fireEvent, screen, within } from '@testing-library/react';
 import { expect } from 'storybook/test';
 import { describe, it, vi } from 'vitest';
 import {
+  crowdedSourceRows,
+  crowdedSources,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -295,7 +297,16 @@ describe('the Plan destination follows the published plan', () => {
   ])('says why a source was refused: %s', async (reason, sentence) => {
     const page = mountPlan({
       ...readyPlan,
-      sources: [{ label: 'Pickup tracker', kind: 'tracker', state: 'refused', reason }],
+      sources: [
+        {
+          label: 'Pickup tracker',
+          kind: 'tracker',
+          fileLabel: null,
+          position: null,
+          state: 'refused',
+          reason,
+        },
+      ],
     });
     await page.settle();
     const row = within(screen.getByRole('region', { name: 'Sources' })).getByRole('listitem');
@@ -303,6 +314,52 @@ describe('the Plan destination follows the published plan', () => {
     expect(within(row).getByText(sentence, { exact: true })).toBeVisible();
     // The server's own words never reach the page; only the sentence does.
     expect(row.textContent).toBe(`Pickup trackerRefused${sentence}`);
+  });
+
+  it('tells files of one kind apart, folds a missing draft branch and counts the lane briefs', async () => {
+    const page = mountPlan({ ...readyPlan, sources: crowdedSources });
+    await page.settle();
+    const rows = within(screen.getByRole('region', { name: 'Sources' })).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual(crowdedSourceRows);
+  });
+
+  it('names a draft file that was read by its label or its kind and place', async () => {
+    const file = (kind: string, position: number | null, fileLabel: string | null) => ({
+      label: 'Model ship',
+      kind,
+      fileLabel,
+      position,
+      state: 'ok',
+      reason: null,
+    });
+    const page = mountPlan({
+      ...readyPlan,
+      sources: [
+        file('inventory', 1, null),
+        file('inventory', 2, 'Spare parts'),
+        file('draft inventory', 1, null),
+        file('draft inventory', 2, 'Spare parts'),
+        // A newer server's place that is not a whole number drops only that row.
+        file('tracker', 1.5, null),
+        {
+          label: 'Lane briefs',
+          kind: 'lane briefs',
+          fileLabel: null,
+          position: null,
+          state: 'ok',
+          reason: null,
+        },
+      ],
+    });
+    await page.settle();
+    const rows = within(screen.getByRole('region', { name: 'Sources' })).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Model ship · inventory 1Read',
+      'Model ship · Spare partsRead',
+      'Model ship · draft · inventory 1Read',
+      'Model ship · draft · Spare partsRead',
+      'Lane briefsRead',
+    ]);
   });
 
   it('draws two goals that share an id, each once, without a duplicate key', async () => {

@@ -93,6 +93,17 @@ class Repository:
     common: tuple[int, int] | None = None
     private_prefixes: tuple[tuple[str, ...], ...] = ()
     parent_refusals: tuple[tuple[str, str], ...] = ()
+    # The short label the settings give a declared (kind, path), when they give one.
+    file_labels: tuple[tuple[tuple[str, str], str], ...] = ()
+
+    def file_place(self, kind: str, path: str) -> tuple[str | None, int | None]:
+        """The file's label, and its place among this repository's files of its kind.
+
+        The place is None when the repository declares only one file of that kind.
+        """
+        same = [declared for file_kind, declared in self.files if file_kind == kind]
+        position = same.index(path) + 1 if len(same) > 1 and path in same else None
+        return dict(self.file_labels).get((kind, path)), position
 
 
 @dataclass(frozen=True)

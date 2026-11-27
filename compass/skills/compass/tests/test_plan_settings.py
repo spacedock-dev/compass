@@ -475,6 +475,41 @@ class PlanSettingsTest(unittest.TestCase):
             "not named in settings",
         )
 
+    def test_a_repository_file_may_carry_a_short_label_that_is_never_a_path(self) -> None:
+        doc = self.fixture()
+        doc["repos"][0]["files"]["inventory"] = [
+            "plan/built.md",
+            {"path": "plan/parts.md", "label": "Spare parts"},
+        ]
+        repo = self.loaded(doc).sources.repositories[0]
+        self.assertIn(("inventory", "plan/built.md"), repo.files)
+        self.assertIn(("inventory", "plan/parts.md"), repo.files)
+        self.assertEqual(dict(repo.file_labels), {("inventory", "plan/parts.md"): "Spare parts"})
+        for entry in (
+            {"path": "plan/parts.md", "label": "plan/parts.md"},
+            {"path": "plan/parts.md", "label": "plan\\parts"},
+            {"path": "plan/parts.md", "label": "  "},
+            {"path": "plan/parts.md", "label": ""},
+            {"path": "plan/parts.md", "label": "x" * 41},
+            {"path": "plan/parts.md", "label": "Two\nlines"},
+            {"path": "plan/parts.md", "label": 3},
+            {"path": "plan/parts.md"},
+            {"label": "Spare parts"},
+            {"path": "plan/parts.md", "label": "Spare parts", "note": "unexpected"},
+            {"path": "../parts.md", "label": "Spare parts"},
+        ):
+            with self.subTest(entry=entry):
+                refused = self.fixture()
+                refused["repos"][0]["files"]["inventory"] = ["plan/built.md", entry]
+                self.assertEqual(self.load(refused).reason, "malformed settings")
+        # Two files in one repository cannot share a label, so a label always tells them apart.
+        twice = self.fixture()
+        twice["repos"][0]["files"]["inventory"] = [
+            {"path": "plan/built.md", "label": "Parts"},
+            {"path": "plan/parts.md", "label": "PARTS"},
+        ]
+        self.assertEqual(self.load(twice).reason, "malformed settings")
+
     def test_settings_links_and_checkouts_are_refused(self) -> None:
         self.path.symlink_to(self.log)
         self.assertEqual(settings.load(str(self.home)).reason, "symbolic link")

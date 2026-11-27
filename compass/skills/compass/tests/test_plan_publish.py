@@ -158,7 +158,7 @@ class PlanPublicationTest(PlanRepoTestCase):
                 self.assertEqual(payload["limits"], LIMITS)
                 self.assertTrue(
                     all(
-                        set(source) == {"label", "kind", "state", "reason"}
+                        set(source) == {"label", "kind", "fileLabel", "position", "state", "reason"}
                         for source in payload["sources"]
                     )
                 )
@@ -185,7 +185,7 @@ class PlanPublicationTest(PlanRepoTestCase):
             "inventory": {"title", "group", "source", "date"},
             "diagrams": {"title", "caption", "kind", "source", "date", "linkHosts", "body"},
             "date": {"label", "at"},
-            "sources": {"label", "kind", "state", "reason"},
+            "sources": {"label", "kind", "fileLabel", "position", "state", "reason"},
         }
         self.assertEqual(publish.PLAN_ITEM_FIELDS, expected)
         for fixture, files, brief, brief_text, log in (
@@ -217,6 +217,46 @@ class PlanPublicationTest(PlanRepoTestCase):
                         self.assertTrue(rows[name])
                         for row in rows[name]:
                             self.assertEqual(set(row), fields)
+
+    def test_sources_tell_files_of_one_kind_apart_without_paths(self) -> None:
+        self.write_sources(STAND_IN)
+        (self.repo / "plan" / "parts.md").write_text(STAND_IN["built"], encoding="utf-8")
+        git(self.repo, "add", "plan")
+        git(self.repo, "commit", "-qm", "Synthetic parts")
+        self.configure()
+        file = self.home / settings.FILENAME
+        doc = json.loads(file.read_bytes())
+        # The second file is not committed, and the draft branch the fixture names does not exist.
+        doc["repos"][0]["files"]["inventory"] = [
+            "plan/built.md",
+            "plan/uncommitted-canary.md",
+            {"path": "plan/parts.md", "label": "Spare parts"},
+        ]
+        file.write_text(json.dumps(doc), encoding="utf-8")
+        plan, body = self.payload()
+        rows = [
+            (s["kind"], s["fileLabel"], s["position"], s["state"], s["reason"])
+            for s in plan["sources"]
+            if s["kind"].endswith("inventory") or s["kind"].endswith("goals")
+        ]
+        self.assertEqual(
+            rows,
+            [
+                ("goals", None, None, "ok", None),
+                ("inventory", None, 1, "ok", None),
+                ("inventory", None, 2, "refused", "not in branch"),
+                ("inventory", "Spare parts", 3, "ok", None),
+                ("draft goals", None, None, "refused", "branch missing"),
+                ("draft inventory", None, 1, "refused", "branch missing"),
+                ("draft inventory", None, 2, "refused", "branch missing"),
+                ("draft inventory", "Spare parts", 3, "refused", "branch missing"),
+            ],
+        )
+        self.assertTrue(all(set(s) == publish.PLAN_ITEM_FIELDS["sources"] for s in plan["sources"]))
+        self.assertEqual({s["fileLabel"] for s in plan["sources"]}, {None, "Spare parts"})
+        self.assertNotIn(b"uncommitted-canary", body)
+        self.assertNotIn(b"parts.md", body)
+        self.assertNotIn(os.fsencode(self.root), body)
 
     def test_lane_state_is_a_closed_group_or_null(self) -> None:
         self.assertEqual(
@@ -657,7 +697,14 @@ class PlanPublicationTest(PlanRepoTestCase):
         app = self.application()
         plan, body = self.payload(app)
         self.assertIn(
-            {"kind": "lane folder", "label": "hull", "state": "refused", "reason": "private"},
+            {
+                "kind": "lane folder",
+                "label": "hull",
+                "fileLabel": None,
+                "position": None,
+                "state": "refused",
+                "reason": "private",
+            },
             plan["sources"],
         )
         self.assertNotIn(os.fsencode(self.hull), body)
@@ -673,13 +720,22 @@ class PlanPublicationTest(PlanRepoTestCase):
         git(self.repo, "branch", "-D", "draft/plan")
         unavailable, body = self.payload()
         self.assertIn(
-            {"kind": "draft goals", "label": "Example", "state": "ok", "reason": None},
+            {
+                "kind": "draft goals",
+                "label": "Example",
+                "fileLabel": None,
+                "position": None,
+                "state": "ok",
+                "reason": None,
+            },
             measured["sources"],
         )
         self.assertIn(
             {
                 "kind": "draft goals",
                 "label": "Example",
+                "fileLabel": None,
+                "position": None,
                 "state": "refused",
                 "reason": "branch missing",
             },
