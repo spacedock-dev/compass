@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Literal
 
 from . import grammar, model, tracker_source
 from .markdown import STATUS_UNKNOWN
-from .tracker_cli import Reason, TrackerError
+from .tracker_cli import GITHUB_API, GITHUB_GRAPHQL, Reason, TrackerError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -105,21 +105,33 @@ type Record = dict[str, object]
 type PageReader = Callable[[str | None], tuple[str, Record]]
 
 
+def _has_graphql_data(data: object) -> bool:
+    # A failed lookup can still return the query's wrapper objects around a null target.
+    remaining = [data]
+    while remaining:
+        value = remaining.pop()
+        if isinstance(value, dict):
+            remaining.extend(value.values())
+        elif value is not None:
+            return True
+    return False
+
+
 def _graphql(child: TrackerCLI, query: str, *variables: str, cursor: str | None = None) -> Record:
-    args = ("api", "graphql", "--hostname", _HOST, "-f", f"query={query}", *variables)
+    args = ("api", GITHUB_GRAPHQL, "--hostname", _HOST, "-f", f"query={query}", *variables)
     if cursor is not None:
         # Raw fields carry opaque cursors without gh's typed-field or file expansion.
-        args += ("-f", f"cursor={cursor}")
+        args += ("-f", f"variables[cursor]={cursor}")
     envelope = grammar.dictionary(child.read_json(args))
     if "errors" in envelope:
         errors = envelope["errors"]
         if not isinstance(errors, list):
             raise grammar.SettingsError
         if errors:
-            if envelope.get("data") is not None:
-                raise TrackerError(Reason.PARTIAL)
             kinds = [grammar.dictionary(error).get("type") for error in errors]
-            if all(kind in ("NOT_FOUND", "FORBIDDEN") for kind in kinds):
+            if _has_graphql_data(envelope.get("data")):
+                raise TrackerError(Reason.PARTIAL)
+            if all(kind in ("NOT_FOUND", "FORBIDDEN", "INSUFFICIENT_SCOPES") for kind in kinds):
                 raise TrackerError(Reason.NOT_FOUND)
             if any(kind == "RATE_LIMITED" for kind in kinds):
                 raise TrackerError(Reason.RATE_LIMITED)
@@ -289,7 +301,7 @@ def _milestone(
                 _HOST,
                 "--method",
                 "GET",
-                f"repos/{source.repo}/milestones/{source.number}",
+                f"{GITHUB_API}/repos/{source.repo}/milestones/{source.number}",
             )
         )
     )
@@ -298,7 +310,7 @@ def _milestone(
     due = _item_date(info["due_on"], "Due", allow_day=True)
 
     def get_milestone(node_id: str, cursor: str | None) -> Record:
-        data = _graphql(child, MILESTONE_QUERY, "-f", f"id={node_id}", cursor=cursor)
+        data = _graphql(child, MILESTONE_QUERY, "-f", f"variables[id]={node_id}", cursor=cursor)
         milestone = _lookup(data, "node")
         _check_repository(milestone, source, "milestone", "url")
         return milestone
@@ -317,7 +329,14 @@ def _milestone(
 
 def _parent(source: tracker_source.RepositoryDeclaration, child: TrackerCLI) -> model.TrackerData:
     owner, repo = source.repo.split("/")
-    variables = ("-f", f"owner={owner}", "-f", f"repo={repo}", "-F", f"number={source.number}")
+    variables = (
+        "-f",
+        f"variables[owner]={owner}",
+        "-f",
+        f"variables[repo]={repo}",
+        "-F",
+        f"variables[number]={source.number}",
+    )
 
     def get_parent(cursor: str | None) -> Record:
         data = _graphql(child, PARENT_QUERY, *variables, cursor=cursor)
@@ -366,13 +385,21 @@ def _project_status(item: Record, source: tracker_source.ProjectDeclaration) -> 
     field_id = tracker_source.node_id(grammar.dictionary(value["field"])["id"])
     if field_id != source.status_field:
         raise TrackerError(Reason.PARTIAL)
-    word = grammar.folded(grammar.string(value["name"], 256))
+    name = value["name"]
+    if name is None:
+        return None
+    word = grammar.folded(grammar.string(name, 256))
     return source.words.get(word, STATUS_UNKNOWN)
 
 
 def _project(source: tracker_source.ProjectDeclaration, child: TrackerCLI) -> model.TrackerData:
     data = _graphql(
-        child, PROJECT_FIELDS_QUERY, "-f", f"owner={source.owner}", "-F", f"number={source.number}"
+        child,
+        PROJECT_FIELDS_QUERY,
+        "-f",
+        f"variables[owner]={source.owner}",
+        "-F",
+        f"variables[number]={source.number}",
     )
     project = _lookup(_lookup(data, "repositoryOwner"), "projectV2")
     number = grammar.integer(project["number"], _MAX_GRAPHQL_INT)
@@ -396,9 +423,9 @@ def _project(source: tracker_source.ProjectDeclaration, child: TrackerCLI) -> mo
             child,
             PROJECT_ITEMS_QUERY,
             "-f",
-            f"id={identity}",
+            f"variables[id]={identity}",
             "-f",
-            f"status={name}",
+            f"variables[status]={name}",
             cursor=cursor,
         )
         node = _lookup(response, "node")

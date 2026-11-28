@@ -1,0 +1,31 @@
+{
+  "data": {
+    "repositoryOwner": {
+      "projectV2": {
+        "id": "PVT_example_board",
+        "number": 12,
+        "title": "Expedition planning",
+        "url": "https://github.com/orgs/paper-kite/projects/12",
+        "fields": {
+          "totalCount": 2,
+          "nodes": [
+            {
+              "type": "ProjectV2Field",
+              "id": "PVTF_synthetic_signal_marker",
+              "name": "Signal marker"
+            },
+            {
+              "type": "ProjectV2SingleSelectField",
+              "id": "PVTSSF_example_progress",
+              "name": "Workshop Stage"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": "synthetic/project-fields-end=="
+          }
+        }
+      }
+    }
+  }
+}

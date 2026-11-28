@@ -703,6 +703,29 @@ class LauncherContractTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("OK", result.stdout)
 
+    def test_each_plan_module_imports_in_a_fresh_interpreter(self) -> None:
+        skill = SERVER_PATH.parent
+        paths = sorted((skill / "compass_runtime" / "plan").glob("*.py"))
+        self.assertTrue(paths)
+        probe = (
+            "import importlib, sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "importlib.import_module(sys.argv[2])\n"
+        )
+        for path in paths:
+            name = "compass_runtime.plan"
+            if path.stem != "__init__":
+                name = f"{name}.{path.stem}"
+            with self.subTest(module=name):
+                result = subprocess.run(
+                    [sys.executable, "-I", "-c", probe, str(skill), name],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+
     @unittest.skip("flaky: skipped until fixed, see docs/flaky-tests.md")
     def test_every_runtime_module_resolves_inside_the_skill_directory(self) -> None:
         # A copied plugin has no repository around it. Walking the package and
@@ -2399,6 +2422,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
         "compass_runtime.plan.settings": {
             "compass_runtime.io",
             "compass_runtime.plan.grammar",
+            "compass_runtime.plan.model",
             "compass_runtime.plan.sources",
             "compass_runtime.plan.tracker_source",
         },
@@ -2414,12 +2438,24 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.tracker_source",
             "compass_runtime.supervise",
         },
-        "compass_runtime.plan.tracker_refresh": {
+        "compass_runtime.plan.tracker_github": {
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.markdown",  # The same unrecognised status as local readers.
             "compass_runtime.plan.model",
             "compass_runtime.plan.tracker_cli",
             "compass_runtime.plan.tracker_source",
         },
-        "compass_runtime.plan.tracker_source": {"compass_runtime.plan.grammar"},
+        "compass_runtime.plan.tracker_refresh": {
+            "compass_runtime.plan.model",
+            "compass_runtime.plan.tracker_cli",
+            "compass_runtime.plan.tracker_github",
+            "compass_runtime.plan.tracker_source",
+            "compass_runtime.supervise",
+        },
+        "compass_runtime.plan.tracker_source": {
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.model",
+        },
         # The pull request CI read: it reuses the git probe's PATH scrub and binary lookup,
         # the supervised runner for `gh`, and the bounded transcript reader. It imports nothing
         # from `reading`, which imports it, and `config` only for a type.

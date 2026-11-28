@@ -18,13 +18,16 @@ if TYPE_CHECKING:
 
     from .tracker_source import Declaration
 
+GITHUB_API = "https://api.github.com"
+GITHUB_GRAPHQL = f"{GITHUB_API}/graphql"
+
 STDOUT_LIMIT = 256 * 1024
 STDERR_LIMIT = 8 * 1024
 REFRESH_BYTES = 1024 * 1024
 REFRESH_CALLS = 32
 
-_TOKEN_OVERRIDES = frozenset(
-    {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GIT_DIR", "GIT_WORK_TREE"}
+_ENV_OVERRIDES = frozenset(
+    {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GIT_DIR", "GIT_WORK_TREE", "DEBUG"}
 )
 _CLI_OVERRIDES = ("GH_", "GITLAB_", "GL_", "GLAB_", "OAUTH_TOKEN", "REMOTE_ALIAS")
 
@@ -51,13 +54,15 @@ class TrackerError(Exception):
 
 def environment(environ: Mapping[str, str]) -> dict[str, str]:
     # Windows treats environment names case-insensitively, including account and host overrides.
-    return ci_read.environment(
+    clean = ci_read.environment(
         {
             key: value
             for key, value in environ.items()
-            if key.upper() not in _TOKEN_OVERRIDES and not key.upper().startswith(_CLI_OVERRIDES)
+            if key.upper() not in _ENV_OVERRIDES and not key.upper().startswith(_CLI_OVERRIDES)
         }
     )
+    clean["GH_TELEMETRY"] = "0"
+    return clean
 
 
 def resolve(source: Declaration, environ: Mapping[str, str]) -> str | None:
@@ -111,11 +116,11 @@ def _response(code: int, stdout: bytes, stderr: bytes, *, graphql: bool) -> obje
         )
     except (ValueError, RecursionError):
         raise TrackerError(_exit_reason(stderr) if code else Reason.UNREADABLE_OUTPUT) from None
-    # gh can print a GraphQL response with partial data before reporting errors on stderr.
+    # gh prints GraphQL errors to stdout even when it exits nonzero.
     if code != 0:
-        if isinstance(value, dict) and value.get("errors") and value.get("data") is not None:
-            raise TrackerError(Reason.PARTIAL)
-        raise TrackerError(_exit_reason(stderr))
+        errors = value.get("errors") if isinstance(value, dict) else None
+        if not isinstance(errors, list) or not errors:
+            raise TrackerError(_exit_reason(stderr))
     return value
 
 
@@ -131,11 +136,13 @@ class TrackerCLI:
         environ: Mapping[str, str] | None = None,
         runner: Callable[..., subprocess.CompletedProcess[Any]] | None = None,
         check_current: Callable[[], None] | None = None,
+        on_spawn: Callable[[supervise.Group], None] | None = None,
     ) -> None:
         self._deadline = deadline
         self._clock = clock
         self._runner = runner
         self._check_current = check_current
+        self._on_spawn = on_spawn
         self._env = environment(os.environ if environ is None else environ)
         executable = resolve(source, self._env)
         if executable is None:
@@ -173,6 +180,7 @@ class TrackerCLI:
                     "timeout": self._remaining(),
                     "deadline": self._deadline,
                     "before_spawn": self._before_spawn,
+                    "on_spawn": self._on_spawn,
                     "check": False,
                     "output_limits": ((stdout.name, STDOUT_LIMIT), (stderr.name, STDERR_LIMIT)),
                 }
@@ -202,4 +210,4 @@ class TrackerCLI:
         self._bytes += len(stdout) + len(stderr)
         if len(stdout) > STDOUT_LIMIT or len(stderr) > STDERR_LIMIT or self._bytes > REFRESH_BYTES:
             raise TrackerError(Reason.LIMIT_EXCEEDED)
-        return _response(code, stdout, stderr, graphql=arguments[:2] == ("api", "graphql"))
+        return _response(code, stdout, stderr, graphql=arguments[:2] == ("api", GITHUB_GRAPHQL))

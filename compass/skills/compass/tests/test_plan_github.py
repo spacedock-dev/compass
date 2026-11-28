@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from compass_runtime.plan import grammar, model, publish, tracker_refresh, tracker_source
 
 from .test_plan_trackers import TrackerTestCase
+
+REPLAY = Path(__file__).parent / "fixtures" / "plan" / "github"
 
 MILESTONE = {"provider": "github", "kind": "milestone", "repo": "paper-kite/atlas", "number": 7}
 PARENT = {**MILESTONE, "kind": "parent-issue", "number": 18}
@@ -232,16 +235,18 @@ class GitHubAdapterTest(TrackerTestCase):
                 "github.com",
                 "--method",
                 "GET",
-                "repos/paper-kite/atlas/milestones/7",
+                "https://api.github.com/repos/paper-kite/atlas/milestones/7",
             ),
             self.calls[0],
         )
         self.assertEqual(2, len(self.calls))
-        self.assert_graphql(1, "MilestoneIssues", ("-f", "id=MI_example_7"))
+        self.assert_graphql(1, "MilestoneIssues", ("-f", "variables[id]=MI_example_7"))
 
     def assert_graphql(self, index: int, operation: str, operands: tuple[str, ...]) -> str:
         call = self.calls[index]
-        self.assertEqual(("api", "graphql", "--hostname", "github.com", "-f"), call[:5])
+        self.assertEqual(
+            ("api", "https://api.github.com/graphql", "--hostname", "github.com", "-f"), call[:5]
+        )
         self.assertTrue(call[5].startswith(f"query=\nquery {operation}("))
         self.assertNotIn("mutation", call[5])
         self.assertEqual(operands, call[6:])
@@ -254,7 +259,7 @@ class GitHubAdapterTest(TrackerTestCase):
         data = self.measured(
             self.read(
                 PARENT,
-                parent_page(first, total=2, next_cursor="opaque=child"),
+                parent_page(first, total=2, next_cursor="@opaque=child"),
                 parent_page(child, total=2),
             )
         )
@@ -266,10 +271,19 @@ class GitHubAdapterTest(TrackerTestCase):
         self.assertEqual(2, len(set(goal.lanes)))
         self.assertTrue(all(grammar.is_safe_lane_id(slug) for slug in goal.lanes))
         self.assertEqual("done", data.lanes[1].state)
-        operands = ("-f", "owner=paper-kite", "-f", "repo=atlas", "-F", "number=18")
+        operands = (
+            "-f",
+            "variables[owner]=paper-kite",
+            "-f",
+            "variables[repo]=atlas",
+            "-F",
+            "variables[number]=18",
+        )
         self.assertEqual(
             self.assert_graphql(0, "SubIssues", operands),
-            self.assert_graphql(1, "SubIssues", (*operands, "-f", "cursor=opaque=child")),
+            self.assert_graphql(
+                1, "SubIssues", (*operands, "-f", "variables[cursor]=@opaque=child")
+            ),
         )
 
     def test_project_status_precedes_issue_state_and_explicit_non_issues_are_skipped(self) -> None:
@@ -299,9 +313,13 @@ class GitHubAdapterTest(TrackerTestCase):
             frozenset({data.lanes[0].slug, data.lanes[2].slug}), data.project_status_lanes
         )
         self.assertEqual(6, len(set(data.goals[0].lanes)))
-        self.assert_graphql(0, "ProjectFields", ("-f", "owner=paper-kite", "-F", "number=12"))
+        self.assert_graphql(
+            0, "ProjectFields", ("-f", "variables[owner]=paper-kite", "-F", "variables[number]=12")
+        )
         query = self.assert_graphql(
-            1, "ProjectIssues", ("-f", "id=PVT_example_board", "-f", "status=Workshop Stage")
+            1,
+            "ProjectIssues",
+            ("-f", "variables[id]=PVT_example_board", "-f", "variables[status]=Workshop Stage"),
         )
         self.assertIn("archivedStates: [ARCHIVED, NOT_ARCHIVED]", query)
 
@@ -320,11 +338,11 @@ class GitHubAdapterTest(TrackerTestCase):
             "ProjectIssues",
             (
                 "-f",
-                "id=PVT_example_board",
+                "variables[id]=PVT_example_board",
                 "-f",
-                "status=Workshop Stage",
+                "variables[status]=Workshop Stage",
                 "-f",
-                "cursor=board/next==",
+                "variables[cursor]=board/next==",
             ),
         )
         data = self.measured(
@@ -343,6 +361,29 @@ class GitHubAdapterTest(TrackerTestCase):
                 milestone_page(),
             ),
         )
+
+    def test_null_project_status_name_falls_back_to_issue_state_after_field_validation(
+        self,
+    ) -> None:
+        first = project_item(issue(1, state="CLOSED", reason="COMPLETED"), "In Workshop")
+        first["status"]["name"] = None
+        second = project_item(issue(2), "Parked")
+        fields = project_fields(STATUS_FIELD)
+        with self.subTest(status="explicit null"):
+            data = self.measured(self.read(PROJECT, fields, project_page(first, second)))
+            self.assertEqual(["done", "waiting"], [lane.state for lane in data.lanes])
+            self.assertEqual(frozenset({data.lanes[1].slug}), data.project_status_lanes)
+        with self.subTest(status="wrong field"):
+            wrong = {**first["status"], "field": {"id": "PVTSSF_synthetic_wrong"}}
+            self.abstains(
+                "partial-result",
+                self.read(PROJECT, fields, project_page({**first, "status": wrong}, second)),
+            )
+        with self.subTest(status="missing name"):
+            del first["status"]["name"]
+            self.abstains(
+                "unreadable-output", self.read(PROJECT, fields, project_page(first, second))
+            )
 
     def test_project_field_must_be_unique_single_select_and_item_value_must_match_its_id(
         self,
@@ -434,6 +475,59 @@ class GitHubAdapterTest(TrackerTestCase):
             "limit-exceeded", self.read(MILESTONE, MILESTONE_INFO, milestone_page(total=201))
         )
         self.abstains("limit-exceeded", self.read(PROJECT, project_fields(total=101)))
+
+    def test_captured_query_shapes_preserve_complete_membership(self) -> None:
+        # gh 2.105.0 returned these shapes for the four queries. All values are synthetic.
+        def replay(name: str) -> bytes:
+            return (REPLAY / f"{name}.json").read_bytes()
+
+        milestone = self.measured(self.read(MILESTONE, MILESTONE_INFO, replay("milestone")))
+        parent = self.measured(self.read(PARENT, replay("parent")))
+        project = self.measured(
+            self.read(PROJECT, replay("project-fields"), replay("project-items"))
+        )
+        self.assertEqual(["done", "not_started"], [lane.state for lane in milestone.lanes])
+        self.assertEqual(["done", "dropped", "not_started"], [lane.state for lane in parent.lanes])
+        self.assertEqual(
+            ["running", "waiting", "Status not recognised"],
+            [lane.state for lane in project.lanes],
+        )
+        self.assertEqual(parent.lanes[1].slug, project.lanes[1].slug)
+        self.assertEqual("Calibrate the fog bell", project.lanes[1].goal)
+        self.assertEqual(tuple(lane.slug for lane in project.lanes), project.goals[0].lanes)
+
+    def test_graphql_error_envelopes_use_target_data_at_either_exit_status(self) -> None:
+        missing = (REPLAY / "not-found.json").read_bytes()
+        stderr = (REPLAY / "not-found.err").read_bytes()
+        for code in (0, 1):
+            with self.subTest(code=code, fixture="not-found"):
+                self.abstains(
+                    "not-found-or-inaccessible", self.read(PARENT, (code, missing, stderr))
+                )
+            for source, before, data in (
+                (PARENT, (), {"repository": {"issue": None}}),
+                (PROJECT, (), {"repositoryOwner": {"projectV2": None}}),
+                (PROJECT, (project_fields(STATUS_FIELD),), {"node": None}),
+                (MILESTONE, (MILESTONE_INFO,), {"node": None}),
+                (PARENT, (), None),
+            ):
+                for kind, reason in (
+                    ("NOT_FOUND", "not-found-or-inaccessible"),
+                    ("FORBIDDEN", "not-found-or-inaccessible"),
+                    ("INSUFFICIENT_SCOPES", "not-found-or-inaccessible"),
+                    ("RATE_LIMITED", "rate-limited"),
+                    ("UNKNOWN", "cli-failed"),
+                ):
+                    with self.subTest(code=code, target=data, kind=kind):
+                        envelope = {"data": data, "errors": [{"type": kind, "message": "Fixture"}]}
+                        result = self.read(source, *before, (code, envelope, b"gh: Fixture"))
+                        self.abstains(reason, result)
+            partial = {
+                **parent_page(issue(1)),
+                "errors": [{"type": "RATE_LIMITED", "message": "Fixture"}],
+            }
+            self.abstains("partial-result", self.read(PARENT, (code, partial, b"gh: Fixture")))
+        self.abstains("signed-out", self.read(PARENT, (4, missing, stderr)))
 
     def test_graphql_partial_data_and_cli_failures_are_unmeasured(self) -> None:
         partial = {

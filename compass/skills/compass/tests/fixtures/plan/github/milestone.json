@@ -1,0 +1,36 @@
+{
+  "data": {
+    "node": {
+      "id": "MI_example_7",
+      "number": 7,
+      "url": "https://github.com/paper-kite/atlas/milestone/7",
+      "issues": {
+        "totalCount": 2,
+        "nodes": [
+          {
+            "id": "I_synthetic_atlas_31",
+            "number": 31,
+            "title": "Align the survey beacons",
+            "url": "https://github.com/paper-kite/atlas/issues/31",
+            "state": "CLOSED",
+            "stateReason": "COMPLETED",
+            "updatedAt": "2026-11-25T19:26:00Z"
+          },
+          {
+            "id": "I_synthetic_atlas_32",
+            "number": 32,
+            "title": "Inspect the tide gauges",
+            "url": "https://github.com/paper-kite/atlas/issues/32",
+            "state": "OPEN",
+            "stateReason": null,
+            "updatedAt": "2026-11-25T19:26:00Z"
+          }
+        ],
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "synthetic/milestone-end=="
+        }
+      }
+    }
+  }
+}

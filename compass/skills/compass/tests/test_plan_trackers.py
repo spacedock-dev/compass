@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -125,6 +126,9 @@ class TrackerLauncherTest(TrackerTestCase):
                 "GH_HOST": "evil.invalid",
                 "GH_REPO": "other/repo",
                 "GH_TOKEN": "wrong-gh",
+                "gh_telemetry": "1",
+                "DEBUG": "1",
+                "dEbUg": "1",
                 "gh_config_dir": "alt-config",
                 "GITHUB_TOKEN": "wrong-github",
                 "GITHUB_ENTERPRISE_TOKEN": "wrong-enterprise",
@@ -146,10 +150,13 @@ class TrackerLauncherTest(TrackerTestCase):
                 self.assertEqual(0, cwd.stat().st_mode & 0o077)
             workspaces.append(cwd)
             env = options["env"]
+            self.assertEqual("0", env.get("GH_TELEMETRY"))
+            self.assertFalse({"DEBUG", "gh_telemetry", "dEbUg"} & env.keys())
             self.assertEqual(
                 {
                     **self.environ,
                     "PATH": str(self.root),
+                    "GH_TELEMETRY": "0",
                     "GH_PROMPT_DISABLED": "1",
                     "GH_NO_UPDATE_NOTIFIER": "1",
                     "NO_COLOR": "1",
@@ -159,6 +166,9 @@ class TrackerLauncherTest(TrackerTestCase):
                     "GH_HOST",
                     "GH_REPO",
                     "GH_TOKEN",
+                    "gh_telemetry",
+                    "DEBUG",
+                    "dEbUg",
                     "gh_config_dir",
                     "GITHUB_TOKEN",
                     "GITHUB_ENTERPRISE_TOKEN",
@@ -340,6 +350,63 @@ time.sleep(60)
     def test_fake_cli_stderr_overflow_kills_the_process_group(self) -> None:
         self.assert_group_stopped(2, tracker_cli.Reason.LIMIT_EXCEEDED)
 
+    def test_invalidation_cancels_live_child_before_or_after_spawn_callback(self) -> None:
+        self.binary.unlink()
+        self.binary.symlink_to(sys.executable)
+        for late in (False, True):
+            with self.subTest(late=late):
+                self.assert_child_cancelled_on_invalidation(late=late)
+
+    def assert_child_cancelled_on_invalidation(self, *, late: bool) -> None:
+        production_run = supervise.run
+
+        def read(
+            _source: tracker_source.Declaration, child: tracker_cli.TrackerCLI
+        ) -> tracker_refresh.TrackerData:
+            child.read_json(("-c", "import time; time.sleep(60)"))
+            return tracker_refresh.TrackerData((), ())
+
+        registered = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+        groups: list[supervise.Group] = []
+
+        def run(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
+            on_spawn = options.pop("on_spawn", None)
+
+            def register(group: supervise.Group) -> None:
+                groups.append(group)
+                if late:
+                    registered.set()
+                    self.assertTrue(release.wait(3.0))
+                if on_spawn is not None:
+                    on_spawn(group)
+                registered.set()
+
+            try:
+                return production_run(argv, **options, on_spawn=register)
+            finally:
+                finished.set()
+
+        refresh = tracker_refresh.TrackerRefresh(
+            environ=self.environ, adapters={"github": read}, runner=run
+        )
+        with mock.patch.object(supervise, "_group_running", return_value=False):
+            try:
+                refresh.observe("one", (SOURCE,), enabled=True)
+                self.assertTrue(registered.wait(3.0))
+                (group,) = groups
+                refresh.invalidate()
+                release.set()
+                self.assertTrue(finished.wait(1.0), "superseded child kept running")
+                self.assertTrue(group.cancelled())
+                self.assertFalse(group.running())
+            finally:
+                release.set()
+                for group in groups:
+                    group.cancel()
+                self.assertTrue(finished.wait(3.0))
+
 
 class TrackerRefreshTest(TrackerTestCase):
     def test_only_one_off_thread_read_per_source_and_digest(self) -> None:
@@ -431,15 +498,25 @@ class TrackerRefreshTest(TrackerTestCase):
         self.result(lambda: self.snapshot("two")[0])
         self.assertEqual(4, self.runner.call_count)
 
-    def test_disable_and_reenable_discards_the_superseded_in_flight_result(self) -> None:
+    def test_reversions_run_one_current_replacement_without_another_fetch(self) -> None:
+        for enabled in (False, True):
+            with self.subTest(intermediate_enabled=enabled):
+                self.assert_reversion_refreshes(intermediate_enabled=enabled)
+
+    def assert_reversion_refreshes(self, *, intermediate_enabled: bool) -> None:
+        self.runner.reset_mock()
         entered = threading.Event()
         release = threading.Event()
+        replacement = threading.Event()
+        replacement_can_finish = threading.Event()
 
         def blocked(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
             if self.runner.call_count == 1:
                 entered.set()
                 self.assertTrue(release.wait(3.0))
                 return self.complete(argv, **options)
+            replacement.set()
+            self.assertTrue(replacement_can_finish.wait(3.0))
             options["stdout"].write(b'{"complete":true}')
             return subprocess.CompletedProcess(argv, 0)
 
@@ -447,22 +524,19 @@ class TrackerRefreshTest(TrackerTestCase):
         try:
             self.snapshot()
             self.assertTrue(entered.wait(3.0))
-            self.assertEqual(tracker_cli.Reason.DISABLED, self.snapshot(enabled=False)[0].reason)
+            self.snapshot("two", enabled=intermediate_enabled)
             self.assertEqual(tracker_cli.Reason.REFRESHING, self.snapshot()[0].reason)
             self.assertEqual(1, self.runner.call_count)
+            release.set()
+            self.assertTrue(replacement.wait(3.0), "replacement needed another fetch")
+            self.assertEqual(tracker_cli.Reason.REFRESHING, self.snapshot()[0].reason)
         finally:
             release.set()
+            replacement_can_finish.set()
         read = self.result(lambda: self.snapshot()[0])
         self.assertEqual(tracker_refresh.TrackerData(goals=(), lanes=()), read.data)
         self.assertEqual(2, self.runner.call_count)
-
-    def test_an_old_settings_load_cannot_restore_a_removed_source(self) -> None:
-        first_fetch = self.refresh.begin_fetch()
-        second_fetch = self.refresh.begin_fetch()
-        self.assertEqual((), self.refresh.observe("", (), enabled=False, fetch=second_fetch))
-        (stale,) = self.refresh.observe("one", (SOURCE,), enabled=True, fetch=first_fetch)
-        self.assertIsNone(stale.data)
-        self.runner.assert_not_called()
+        self.refresh.invalidate()
 
     def test_worker_slots_and_queue_are_bounded_and_drain_without_another_fetch(self) -> None:
         release = threading.Event()
@@ -490,6 +564,42 @@ class TrackerRefreshTest(TrackerTestCase):
             release.set()
         self.assertTrue(drained.wait(3.0))
         self.assertEqual(6, self.runner.call_count)
+
+    def test_shutdown_discards_waiting_sources_without_starting_more_workers(self) -> None:
+        release = threading.Event()
+        workers: list[threading.Thread] = []
+        sources = tuple(
+            tracker_source.declaration({**DECLARATION, "number": number}) for number in range(1, 11)
+        )
+        thread_start = threading.Thread.start
+
+        def start(thread: threading.Thread) -> None:
+            workers.append(thread)
+            if len(workers) <= 4:
+                thread_start(thread)
+
+        def blocked(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
+            self.assertTrue(release.wait(3.0))
+            return self.complete(argv, **options)
+
+        self.runner.side_effect = blocked
+        with (
+            mock.patch.object(supervise, "_SHUTDOWN", threading.Event()),
+            mock.patch.object(threading.Thread, "start", autospec=True, side_effect=start),
+        ):
+            self.snapshot(sources=sources)
+            initial = tuple(workers)
+            try:
+                self.assertEqual(4, len(initial))
+                supervise.kill_all()
+            finally:
+                release.set()
+                for worker in initial:
+                    worker.join(3.0)
+                    self.assertFalse(worker.is_alive())
+            self.snapshot("after shutdown", sources=sources)
+            self.assertEqual(4, len(workers))
+            self.assertFalse(self.refresh._waiting)
 
     def test_result_completed_after_the_deadline_is_withdrawn(self) -> None:
         def late(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
@@ -519,12 +629,11 @@ class TrackerEntryPointTest(TrackerTestCase):
 
     def test_only_admitted_fetch_with_declaration_starts_tracker_even_with_git_off(self) -> None:
         app = self.application()
-        self.assertEqual(200, request(app)[0])
+        with mock.patch.object(threading.Thread, "start") as starts:
+            self.assertEqual(200, request(app)[0])
+            starts.assert_not_called()
         self.runner.assert_not_called()
         self.declare()
-        self.assertEqual(403, request(app, headers="Forwarded: for=192.0.2.1\r\n")[0])
-        self.assertEqual(403, request(app, peer="192.0.2.1")[0])
-        self.runner.assert_not_called()
         started = threading.Event()
 
         def run(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
@@ -543,11 +652,85 @@ class TrackerEntryPointTest(TrackerTestCase):
         )
         self.runner.assert_called_once()
 
+    def test_refused_requests_start_zero_tracker_threads(self) -> None:
+        self.declare()
+        for options in ({"headers": "Forwarded: for=192.0.2.1\r\n"}, {"peer": "192.0.2.1"}):
+            with (
+                self.subTest(options=options),
+                mock.patch.object(threading.Thread, "start") as starts,
+            ):
+                app = self.application()
+                app.state.plan_trackers = tracker_refresh.TrackerRefresh(environ=self.environ)
+                status, _, _ = request(app, **options)
+                starts.assert_not_called()
+                self.assertEqual(403, status)
+
+    def test_overlapping_fetches_cannot_launch_from_settings_older_than_a_deletion(self) -> None:
+        self.declare()
+        app = self.application()
+        first_loading = threading.Event()
+        second_requesting = threading.Event()
+        second_loaded_old = threading.Event()
+        deleted = threading.Event()
+        first_returned = threading.Event()
+        thread_start = threading.Thread.start
+        real_load = settings.load
+
+        def load(*args: Any, **kwargs: Any) -> settings.Loaded:
+            if not second_requesting.is_set():
+                first_loading.set()
+                self.assertTrue(deleted.wait(3.0))
+                return real_load(*args, **kwargs)
+            loaded = real_load(*args, **kwargs)
+            if loaded.settings is not None:
+                second_loaded_old.set()
+                self.assertTrue(first_returned.wait(3.0))
+            return loaded
+
+        def second() -> tuple[int, bytes, bytes]:
+            second_requesting.set()
+            return request(app)
+
+        def start(thread: threading.Thread) -> None:
+            if thread.name != "compass-plan-tracker":
+                thread_start(thread)
+
+        with (
+            mock.patch.object(settings, "load", side_effect=load),
+            mock.patch.object(
+                threading.Thread, "start", autospec=True, side_effect=start
+            ) as starts,
+            ThreadPoolExecutor(2) as pool,
+        ):
+            first = pool.submit(request, app)
+            try:
+                self.assertTrue(first_loading.wait(3.0))
+                later = pool.submit(second)
+                self.assertTrue(second_requesting.wait(3.0))
+                # Give an unserialized load time to retain the old settings before deletion.
+                second_loaded_old.wait(0.25)
+                (self.root / "compass-plan.json").unlink()
+                deleted.set()
+                self.assertEqual({"state": "not-configured"}, json.loads(first.result(3.0)[2]))
+                first_returned.set()
+                self.assertEqual({"state": "not-configured"}, json.loads(later.result(3.0)[2]))
+                self.assertFalse(
+                    any(
+                        call.args[0].name == "compass-plan-tracker"
+                        for call in starts.call_args_list
+                    )
+                )
+            finally:
+                deleted.set()
+                first_returned.set()
+
     def test_run_wide_off_switches_start_zero_tracker_processes(self) -> None:
         self.declare()
         for flag, status in (("--no-plan", 404), ("--no-plan-trackers", 200)):
             with self.subTest(flag=flag):
-                self.assertEqual(status, request(self.application(flag))[0])
+                with mock.patch.object(threading.Thread, "start") as starts:
+                    self.assertEqual(status, request(self.application(flag))[0])
+                    starts.assert_not_called()
                 self.runner.assert_not_called()
 
     def test_diagnose_reports_each_declaration_and_rooted_cli_without_running_it(self) -> None:

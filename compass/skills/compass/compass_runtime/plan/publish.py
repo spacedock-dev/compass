@@ -215,22 +215,22 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
 
 
 def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
-    fetch = state.plan_trackers.begin_fetch()
-    loaded = settings.load(
-        config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
-    )
-    if loaded.settings is None:
-        state.plan_trackers.observe("", (), enabled=False, fetch=fetch)
-        if loaded.reason == settings.NOT_CONFIGURED:
-            return {"state": "not-configured"}
-        return {"state": "refused", "reason": loaded.reason}
+    trackers = state.plan_trackers
+    with trackers.settings_lock:
+        loaded = settings.load(
+            config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
+        )
+        if loaded.settings is None:
+            trackers.observe("", (), enabled=False)
+            if loaded.reason == settings.NOT_CONFIGURED:
+                return {"state": "not-configured"}
+            return {"state": "refused", "reason": loaded.reason}
 
-    state.plan_trackers.observe(
-        loaded.settings.digest,
-        loaded.settings.trackers,
-        enabled=config.plan_trackers_enabled,
-        fetch=fetch,
-    )
+        trackers.observe(
+            loaded.settings.digest,
+            loaded.settings.trackers,
+            enabled=config.plan_trackers_enabled,
+        )
     timeout = config.git_probe_timeout_sec
     plan = readers.read_plan(
         loaded.settings,
