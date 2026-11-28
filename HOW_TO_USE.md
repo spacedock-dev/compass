@@ -19,6 +19,7 @@ This page owns none of the following, and links to it instead:
 | What works on which harness and which platform, and what was measured | [COMPATIBILITY.md](COMPATIBILITY.md) |
 | What is read, what is sent, and what granting a permission means | [SECURITY.md](SECURITY.md) |
 | Using Compass from a terminal day to day, and how it differs from the board | [HOW_TO_USE_TERMINAL.md](HOW_TO_USE_TERMINAL.md) |
+| Step-by-step guides in order, including the plan board | [docs/how-to](docs/how-to/README.md) |
 | Working on Compass itself | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## Find the copy your commands will run
@@ -895,67 +896,11 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
 
 ## Set up the plan board
 
-1. Put a `compass-plan.json` file in your Compass home. Start with the
-   [example settings](compass/skills/compass/tests/fixtures/plan/stand-in.json) and replace the
-   synthetic paths (such as `/example/repository`) with your own. Keep the settings file outside
-   Git repositories and save it as a regular file you own.
-2. List each repository's local branch and the exact committed files you want Compass to read.
-   A file can be a bare path or `{"path": "plan/parts.md"}`. Plan numbers the files of one kind
-   in the order you list them, such as `inventory 2`. To name a file instead, add a label:
-   `{"path": "plan/parts.md", "label": "Spare parts"}`. A label has at most 40 characters and no
-   slash. It cannot repeat a file's name or path, or a number Plan would give (`inventory 2`), and
-   two files in one repository need different labels. Compass refuses settings that break these
-   rules, and `--diagnose` shows the refusal.
-   Set the lane-brief folder and log file, then adapt their filename and line templates to your
-   formats. To link sessions to a lane, add its brief slug and working folder under
-   `briefs.lane_folders`. To show each lane's state, add a column to your tracker table that
-   holds the lane's brief slug and name its header in `tracker.lane_column`. Every tracker table
-   needs that column once you declare it; a table without it is refused as malformed, and
-   `--diagnose` shows the refusal. The same goes for any table with a header that names your title,
-   status or lane column but lacks one of the others, such as a misspelt `Statuz`, and for two
-   tables with no blank line between them that cannot be told apart. A table with none of those
-   headers is ignored. Put exactly one slug in a row's lane cell. The lane takes the
-   group of the one row that names it. A lane named by no row, or by two, shows as not measured.
-   A cell such as `hull, paint` or `hull.` counts against every lane it mentions, so those lanes
-   also show as not measured. Plan groups each goal's lanes by state and
-   says how many are done. Dropped lanes and lanes without a known status are listed apart and
-   left out of that count.
-   Declare private roots and markers for locations Compass should skip.
-   A private root inside a Git checkout also covers the same path in that repository's linked
-   worktrees (`git worktree add`), but not in a separate clone. Use a marker file to keep a
-   folder private in every clone.
-3. Run the dashboard launcher with `--diagnose` and check the plan settings section for refused
-   sources. It reports missing or unreadable draft sources and refused lane folders by kind
-   and reason. If you configure private roots or marker files, keep the declared Git file's
-   parent directories present in the checkout so Compass can check them. Compass refuses a
-   repository whose own Git config includes another file, or that borrows another
-   repository's objects (a shared or reference clone). Remove the include, or run
-   `git repack -a -d` and delete `.git/objects/info/alternates`, to read it. See
-   [what the local plan route publishes](SECURITY.md#published-plan-fields).
-4. Open the dashboard on the Compass computer. Choose **Plan** in the page links, or open
-   **Menu** on a narrow screen. If Compass refuses the settings, Plan shows why. With no
-   settings file or with `--no-plan`, the destination is hidden.
-
+This guide moved to [Set up the plan board](docs/how-to/05-plan-board.md).
 
 ### Give a new session its lane summary
 
-1. Install the Compass plugin in each Claude Code or Codex account that should receive the summary.
-   Make sure `python3` on the harness's PATH is 3.12 or newer. In Codex, review and trust the
-   installed hooks when prompted. Codex skips an untrusted hook
-   silently in `codex exec`. A change to the hook definition requires trusting it again.
-2. In `compass-plan.json`, set the top-level `"summary": {"enabled": true}`. Leave it absent or set
-   `"enabled": false` to turn delivery off. The setting is read when the session starts, even
-   with the dashboard down.
-3. Start each session from inside its declared lane folder, or set `COMPASS_LANE` to its brief slug
-   in the session's launch environment. The lane state and progress come from the dashboard: each
-   time it reads the plan with the summary on, it saves every lane's state. If no dashboard has read
-   the plan in the last 24 hours, or since you last changed `compass-plan.json`, both read
-   "not measured". [Preview the summary](HOW_TO_USE_TERMINAL.md#preview-the-plan-summary)
-   from the same folder and environment before starting the session.
-
-The summary becomes part of the session's context, goes to its model provider and is saved
-in the harness's session files. Review [what the hook sends](SECURITY.md#what-can-reach-into-a-session)
-before enabling it.
+See [the optional session summary](docs/how-to/05-plan-board.md#optional-give-each-new-session-its-lane-summary).
 
 ## Turn a feature off
 

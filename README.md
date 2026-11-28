@@ -200,7 +200,7 @@ completed check on the board, choose See an example above the Sessions list or i
 If you keep your plan in files (goals, a tracker, lane briefs and an event log), the Plan page shows
 it beside the sessions doing the work. It reads only the files you list, shows links as their host
 only, and opens only in a browser on the Compass computer. Open Plan from the dashboard's menu or
-page links after you [set up the plan board](HOW_TO_USE.md#set-up-the-plan-board).
+page links after you [set up the plan board](docs/how-to/05-plan-board.md).
 
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.
 Its bundled references cover [data sources and session states](compass/skills/compass/reference/dashboard.md),
