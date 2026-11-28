@@ -464,6 +464,10 @@ bytes on the same toolchain, down 104 bytes. The page bound follows that measure
 Removing expired goal links from tracker asks brings the packaged page to 2,534,699 bytes,
 up 204 bytes on the same toolchain. The page bound follows that measurement.
 
+Keeping a failed Plan tracker read visible during a retry and scheduling reads fairly across
+providers packages at 2,534,855 bytes on the same toolchain, up 156 bytes. The page bound
+follows that measurement.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

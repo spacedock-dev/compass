@@ -597,13 +597,18 @@ class PlanPublicationTest(PlanRepoTestCase):
     def test_incomplete_tracker_reads_withdraw_rows_and_complete_empty_reads_are_distinct(
         self,
     ) -> None:
-        self.tracker_plan()
+        self.tracker_plan(asks=1)
         app = self.application()
         now = time.monotonic()
         for result, status, reason in (
             (
                 tracker_refresh.Observation(reason=tracker_cli.Reason.SIGNED_OUT),
                 "refused",
+                "signed-out",
+            ),
+            (
+                tracker_refresh.Observation(reason=tracker_cli.Reason.SIGNED_OUT, retrying=True),
+                "retrying",
                 "signed-out",
             ),
             (
@@ -616,6 +621,12 @@ class PlanPublicationTest(PlanRepoTestCase):
                 "refreshing",
                 "refreshing",
             ),
+            (
+                tracker_refresh.Observation(reason=tracker_cli.Reason.REFRESHING, retrying=True),
+                "refreshing",
+                "refreshing",
+            ),
+            (tracker_refresh.Observation(retrying=True), "refused", "cli-failed"),
             (
                 tracker_refresh.Observation(self.tracker_data(), observed_at=now - 31),
                 "expired",
@@ -636,6 +647,11 @@ class PlanPublicationTest(PlanRepoTestCase):
                 self.assertEqual(payload["sources"][0]["reason"], reason)
                 self.assertEqual(payload["lanes"], [])
                 self.assertEqual(len(payload["goals"]), int(status == "empty"))
+                if status != "empty":
+                    self.assertIsNone(payload["trackerRead"])
+                    self.assertTrue(payload["trackerAsksEnabled"])
+                    self.assertIsNone(payload["trackerAsks"])
+                    self.assertIsNone(payload["trackerAsksFreshForMs"])
 
     def measured_tracker_data(
         self, goal_id: str = "remote", *, matches: bool = True

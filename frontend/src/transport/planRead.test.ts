@@ -56,7 +56,7 @@ describe('the plan read', () => {
     expect(clock.activeTimers()).toBe(0);
   });
 
-  it.each(['refreshing', 'ok'] as const)(
+  it.each(['refreshing', 'retrying', 'ok'] as const)(
     'cancels a scheduled tracker read after %s on teardown',
     async (status) => {
       const fetchPlan = vi.fn(answer(githubPlan(status)));
@@ -73,6 +73,35 @@ describe('the plan read', () => {
       expect(fetchPlan).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('keeps the tracker refusal and stops retrying after a follow-up fetch fails', async () => {
+    const fetchPlan = vi.fn(answer(githubPlan('retrying')));
+    const { clock, runtime, plan } = planRuntime(fetchPlan);
+    try {
+      runtime.start();
+      await flush();
+      expect(plan()).toMatchObject({
+        state: 'ready',
+        sources: [{ state: 'retrying', reason: 'signed-out' }],
+      });
+      expect(fetchPlan).toHaveBeenCalledTimes(1);
+
+      fetchPlan.mockRejectedValueOnce(new Error('offline'));
+      clock.advance(1_000);
+      await flush();
+      expect(plan()).toMatchObject({
+        state: 'ready',
+        sources: [{ state: 'refused', reason: 'signed-out' }],
+      });
+      expect(fetchPlan).toHaveBeenCalledTimes(2);
+
+      clock.advance(1_000);
+      await flush();
+      expect(fetchPlan).toHaveBeenCalledTimes(2);
+    } finally {
+      runtime.dispose();
+    }
+  });
 
   it('starts unread, so a plan bookmark has nothing to fall back from yet', () => {
     const { plan } = planRuntime(ready);

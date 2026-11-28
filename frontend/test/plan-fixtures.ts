@@ -266,8 +266,11 @@ export const crowdedSourceRows = [
   'CoordinationRead',
 ] as const;
 
-export function githubPlan(state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'expired') {
+export function githubPlan(
+  state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'retrying' | 'expired',
+) {
   const measured = state === 'ok' || state === 'empty';
+  const reason = state === 'refused' || state === 'retrying' ? 'signed-out' : state;
   return {
     ...readyPlan,
     goals: measured
@@ -310,7 +313,7 @@ export function githubPlan(state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'e
         fileLabel: null,
         position: null,
         state,
-        reason: measured ? null : state === 'refused' ? 'signed-out' : state,
+        reason: measured ? null : reason,
       },
     ],
     trackerRead: measured ? { freshForMs: 30_000, localGoals: [], localLanes: [] } : null,

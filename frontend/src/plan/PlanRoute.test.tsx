@@ -789,6 +789,47 @@ describe('tracker plans on Plan', () => {
     expect(screen.getByText(readyPlan.asks[0].text)).toBeVisible();
   });
 
+  it('keeps the GitHub sign-in sentence until a retry publishes a measurement', async () => {
+    const refused = { ...githubPlan('refused'), trackerAsksEnabled: true };
+    const page = mountPlan(refused);
+    await page.settle();
+    const sources = within(screen.getByRole('region', { name: 'Sources' }));
+    const signedOut = 'Sign in to GitHub with your GitHub CLI.';
+    expect(sources.getByText(signedOut)).toBeVisible();
+
+    page.getResponses['/api/plan'] = { ...githubPlan('retrying'), trackerAsksEnabled: true };
+    await act(async () => page.clock.advance(FALLBACK_POLL_MS));
+    expect(sources.getByText(signedOut)).toBeVisible();
+    expect(sources.queryByText('Reading GitHub…')).toBeNull();
+    expect(sources.getByText('Not measured.')).toBeVisible();
+    expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
+    expect(screen.getByText('Tracker asks are not measured.')).toBeVisible();
+
+    page.getResponses['/api/plan'] = githubPlan('ok');
+    await act(async () => page.clock.advance(1_000));
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    expect(sources.queryByText(signedOut)).toBeNull();
+  });
+
+  it.each(['refreshing', null])(
+    'shows a generic failure for a retry reason of %s',
+    async (reason) => {
+      const remote = githubPlan('retrying');
+      const page = mountPlan({ ...remote, sources: [{ ...remote.sources[0], reason }] });
+      await page.settle();
+      const sources = within(screen.getByRole('region', { name: 'Sources' }));
+      const failure = 'Compass could not refresh the plan.';
+      expect(sources.getByText(failure)).toBeVisible();
+
+      page.getResponses['/api/plan'] = () => Promise.reject(new Error('offline'));
+      await act(async () => page.clock.advance(1_000));
+      expect(page.gets('/api/plan')).toBe(2);
+      expect(sources.getByText(failure)).toBeVisible();
+      await act(async () => page.clock.advance(1_000));
+      expect(page.gets('/api/plan')).toBe(2);
+    },
+  );
+
   it('shows the issue title as a host-only link in Waiting on you', async () => {
     const page = mountPlan(githubAsksPlan('present'));
     await page.settle();

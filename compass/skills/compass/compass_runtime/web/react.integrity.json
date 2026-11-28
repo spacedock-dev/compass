@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2534699,
+    "bytes": 2534855,
     "file": "react.html",
-    "sha256": "a32475bc0b3c4264f71c56ba8ea0b426cbd7c9ccf7fe0118acde9303b7e321b8"
+    "sha256": "67cb895308152c0288e008f6603515e0483de5ae04ba59a4a8eb56248834665d"
   },
   "format": 1,
   "frontend": "react",
@@ -247,7 +247,7 @@
       },
       {
         "file": "frontend/src/api/plan.ts",
-        "sha256": "7e9e9fe01d0a71de42d41d3bfd6d4d62afae38d6faa07ae148899bf90b0b7980"
+        "sha256": "d6deac17dadf211bd80e349a7fd0198401521b827fb6294097dccd817bc999b2"
       },
       {
         "file": "frontend/src/api/promptCapacity.ts",
@@ -1011,7 +1011,7 @@
       },
       {
         "file": "frontend/src/plan/model.ts",
-        "sha256": "003aec8304c8aafa1b126b991368215263aa3078f896c049b96a8d19bccefb59"
+        "sha256": "4b5a6975191288972543a3f6a21f2f07349787e7ddb5b2bc49d8592136bba4fb"
       },
       {
         "file": "frontend/src/project/ActivityViews.tsx",
@@ -1735,7 +1735,7 @@
       },
       {
         "file": "frontend/src/transport/runtime.ts",
-        "sha256": "fbc6381924acc340e0abe0c12581c7b61ed1fd51352818370432bd51b5da4354"
+        "sha256": "87489a31bf532795c5a30d94338a939cfc847ff18b7b44f77a0deb8d0f9fe5d6"
       },
       {
         "file": "frontend/src/transport/testing.ts",
