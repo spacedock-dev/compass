@@ -427,8 +427,9 @@ Compass still writes nothing else into a session. A correction stays copy-only
 ([DEC-25](#dec-25-a-correction-stays-yours-to-copy) is unchanged), and the steer box still holds a
 note in the reader's browser rather than sending one.
 
-This is ruled and not yet built. The shape is in
-[the plan board plan](plans/plan-board-shape.md#the-agent-summary).
+The [plan board plan](plans/plan-board-shape.md#the-agent-summary) records the delivery shape.
+[SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists the fields, their destinations and
+the off switch.
 
 ## DEC-17: the shape contract
 

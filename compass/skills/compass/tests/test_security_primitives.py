@@ -614,6 +614,7 @@ class SecurityPrimitivesTest(unittest.TestCase):
         modules = [
             "notify_hook.py",
             "event_hook.py",
+            "plan_summary_hook.py",
             "mcp_server.py",
             "statusline_hook.py",
             "agy_hook.py",

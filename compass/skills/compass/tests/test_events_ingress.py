@@ -874,22 +874,21 @@ class CodexAdapterTest(unittest.TestCase):
         )
         self.assertEqual(set(event_hook.CLAUDE_EVENTS), set(bundled["hooks"]))
 
+    def assert_bundled_commands(self, filename: str, plugin_root: str, harness: str) -> None:
+        path = Path(__file__).resolve().parents[3] / "hooks" / filename
+        bundled = json.loads(path.read_text(encoding="utf-8"))
+        skill = f"{plugin_root}/skills/compass"
+        launch = f'python3 "{skill}/launch.py"'
+        for event, groups in bundled["hooks"].items():
+            commands = [hook["command"] for group in groups for hook in group["hooks"]]
+            expected = [f'{launch} "{skill}/event_hook.py" {harness}']
+            if event == "SessionStart":
+                expected.append(f'{launch} "{skill}/plan_summary_hook.py"')
+            with self.subTest(event=event):
+                self.assertEqual(expected, commands)
+
     def test_the_bundled_claude_hooks_use_the_plugin_root_variable(self) -> None:
-        bundled = json.loads(
-            (Path(__file__).resolve().parents[3] / "hooks" / "hooks.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        commands = {
-            hook["command"]
-            for groups in bundled["hooks"].values()
-            for group in groups
-            for hook in group["hooks"]
-        }
-        self.assertEqual(1, len(commands), "one command keeps one trust decision")
-        command = next(iter(commands))
-        self.assertIn("${CLAUDE_PLUGIN_ROOT}", command)
-        self.assertTrue(command.endswith(" claude"), command)
+        self.assert_bundled_commands("hooks.json", "${CLAUDE_PLUGIN_ROOT}", "claude")
 
     def test_a_child_tool_call_is_attributed_to_the_parent_row(self) -> None:
         """Measured, and it is the reason the Claude sid path is sound.
@@ -1099,22 +1098,7 @@ class CodexAdapterTest(unittest.TestCase):
     def test_the_bundled_hooks_name_the_harness_and_use_a_stable_path(self) -> None:
         # Codex records a trusted_hash over the hook definition, so a command that
         # interpolated a version or a port would re-prompt on every upgrade.
-        bundled = json.loads(
-            (Path(__file__).resolve().parents[3] / "hooks" / "codex-hooks.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        commands = {
-            hook["command"]
-            for groups in bundled["hooks"].values()
-            for group in groups
-            for hook in group["hooks"]
-        }
-        self.assertEqual(1, len(commands), "one command for every event keeps one trust record")
-        command = next(iter(commands))
-        self.assertIn("event_hook.py", command)
-        self.assertTrue(command.endswith(" codex"), command)
-        self.assertIn("${PLUGIN_ROOT}", command)
+        self.assert_bundled_commands("codex-hooks.json", "${PLUGIN_ROOT}", "codex")
 
 
 class AntigravityAdapterTest(unittest.TestCase):

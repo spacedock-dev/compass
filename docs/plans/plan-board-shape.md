@@ -145,7 +145,20 @@ Decided in [#1104](https://github.com/spacedock-dev/compass/issues/1104), owner 
   start, and subagent ensigns are a measured follow-up.
 - Content. Fixed labels: goal, "done when", progress or "not measured", lane state, and up to 3 asks
   plus a count of the rest. At most 12 lines and 1,500 bytes, with no dates. It is cut from the
-  board's lane row, so it cannot show anything the board does not.
+  board's lane row, so it cannot show anything the board does not. "No dates" means Compass adds
+  none: a date a person typed into the goal or an ask stays as written (owner ruling, 2026-11-27,
+  on #1115).
+- Lane state and progress. Owner ruling, 2026-11-27, on #1115. The hook starts no program, so it
+  cannot read the tracker through Git. Whenever the board builds the plan, it saves each lane's
+  published state and which lanes serve each goal, with no plan text, to a small file in the
+  Compass home. The hook reads that file. A missing, unreadable or malformed file, or one older
+  than 24 hours, leaves state and progress "not measured". `--no-plan` writes nothing and removes
+  nothing; `--forget` deletes the file. The build writes it only while the summary and Git reads
+  are on, and deletes it when it reads the plan with the summary off. The file names the SHA-256
+  of the settings it was built under, and the hook ignores it under other settings or while a
+  tracker or goals file is no longer admitted (review, 2026-11-28). Progress reads as
+  the Plan page reads ("0 of 2 lanes are done"); with no lane measured it reads "not measured",
+  never "0 of 0".
 - No model and no network. Like `--footer`, the hook starts no program and opens no socket.
   `test_security_primitives` pins this.
 - Provider exposure. The summary goes to the harness's model provider and can cross vendors and

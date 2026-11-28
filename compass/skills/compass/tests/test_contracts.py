@@ -1236,6 +1236,8 @@ class RuntimeImportGraphTest(unittest.TestCase):
             # The serving path attaches the status line's file writer; `aggregate` reaches it
             # through a protocol, so the edge runs from the assembly point alone.
             "compass_runtime.footer_lines",
+            # --plan-slice previews the SessionStart context from the board projection.
+            "compass_runtime.plan",
             "compass_runtime.history",
             "compass_runtime.http_api",
             "compass_runtime.interaction_prototype",
@@ -2371,6 +2373,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.model",
             "compass_runtime.plan.readers",
             "compass_runtime.plan.settings",
+            "compass_runtime.plan.summary_states",
             "compass_runtime.records",
             "compass_runtime.state",
         },
@@ -2384,6 +2387,14 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.settings",
             "compass_runtime.plan.sources",
             "compass_runtime.state",
+        },
+        # The lane states the board saves for the session summary; `config` only for --forget.
+        "compass_runtime.plan.summary_states": {
+            "compass_runtime.config",
+            "compass_runtime.io",
+            "compass_runtime.plan.grammar",
+            "compass_runtime.plan.markdown",
+            "compass_runtime.plan.settings",
         },
         "compass_runtime.plan.settings": {
             "compass_runtime.io",

@@ -82,6 +82,7 @@ _SHIPPED_SIBLINGS: tuple[str, ...] = (
     "agy_hook.py",
     "statusline_hook.py",
     "mcp_server.py",
+    "plan_summary_hook.py",
 )
 
 # Anything shipped here that can put a program on the CPU, plus `runner`: the

@@ -85,7 +85,7 @@ class PlanRepoTestCase(unittest.TestCase):
             # The system's real temp ancestry can contain a directory named "private".
             doc["private"]["markers"][0]["value"] = "sealed"
         for name, patch in overrides.items():
-            doc[name].update(patch)
+            doc.setdefault(name, {}).update(patch)
         (self.home / settings.FILENAME).write_text(json.dumps(doc), encoding="utf-8")
         loaded = settings.load(str(self.home))
         self.assertIsNone(loaded.reason)

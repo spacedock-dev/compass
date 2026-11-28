@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -676,6 +677,8 @@ class Settings:
     private_roots: int
     private_markers: int
     private_marker_files: int
+    # SHA-256 of the admitted settings file's bytes: what the saved summary states are bound to.
+    digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -689,7 +692,9 @@ def _repo_ids(repos: tuple[sources.Repository, ...]) -> frozenset[tuple[int, int
     return io.plan_directory_identities(tuple(repo.path for repo in repos))
 
 
-def _make_settings(declared: _Declarations, path: str, *, git_enabled: bool) -> Loaded:
+def _make_settings(
+    declared: _Declarations, path: str, *, git_enabled: bool, digest: str = ""
+) -> Loaded:
     try:
         ids = io.plan_private_identities(declared.roots)
         prefixes = (
@@ -738,6 +743,7 @@ def _make_settings(declared: _Declarations, path: str, *, git_enabled: bool) -> 
             len(declared.roots),
             len(declared.privacy.markers),
             len(declared.privacy.marker_files),
+            digest,
         ),
     )
 
@@ -756,7 +762,9 @@ def load(home: str, *, enabled: bool = True, git_enabled: bool = True) -> Loaded
         declared = _declarations(data)
     except (ValueError, RecursionError):
         return Loaded(path, reason=MALFORMED)
-    return _make_settings(declared, path, git_enabled=git_enabled)
+    return _make_settings(
+        declared, path, git_enabled=git_enabled, digest=hashlib.sha256(data).hexdigest()
+    )
 
 
 def report(loaded: Loaded) -> dict[str, Any]:

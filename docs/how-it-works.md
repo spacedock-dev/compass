@@ -153,7 +153,12 @@ Code session, turning on the Live monitor, or setting an endpoint URL.
 [model-call policy](../SECURITY.md#observer-model-calls) says exactly what each model call sends and
 how much.
 
-One more path starts from you and is not traffic Compass sends. When you invoke the `compass` skill
+If you enable the lane summary in `compass-plan.json`, Claude Code or Codex adds the published
+summary to a new session's context. The harness sends it to its model provider and stores it
+with the session. Turn off `summary.enabled` to stop delivery on the next session start.
+[What the summary contains](../SECURITY.md#what-can-reach-into-a-session).
+
+When you invoke the `compass` skill
 with `sessions` or `sessions waiting`, the agent runs that read-only operation and the list it prints
 becomes part of that session's context, so it goes to that session's model provider. `drift` and
 `drift again` do the same with that session's own progress reading. Like Check progress, they can

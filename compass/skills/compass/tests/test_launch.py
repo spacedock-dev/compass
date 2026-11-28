@@ -764,7 +764,7 @@ class EveryEntryPointGoesThroughTheLauncherTest(unittest.TestCase):
             self.assertTrue(commands, path)
             for command in commands:
                 with self.subTest(path=path.name, command=command):
-                    self.assertRegex(command, r'^python3 "[^"]*/launch\.py" "[^"]*\.py" ')
+                    self.assertRegex(command, r'^python3 "[^"]*/launch\.py" "[^"]*\.py"(?: |$)')
 
     def test_the_mcp_server_starts_through_the_launcher(self) -> None:
         manifest = json.loads(

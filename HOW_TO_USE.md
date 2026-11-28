@@ -937,6 +937,26 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
    settings file or with `--no-plan`, the destination is hidden.
 
 
+### Give a new session its lane summary
+
+1. Install the Compass plugin in each Claude Code or Codex account that should receive the summary.
+   Make sure `python3` on the harness's PATH is 3.12 or newer. In Codex, review and trust the
+   installed hooks when prompted. Codex skips an untrusted hook
+   silently in `codex exec`. A change to the hook definition requires trusting it again.
+2. In `compass-plan.json`, set the top-level `"summary": {"enabled": true}`. Leave it absent or set
+   `"enabled": false` to turn delivery off. The setting is read when the session starts, even
+   with the dashboard down.
+3. Start each session from inside its declared lane folder, or set `COMPASS_LANE` to its brief slug
+   in the session's launch environment. The lane state and progress come from the dashboard: each
+   time it reads the plan with the summary on, it saves every lane's state. If no dashboard has read
+   the plan in the last 24 hours, or since you last changed `compass-plan.json`, both read
+   "not measured". [Preview the summary](HOW_TO_USE_TERMINAL.md#preview-the-plan-summary)
+   from the same folder and environment before starting the session.
+
+The summary becomes part of the session's context, goes to its model provider and is saved
+in the harness's session files. Review [what the hook sends](SECURITY.md#what-can-reach-into-a-session)
+before enabling it.
+
 ## Turn a feature off
 
 Each flag belongs to the dashboard process, so changing one means restarting.
