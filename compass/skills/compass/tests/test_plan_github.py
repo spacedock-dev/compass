@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,14 @@ STATUS_FIELD = {
     "id": PROJECT["status_field"],
     "name": "Workshop Stage",
 }
+ASK_LABEL = "needs-map-review"
+VIEWER = "chart-reader"
+
+
+def ask_lanes(data: model.TrackerData) -> frozenset[str] | None:
+    if data.ask_read is None:
+        return None
+    return frozenset(row.lane.slug for row in data.ask_read.issues if row.matches((ASK_LABEL,)))
 
 
 def issue(
@@ -79,6 +88,20 @@ def connection(
         "nodes": list(items),
         "pageInfo": {"hasNextPage": next_cursor is not None, "endCursor": next_cursor},
     }
+
+
+def ask_issue(
+    *, state: str = "OPEN", labels: tuple[str, ...] = (ASK_LABEL,), assignee: str = VIEWER
+) -> dict[str, Any]:
+    return {
+        **issue(21, state=state, title="Approve the estuary map"),
+        "labels": connection(*({"name": name} for name in labels)),
+        "assignees": connection({"login": assignee}),
+    }
+
+
+def with_viewer(page: dict[str, Any], login: str = VIEWER) -> dict[str, Any]:
+    return {"data": {**page["data"], "viewer": {"login": login}}}
 
 
 def milestone_page(*items: object, **page: Any) -> dict[str, Any]:
@@ -138,6 +161,30 @@ def project_item(content: dict[str, Any], status: str | None = None) -> dict[str
     }
 
 
+def missing_graphql_variable(argv: list[str]) -> dict[str, Any] | None:
+    if argv[1:3] != ["api", "https://api.github.com/graphql"]:
+        return None
+    signature = argv[6].partition("{")[0]
+    fields = {operand.partition("=")[0] for operand in argv[8::2]}
+    for name, type_name in re.findall(r"\$(\w+):\s*([\w\[\]!]+!)", signature):
+        if f"variables[{name}]" not in fields:
+            # GitHub rejected omitted non-null variables even with a query default.
+            return {
+                "errors": [
+                    {
+                        "extensions": {
+                            "value": None,
+                            "problems": [
+                                {"path": [], "explanation": "Expected value to not be null"}
+                            ],
+                        },
+                        "message": f"Variable ${name} of type {type_name} was provided invalid value",
+                    }
+                ]
+            }
+    return None
+
+
 class GitHubAdapterTest(TrackerTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -148,8 +195,11 @@ class GitHubAdapterTest(TrackerTestCase):
         self.calls: list[tuple[str, ...]] = []
         self.attempt = 0
 
-    def read(self, source: dict[str, Any], *responses: Any) -> tracker_refresh.Observation:
-        self.attempt += 1
+    def read(
+        self, source: dict[str, Any], *responses: Any, same_settings: bool = False
+    ) -> tracker_refresh.Observation:
+        if not same_settings:
+            self.attempt += 1
         declaration = tracker_source.declaration(source)
         self.calls.clear()
         pending = iter(responses)
@@ -159,7 +209,8 @@ class GitHubAdapterTest(TrackerTestCase):
             self.assertNotIn("GH_HOST", options["env"])
             self.assertNotIn("GITHUB_TOKEN", options["env"])
             self.calls.append(tuple(argv[1:]))
-            response = next(pending)
+            missing = missing_graphql_variable(argv)
+            response = (1, missing, b"") if missing is not None else next(pending)
             code, output, error = response if isinstance(response, tuple) else (0, response, b"")
             options["stdout"].write(
                 output if isinstance(output, bytes) else json.dumps(output).encode()
@@ -180,6 +231,155 @@ class GitHubAdapterTest(TrackerTestCase):
         self.assertEqual(expected, observation.reason)
         self.assertIsNone(observation.data)
         self.assertIsNone(observation.observed_at)
+
+    def read_asks(self, page: dict[str, Any], *, same_settings: bool = False) -> model.TrackerData:
+        return self.measured(
+            self.read(
+                {**MILESTONE, "ask_labels": [ASK_LABEL]},
+                MILESTONE_INFO,
+                page,
+                same_settings=same_settings,
+            )
+        )
+
+    def test_an_open_labelled_issue_assigned_to_the_viewer_is_an_ask(self) -> None:
+        data = self.read_asks(with_viewer(milestone_page(ask_issue())))
+        self.assertEqual({data.lanes[0].slug}, ask_lanes(data))
+        query = self.assert_graphql(
+            1,
+            "MilestoneIssues",
+            ("-f", "variables[id]=MI_example_7", "-F", "variables[readAsks]=true"),
+        )
+        for field in (
+            "viewer",
+            "labels(first: 21)",
+            "assignees(first: 21)",
+            "nodes { login }",
+        ):
+            self.assertIn(field, query)
+
+    def test_a_login_matches_across_pages_and_assignees_regardless_of_case(self) -> None:
+        data = self.measured(
+            self.read(
+                {**MILESTONE, "ask_labels": [ASK_LABEL]},
+                MILESTONE_INFO,
+                with_viewer(
+                    milestone_page(ask_issue(), total=2, next_cursor="more"), VIEWER.upper()
+                ),
+                with_viewer(
+                    milestone_page({**ask_issue(labels=()), **issue(22)}, total=2),
+                ),
+            )
+        )
+        self.assertEqual({data.lanes[0].slug}, ask_lanes(data))
+        data = self.read_asks(with_viewer(milestone_page(ask_issue()), VIEWER.upper()))
+        self.assertEqual({data.lanes[0].slug}, ask_lanes(data))
+
+    def test_two_spellings_of_one_assignee_leave_asks_unmeasured(self) -> None:
+        candidate = ask_issue()
+        candidate["assignees"] = connection({"login": VIEWER}, {"login": VIEWER.upper()})
+        data = self.read_asks(with_viewer(milestone_page(candidate)))
+        self.assertIsNone(ask_lanes(data))
+
+    def test_a_closed_issue_is_not_an_ask_even_in_the_waiting_group(self) -> None:
+        data = self.measured(
+            self.read(
+                {**PROJECT, "ask_labels": [ASK_LABEL]},
+                project_fields(STATUS_FIELD),
+                with_viewer(project_page(project_item(ask_issue(state="CLOSED"), "Parked"))),
+            )
+        )
+        self.assertEqual("waiting", data.lanes[0].state)
+        self.assertEqual(frozenset(), ask_lanes(data))
+
+    def test_a_labelled_issue_assigned_to_someone_else_is_not_an_ask(self) -> None:
+        data = self.measured(
+            self.read(
+                {**PARENT, "ask_labels": [ASK_LABEL]},
+                with_viewer(parent_page(ask_issue(assignee="another-cartographer"))),
+            )
+        )
+        self.assertEqual(frozenset(), ask_lanes(data))
+
+    def test_an_unlabelled_waiting_issue_assigned_to_the_viewer_is_not_an_ask(self) -> None:
+        data = self.measured(
+            self.read(
+                {**PROJECT, "ask_labels": [ASK_LABEL]},
+                project_fields(STATUS_FIELD),
+                with_viewer(project_page(project_item(ask_issue(labels=()), "Parked"))),
+            )
+        )
+        self.assertEqual("waiting", data.lanes[0].state)
+        self.assertEqual(frozenset(), ask_lanes(data))
+
+    def test_removing_the_label_withdraws_the_ask_on_the_next_read(self) -> None:
+        previous = self.read_asks(with_viewer(milestone_page(ask_issue())))
+        self.assertTrue(ask_lanes(previous))
+        self.clock.now += tracker_refresh.FRESH_SECONDS
+        data = self.read_asks(with_viewer(milestone_page(ask_issue(labels=()))), same_settings=True)
+        self.assertEqual(frozenset(), ask_lanes(data))
+
+    def test_missing_or_bounded_ask_fields_leave_asks_unmeasured(self) -> None:
+        for field in ("labels", "assignees"):
+            for truncated in (False, True):
+                candidate = ask_issue()
+                if truncated:
+                    candidate[field]["totalCount"] = 21
+                    candidate[field]["pageInfo"] = {"hasNextPage": True, "endCursor": "more-nodes"}
+                else:
+                    del candidate[field]
+                with self.subTest(field=field, truncated=truncated):
+                    data = self.read_asks(with_viewer(milestone_page(candidate)))
+                    self.assertIsNone(ask_lanes(data))
+                    self.assertEqual(1, len(data.lanes))
+
+    def test_exact_member_bounds_and_no_visible_holes_are_required_to_measure_asks(self) -> None:
+        for field, key, first in (("labels", "name", ASK_LABEL), ("assignees", "login", VIEWER)):
+            candidate = ask_issue()
+            members = [{key: first}, *({key: f"review-{n}"} for n in range(20))]
+            for coverage, nested in (
+                ("exact cap", connection(*members[:20])),
+                ("over cap", connection(*members)),
+                ("misreported total", connection(*members, total=20)),
+                ("null member", connection(*members[:1], None)),
+            ):
+                with self.subTest(field=field, coverage=coverage):
+                    data = self.read_asks(with_viewer(milestone_page({**candidate, field: nested})))
+                    expected = {data.lanes[0].slug} if coverage == "exact cap" else None
+                    self.assertEqual(expected, ask_lanes(data))
+
+    def test_missing_or_inconsistent_viewer_leaves_asks_unmeasured(self) -> None:
+        data = self.read_asks(milestone_page())
+        self.assertIsNone(ask_lanes(data))
+        data = self.measured(
+            self.read(
+                {**MILESTONE, "ask_labels": [ASK_LABEL]},
+                MILESTONE_INFO,
+                with_viewer(milestone_page(ask_issue(), total=2, next_cursor="more-issues")),
+                with_viewer(
+                    milestone_page(
+                        {**issue(22), "labels": connection(), "assignees": connection()}, total=2
+                    ),
+                    login="another-cartographer",
+                ),
+            )
+        )
+        self.assertIsNone(ask_lanes(data))
+        self.assert_graphql(
+            2,
+            "MilestoneIssues",
+            (
+                "-f",
+                "variables[id]=MI_example_7",
+                "-F",
+                "variables[readAsks]=true",
+                "-f",
+                "variables[cursor]=more-issues",
+            ),
+        )
+
+    def test_complete_empty_membership_with_a_viewer_measures_zero(self) -> None:
+        self.assertEqual(frozenset(), ask_lanes(self.read_asks(with_viewer(milestone_page()))))
 
     def test_settings_validate_parent_and_project_selectors(self) -> None:
         self.assertEqual(
@@ -240,7 +440,11 @@ class GitHubAdapterTest(TrackerTestCase):
             self.calls[0],
         )
         self.assertEqual(2, len(self.calls))
-        self.assert_graphql(1, "MilestoneIssues", ("-f", "variables[id]=MI_example_7"))
+        self.assert_graphql(
+            1,
+            "MilestoneIssues",
+            ("-f", "variables[id]=MI_example_7", "-F", "variables[readAsks]=false"),
+        )
 
     def assert_graphql(self, index: int, operation: str, operands: tuple[str, ...]) -> str:
         call = self.calls[index]
@@ -250,6 +454,8 @@ class GitHubAdapterTest(TrackerTestCase):
         self.assertTrue(call[5].startswith(f"query=\nquery {operation}("))
         self.assertNotIn("mutation", call[5])
         self.assertEqual(operands, call[6:])
+        if operation != "ProjectFields":
+            self.assertRegex(call[5], r"\$readAsks: Boolean!\s*[,)]")
         return call[5]
 
     def test_parent_paginates_and_uses_provider_identity_across_sources_and_renames(self) -> None:
@@ -278,6 +484,8 @@ class GitHubAdapterTest(TrackerTestCase):
             "variables[repo]=atlas",
             "-F",
             "variables[number]=18",
+            "-F",
+            "variables[readAsks]=false",
         )
         self.assertEqual(
             self.assert_graphql(0, "SubIssues", operands),
@@ -319,7 +527,14 @@ class GitHubAdapterTest(TrackerTestCase):
         query = self.assert_graphql(
             1,
             "ProjectIssues",
-            ("-f", "variables[id]=PVT_example_board", "-f", "variables[status]=Workshop Stage"),
+            (
+                "-f",
+                "variables[id]=PVT_example_board",
+                "-f",
+                "variables[status]=Workshop Stage",
+                "-F",
+                "variables[readAsks]=false",
+            ),
         )
         self.assertIn("archivedStates: [ARCHIVED, NOT_ARCHIVED]", query)
 
@@ -341,6 +556,8 @@ class GitHubAdapterTest(TrackerTestCase):
                 "variables[id]=PVT_example_board",
                 "-f",
                 "variables[status]=Workshop Stage",
+                "-F",
+                "variables[readAsks]=false",
                 "-f",
                 "variables[cursor]=board/next==",
             ),
@@ -528,6 +745,22 @@ class GitHubAdapterTest(TrackerTestCase):
             }
             self.abstains("partial-result", self.read(PARENT, (code, partial, b"gh: Fixture")))
         self.abstains("signed-out", self.read(PARENT, (4, missing, stderr)))
+
+    def test_graphql_viewer_does_not_count_as_collection_data_in_error_replies(self) -> None:
+        source = {**PARENT, "ask_labels": [ASK_LABEL]}
+        for code in (0, 1):
+            for kind, reason in (
+                ("NOT_FOUND", "not-found-or-inaccessible"),
+                ("FORBIDDEN", "not-found-or-inaccessible"),
+                ("INSUFFICIENT_SCOPES", "not-found-or-inaccessible"),
+                ("RATE_LIMITED", "rate-limited"),
+            ):
+                with self.subTest(code=code, kind=kind):
+                    envelope = {
+                        **with_viewer({"data": {"repository": {"issue": None}}}),
+                        "errors": [{"type": kind, "message": "Fixture"}],
+                    }
+                    self.abstains(reason, self.read(source, (code, envelope, b"gh: Fixture")))
 
     def test_graphql_partial_data_and_cli_failures_are_unmeasured(self) -> None:
         partial = {

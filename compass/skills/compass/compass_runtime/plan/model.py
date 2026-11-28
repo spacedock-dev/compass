@@ -103,6 +103,22 @@ class Lane:
 
 
 @dataclass(frozen=True)
+class TrackerAskIssue:
+    lane: Lane
+    open_and_assigned: bool
+    labels: frozenset[str] = field(repr=False)
+
+    def matches(self, labels: tuple[str, ...]) -> bool:
+        return self.open_and_assigned and not self.labels.isdisjoint(labels)
+
+
+@dataclass(frozen=True)
+class TrackerAskRead:
+    viewer: str = field(repr=False)
+    issues: tuple[TrackerAskIssue, ...]
+
+
+@dataclass(frozen=True)
 class TrackerData:
     """An adapter returns these rows only after proving complete membership."""
 
@@ -110,6 +126,8 @@ class TrackerData:
     lanes: tuple[Lane, ...]
     # Preserves authority when the same issue serves multiple configured goals.
     project_status_lanes: frozenset[str] = frozenset()
+    # None means the ask rule was not measured, even when issue membership was complete.
+    ask_read: TrackerAskRead | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)

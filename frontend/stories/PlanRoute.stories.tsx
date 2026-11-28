@@ -10,7 +10,9 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import {
   crowdedSourceRows,
   crowdedSources,
+  githubAsksPlan,
   githubPlan,
+  githubPlanWithLog,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -151,6 +153,65 @@ export const PublishedPlan: Story = {
       'href',
       '#n=plan',
     );
+  },
+};
+
+export const SparseTrackerAndLog: Story = {
+  args: { plan: githubPlanWithLog },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('Put up the welcome sign')).toBeVisible();
+    const waiting = within(canvas.getByRole('region', { name: 'Waiting on you' }));
+    await expect(waiting.getByText('Who can check the entrance signs?')).toBeVisible();
+    for (const name of ['Design', 'Tracker', 'Diagrams']) {
+      await expect(canvas.queryByRole('heading', { name, level: 2 })).toBeNull();
+    }
+  },
+};
+
+export const TrackerAsksPresent: Story = {
+  args: { plan: githubAsksPlan('present') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const waiting = within(await canvas.findByRole('region', { name: 'Waiting on you' }));
+    const asks = within(waiting.getByRole('list', { name: 'Tracker asks' }));
+    const link = asks.getByRole('link', { name: 'Approve the sign lettering' });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', 'https://github.com');
+    await expect(asks.getByText('GitHub milestone · github.com')).toBeVisible();
+    await expect(waiting.queryByText('Tracker asks are not measured.')).toBeNull();
+    await expect(waiting.queryByText('No tracker asks.')).toBeNull();
+    const goal = within(canvas.getByRole('article', { name: 'Open the new library' }));
+    await expect(goal.getByText('0 of 1 lane is done')).toBeVisible();
+    await expect(
+      within(goal.getByRole('list', { name: 'Planned' })).getByText('Approve the sign lettering'),
+    ).toBeVisible();
+  },
+};
+
+export const NoTrackerAsks: Story = {
+  args: { plan: githubAsksPlan('none') },
+  play: async ({ canvasElement }) => {
+    const waiting = within(
+      await within(canvasElement).findByRole('region', { name: 'Waiting on you' }),
+    );
+    await expect(waiting.getByText('No tracker asks.')).toBeVisible();
+    await expect(waiting.queryByText('Tracker asks are not measured.')).toBeNull();
+    await expect(waiting.queryByRole('list', { name: 'Tracker asks' })).toBeNull();
+  },
+};
+
+export const TrackerAsksNotMeasured: Story = {
+  args: { plan: githubAsksPlan('not measured') },
+  play: async ({ canvasElement }) => {
+    const waiting = within(
+      await within(canvasElement).findByRole('region', { name: 'Waiting on you' }),
+    );
+    await expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+    await expect(waiting.queryByText('No tracker asks.')).toBeNull();
+    await expect(waiting.queryByRole('list', { name: 'Tracker asks' })).toBeNull();
+    await expect(waiting.getByText('Who can check the entrance signs?')).toBeVisible();
+    await expect(waiting.getByRole('link', { name: 'Review the shelf layout' })).toBeVisible();
   },
 };
 
@@ -326,7 +387,7 @@ export const InertDiagram: Story = {
 };
 
 export const GitHubMilestone: Story = {
-  args: { plan: githubPlan('ok') },
+  args: { plan: { ...githubPlan('ok'), trackerAsksEnabled: true } },
   parameters: PublishedPlanAt320.parameters,
   globals: PublishedPlanAt320.globals,
   play: async ({ canvasElement }) =>
@@ -355,7 +416,7 @@ export const GitHubMilestone: Story = {
 };
 
 export const EmptyGitHubMilestone: Story = {
-  args: { plan: githubPlan('empty') },
+  args: { plan: { ...githubPlan('empty'), trackerAsksEnabled: true } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText('No lanes serve this goal yet')).toBeVisible();

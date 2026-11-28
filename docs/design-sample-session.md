@@ -448,6 +448,10 @@ The page bound follows the measured package, and the fixture bound stays at 250,
 The GitHub plan review fixes package at 2,527,827 bytes on the same toolchain, up 780 bytes.
 The bound follows the measured package.
 
+Showing GitHub asks in Waiting on you and limiting file sections to declared sources package
+at 2,530,783 bytes on Node 26.12.1 and pnpm 12.19.0, up 2,956 bytes. The page bound follows
+that measurement. The fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

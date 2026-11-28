@@ -14,6 +14,7 @@ import type { SessionRoute } from '../router/grammar';
 
 export interface PlanModel {
   readonly asks: readonly PlanAsk[];
+  readonly trackerAsks: ReadyPlan['trackerAsks'] | undefined;
   readonly waitingSessions: readonly PlanWaitingSession[];
   readonly goals: readonly PlanGoal[];
   readonly design: readonly PlanNote[];
@@ -22,8 +23,11 @@ export interface PlanModel {
   readonly sources: readonly PlanSource[];
   readonly limits: string;
   readonly trackerIncomplete: boolean;
-  readonly trackerAsksUnmeasured: boolean;
-  readonly trackerOnly: boolean;
+  readonly fileSections: {
+    readonly design: boolean;
+    readonly tracker: boolean;
+    readonly diagrams: boolean;
+  };
 }
 
 /* The published tracker words, kept as published. A lane with no measured state is null. */
@@ -347,13 +351,15 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
   }
 
   const trackerSources = plan.sources.filter(isTrackerSource);
+  const sourceKinds = new Set(plan.sources.map(({ kind }) => kind));
   return {
     trackerIncomplete: trackerSources.some(({ state }) => state !== 'ok' && state !== 'empty'),
-    // The tracker reads cover goals and lanes only.
-    trackerAsksUnmeasured: trackerSources.length > 0,
-    trackerOnly:
-      trackerSources.length > 0 &&
-      plan.sources.every((source) => isTrackerSource(source) || source.kind === 'lane folder'),
+    fileSections: {
+      design: sourceKinds.has('decisions'),
+      tracker: sourceKinds.has('tracker'),
+      diagrams: sourceKinds.has('diagrams'),
+    },
+    trackerAsks: plan.trackerAsksEnabled ? plan.trackerAsks : undefined,
     waitingSessions,
     goals: plan.goals.map((goal) => ({
       id: goal.id,

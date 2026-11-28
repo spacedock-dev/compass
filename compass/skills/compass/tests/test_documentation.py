@@ -69,6 +69,9 @@ class TrackerPlanGuideTest(unittest.TestCase):
             ["milestone", "parent-issue", "project"],
         )
         self.assertIn("gh project field-list <n> --owner <owner> --format json", tracker_setup)
+        milestone = tracker_source.declarations(examples[0]["trackers"])[0]
+        self.assertEqual(("needs-me",), milestone.ask_labels)
+        self.assertIn("Label matching is case-sensitive.", " ".join(tracker_setup.split()))
         security = (root / "SECURITY.md").read_text(encoding="utf-8")
         disclosure = next(
             line for line in security.splitlines() if line.startswith("| Plan tracker reads |")
@@ -76,6 +79,9 @@ class TrackerPlanGuideTest(unittest.TestCase):
         for detail in (
             "github.com",
             "stored",
+            "label names",
+            "assignee logins",
+            "signed-in login",
             "30 seconds",
             "--no-plan",
             "--no-plan-trackers",
@@ -3145,6 +3151,10 @@ class HandOffRequestContractDocumentationTest(unittest.TestCase):
                 self.assertIn("fresh", disclosure)
         self.assertIn("removed when capture finishes", details)
         self.assertIn("evicted on a later observation or settings invalidation", details)
+        capture = details.split("The CLI writes", 1)[1].split("Complete measurements", 1)[0]
+        for field in ("viewer login", "assignee logins", "labels"):
+            with self.subTest(field=field):
+                self.assertIn(field, capture)
 
 
 class FocusCommandContractDocumentationTest(unittest.TestCase):

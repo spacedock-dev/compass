@@ -46,7 +46,10 @@ the goal when set.
 ```json
 {
   "version": 1,
-  "trackers": [{"provider": "github", "kind": "milestone", "repo": "owner/repo", "number": 7}]
+  "trackers": [{
+    "provider": "github", "kind": "milestone", "repo": "owner/repo", "number": 7,
+    "ask_labels": ["needs-me"]
+  }]
 }
 ```
 
@@ -79,13 +82,18 @@ field into `status_field`. Match the option names your project uses in `words`.
 
 - You can put several sources in `trackers` or add it to existing file settings. An issue can
   serve several goals.
+- Add `"ask_labels": ["needs-me"]` to any source to show its open issues in **Waiting on you**
+  when they have a listed label and are assigned to your signed-in GitHub account. Label matching
+  is case-sensitive. Use the exact spelling shown in GitHub. Omit `ask_labels` to leave asks off
+  for that source.
 - For a project, your stored login needs access to that project and the scope described in
   `gh project --help`.
 - Compass uses your stored GitHub CLI login. See
   [what the tracker read sends](../../SECURITY.md#plan-reads-from-github).
 - A read with no matching issues says **No lanes found**. When a source is unavailable,
-  progress reads **not measured**. Waiting on you still shows the asks and waiting sessions
-  Compass has from local records.
+  progress reads **not measured**. If a source with `ask_labels` has an incomplete read,
+  tracker asks read **not measured**. Waiting on you still shows the asks and waiting
+  sessions Compass has from local records.
 - Start Compass with `--no-plan-trackers` to stop these reads for the run. For a plan with just
   GitHub and an event log, use the flag so the local log stays available. Remove `trackers`
   and any top-level `lane_folders` only if the remaining
@@ -198,6 +206,7 @@ For file plans, it includes missing or unreadable draft sources and refused lane
 
 | Refusal | Fix |
 |---|---|
+| Invalid tracker `ask_labels` | Use 1 to 32 distinct, nonblank labels of up to 128 characters each, or omit the setting. |
 | A file entry or label breaks a rule above | Fix the entry in `files`. |
 | A tracker table lacks your declared lane, title or status column, or misspells one, such as `Statuz` | Fix the header so the table has all three. |
 | Two tracker tables with no blank line between them | Add a blank line. |
