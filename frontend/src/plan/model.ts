@@ -1,6 +1,7 @@
 import {
   isTrackerSource,
   trackerProvider,
+  trackerRetryReason,
   type PlanGroup,
   type PublishedLaneState,
   type PublishedPlanDate,
@@ -271,7 +272,9 @@ function planSources(published: readonly PublishedSource[]): PlanSource[] {
     const { label, kind } = source;
     const provider = trackerProvider(source);
     if (provider) {
-      const reason = sourceRefusal(source.reason);
+      const reason = sourceRefusal(
+        source.state === 'retrying' ? trackerRetryReason(source.reason) : source.reason,
+      );
       rows.push({
         id,
         name: source.position === null ? label : `${label} ${source.position}`,

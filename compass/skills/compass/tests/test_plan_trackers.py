@@ -104,10 +104,13 @@ class TrackerTestCase(unittest.TestCase):
     ) -> tracker_refresh.Observation:
         stop = time.monotonic() + 3.0
         result = read()
-        while result.reason == tracker_cli.Reason.REFRESHING and time.monotonic() < stop:
+        while (
+            result.reason == tracker_cli.Reason.REFRESHING or result.retrying
+        ) and time.monotonic() < stop:
             time.sleep(0.005)
             result = read()
         self.assertNotEqual(tracker_cli.Reason.REFRESHING, result.reason)
+        self.assertFalse(result.retrying)
         return result
 
 
@@ -512,7 +515,112 @@ time.sleep(60)
                 self.assertTrue(finished.wait(3.0))
 
 
+class TrackerSchedulingTest(unittest.TestCase):
+    def test_other_provider_settles_while_four_github_reads_are_held(self) -> None:
+        release = threading.Event()
+        started = threading.Event()
+
+        def blocked(
+            _source: tracker_source.Declaration, _child: tracker_cli.TrackerCLI
+        ) -> tracker_refresh.TrackerData:
+            started.set()
+            release.wait()
+            raise tracker_cli.TrackerError(tracker_cli.Reason.TIMEOUT)
+
+        def immediate(
+            _source: tracker_source.Declaration, _child: tracker_cli.TrackerCLI
+        ) -> tracker_refresh.TrackerData:
+            raise tracker_cli.TrackerError(tracker_cli.Reason.UNKNOWN_WORKSPACE)
+
+        linear = {
+            "provider": "linear",
+            "kind": "project",
+            "workspace": "none",
+            "project": "Example",
+        }
+        sources = tracker_source.declarations(
+            [{**DECLARATION, "number": number} for number in range(1, 5)] + [linear]
+        )
+        refresh = tracker_refresh.TrackerRefresh(adapters={"github": blocked, "linear": immediate})
+
+        def linear_reason() -> tracker_cli.Reason | None:
+            return refresh.observe("same", sources, enabled=True)[-1].reason
+
+        try:
+            linear_reason()
+            self.assertTrue(started.wait(3))
+            stop = time.monotonic() + 1
+            reason = linear_reason()
+            while reason == tracker_cli.Reason.REFRESHING and time.monotonic() < stop:
+                time.sleep(0.005)
+                reason = linear_reason()
+            self.assertEqual(tracker_cli.Reason.UNKNOWN_WORKSPACE, reason)
+        finally:
+            refresh.invalidate()
+            release.set()
+
+
 class TrackerRefreshTest(TrackerTestCase):
+    def test_failures_wait_as_long_as_successes_before_trying_again(self) -> None:
+        self.runner.return_value = subprocess.CompletedProcess([], 4)
+        self.runner.side_effect = None
+        self.snapshot()
+        failure = self.result(lambda: self.snapshot()[0])
+        self.assertEqual(tracker_cli.Reason.SIGNED_OUT, failure.reason)
+
+        self.clock.now += tracker_refresh.FRESH_SECONDS - 0.001
+        self.assertEqual(failure, self.snapshot()[0])
+        self.runner.assert_called_once()
+
+    def test_a_retry_keeps_the_last_failure_until_the_new_read_finishes(self) -> None:
+        self.runner.return_value = subprocess.CompletedProcess([], 4)
+        self.runner.side_effect = None
+        self.snapshot()
+        failure = self.result(lambda: self.snapshot()[0])
+        self.assertEqual(tracker_cli.Reason.SIGNED_OUT, failure.reason)
+
+        entered = threading.Event()
+        release = threading.Event()
+
+        def retry(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
+            entered.set()
+            if not release.wait(3):
+                raise subprocess.TimeoutExpired(argv, options["timeout"])
+            return self.complete(argv, **options)
+
+        self.runner.side_effect = retry
+        self.clock.now += tracker_refresh.FRESH_SECONDS
+        try:
+            (pending,) = self.snapshot()
+            self.assertTrue(entered.wait(3))
+            self.assertEqual(failure.reason, pending.reason)
+            self.assertTrue(pending.retrying)
+            self.assertEqual(pending, self.snapshot()[0])
+            self.assertIsNone(pending.data)
+            self.assertIsNone(pending.observed_at)
+            self.assertEqual(2, self.runner.call_count)
+        finally:
+            release.set()
+            observed = self.result(lambda: self.snapshot()[0])
+        self.assertIsNotNone(observed.data)
+        self.assertFalse(observed.retrying)
+
+    def test_shutdown_keeps_an_expired_refusal_without_marking_it_as_retrying(self) -> None:
+        self.runner.return_value = subprocess.CompletedProcess([], 4)
+        self.runner.side_effect = None
+        failure = self.result(lambda: self.snapshot()[0])
+        self.assertEqual(tracker_cli.Reason.SIGNED_OUT, failure.reason)
+
+        self.clock.now += tracker_refresh.FRESH_SECONDS
+        with mock.patch.object(supervise, "_SHUTDOWN", threading.Event()):
+            supervise.kill_all()
+            self.assertEqual(failure, self.snapshot()[0])
+            self.clock.now += 1
+            self.assertEqual(failure, self.snapshot()[0])
+            self.assertFalse(self.refresh._active)
+            self.assertFalse(self.refresh._waiting)
+        self.runner.assert_called_once()
+
     def test_only_one_off_thread_read_per_source_and_digest(self) -> None:
         entered = threading.Event()
         release = threading.Event()
@@ -729,6 +837,66 @@ class TrackerEntryPointTest(TrackerTestCase):
     def declare(self) -> None:
         (self.root / "compass-plan.json").write_text(
             json.dumps({"version": 1, "trackers": [DECLARATION]}), encoding="utf-8"
+        )
+
+    def test_an_unstored_workspace_stays_visible_while_github_has_not_timed_out(self) -> None:
+        github = {"provider": "github", "kind": "parent-issue", "repo": "owner/repo", "number": 7}
+        linear = {
+            "provider": "linear",
+            "kind": "project",
+            "workspace": "no-such-ws",
+            "project": "Example",
+        }
+        (self.root / ("linear.exe" if os.name == "nt" else "linear")).touch(mode=0o700)
+        (self.root / settings.FILENAME).write_text(
+            json.dumps({"version": 1, "trackers": [github, linear]}), encoding="utf-8"
+        )
+        github_started = threading.Event()
+        github_timeout = threading.Event()
+
+        def run(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
+            if argv[0] == str(self.binary):
+                github_started.set()
+                github_timeout.wait(3)
+                raise subprocess.TimeoutExpired(argv, options["timeout"])
+            options["stderr"].write(b"Workspace not found in credentials")
+            return subprocess.CompletedProcess(argv, 4)
+
+        self.refresh = tracker_refresh.TrackerRefresh(
+            environ=self.environ,
+            clock=self.clock,
+            runner=run,
+        )
+        app = self.application()
+        declarations = (tracker_source.declaration(github), tracker_source.declaration(linear))
+        digest = tracker_source_digest(self.root)
+        started = self.clock()
+        try:
+            request(app)
+            self.assertTrue(github_started.wait(3))
+            immediate = self.result(lambda: self.snapshot(digest, sources=declarations)[1])
+            self.assertEqual(tracker_cli.Reason.UNKNOWN_WORKSPACE, immediate.reason)
+
+            # The old failure cache had expired, but GitHub still had time on its deadline.
+            self.clock.now = started + 6
+            body = json.loads(request(app)[2])
+            self.assertEqual(
+                [("refreshing", "refreshing"), ("refused", "unknown-workspace")],
+                [(source["state"], source["reason"]) for source in body["sources"]],
+            )
+            self.assertEqual([], body["goals"])
+            self.assertEqual([], body["lanes"])
+            self.assertIsNone(body["trackerRead"])
+        finally:
+            self.clock.now = started + tracker_refresh.REFRESH_SECONDS
+            github_timeout.set()
+            hung = self.result(lambda: self.snapshot(digest, sources=declarations)[0])
+        self.assertEqual(tracker_cli.Reason.TIMEOUT, hung.reason)
+        self.clock.now = started + 10
+        body = json.loads(request(app)[2])
+        self.assertEqual(
+            [("refused", "timeout"), ("refused", "unknown-workspace")],
+            [(source["state"], source["reason"]) for source in body["sources"]],
         )
 
     def test_only_admitted_fetch_with_declaration_starts_tracker_even_with_git_off(self) -> None:

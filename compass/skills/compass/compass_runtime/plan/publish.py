@@ -408,6 +408,11 @@ def _tracker_projection(
             reason = None
         elif observation.data is not None:
             status, reason = "expired", "expired"
+        elif observation.retrying and observation.reason not in (
+            None,
+            tracker_cli.Reason.REFRESHING,
+        ):
+            status = "retrying"
         else:
             status = "refreshing" if reason == tracker_cli.Reason.REFRESHING else "refused"
         labels = (

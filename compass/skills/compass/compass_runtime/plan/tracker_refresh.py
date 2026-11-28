@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
@@ -21,7 +21,6 @@ if TYPE_CHECKING:
 
 REFRESH_SECONDS = 8.0
 FRESH_SECONDS = 30.0
-ERROR_BACKOFF_SECONDS = 5.0
 MAX_WORKERS = 4
 
 TrackerData = model.TrackerData
@@ -37,6 +36,7 @@ class Observation:
     data: TrackerData | None = None
     reason: tracker_cli.Reason | None = None
     observed_at: float | None = None
+    retrying: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,6 +103,11 @@ class TrackerRefresh:
             now = self._clock()
             result = tuple(self._observe_source(source, enabled, now) for source in sources)
             self._start_waiting()
+            if supervise.closed():
+                return tuple(
+                    replace(observation, retrying=False) if observation.retrying else observation
+                    for observation in result
+                )
             return result
 
     def remaining_ms(self, observations: tuple[Observation, ...]) -> tuple[int, ...]:
@@ -121,11 +126,29 @@ class TrackerRefresh:
         cached = self._cache.get(key)
         if cached is not None and now < cached.valid_until:
             return cached.observation
-        self._cache.pop(key, None)
         active = self._active.get(key)
         if active is None or active.superseded.is_set():
             self._waiting.setdefault(key, source)
+        # A poll can miss a fast failure entirely if we drop it when scheduling the next read.
+        if cached is not None and cached.observation.reason is not None:
+            return replace(cached.observation, retrying=True)
+        self._cache.pop(key, None)
         return Observation(reason=tracker_cli.Reason.REFRESHING)
+
+    def _waiting_order(self) -> list[SourceKey]:
+        # A slow provider can fill the pool before another provider gets its first read.
+        providers = {key[0] for key in self._active}
+        first: list[SourceKey] = []
+        rest: list[SourceKey] = []
+        for key, source in self._waiting.items():
+            if key in self._active:
+                continue
+            if source.provider in providers:
+                rest.append(key)
+            else:
+                first.append(key)
+                providers.add(source.provider)
+        return first + rest
 
     def _start_waiting(self) -> None:
         if not self._waiting:
@@ -134,11 +157,9 @@ class TrackerRefresh:
             if not open_for_work:
                 self._waiting.clear()
                 return
-            for key in tuple(self._waiting):
+            for key in self._waiting_order():
                 if len(self._active) >= MAX_WORKERS:
                     break
-                if key in self._active:
-                    continue
                 source = self._waiting.pop(key)
                 flight = _Flight(self._superseded)
                 self._active[key] = flight
@@ -154,7 +175,7 @@ class TrackerRefresh:
                     del self._active[key]
                     self._cache[key] = _Cached(
                         Observation(reason=tracker_cli.Reason.CLI_FAILED),
-                        self._clock() + ERROR_BACKOFF_SECONDS,
+                        self._clock() + FRESH_SECONDS,
                     )
 
     def _measure(self, source: Declaration, flight: _Flight, deadline: float) -> Observation:
@@ -198,11 +219,9 @@ class TrackerRefresh:
             with self._lock:
                 del self._active[source.key]
                 if not flight.superseded.is_set():
-                    valid_until = (
-                        result.observed_at + FRESH_SECONDS
-                        if result.observed_at is not None
-                        else self._clock() + ERROR_BACKOFF_SECONDS
+                    finished_at = (
+                        result.observed_at if result.observed_at is not None else self._clock()
                     )
-                    self._cache[source.key] = _Cached(result, valid_until)
+                    self._cache[source.key] = _Cached(result, finished_at + FRESH_SECONDS)
                 # A settings change drops the queue and a late result cannot restore its data.
                 self._start_waiting()

@@ -557,7 +557,10 @@ export const EmptyGitHubMilestone: Story = {
   },
 };
 
-function unmeasuredGitHub(state: 'refused' | 'refreshing' | 'expired', reason: string): Story {
+function unmeasuredGitHub(
+  state: 'refused' | 'refreshing' | 'retrying' | 'expired',
+  reason: string,
+): Story {
   return {
     args: { plan: githubPlan(state) },
     play: async ({ canvasElement }) => {
@@ -576,6 +579,10 @@ function unmeasuredGitHub(state: 'refused' | 'refreshing' | 'expired', reason: s
 
 export const SignedOutOfGitHub = unmeasuredGitHub(
   'refused',
+  'Sign in to GitHub with your GitHub CLI.',
+);
+export const RetryingGitHub = unmeasuredGitHub(
+  'retrying',
   'Sign in to GitHub with your GitHub CLI.',
 );
 export const ReadingGitHub = unmeasuredGitHub('refreshing', 'Reading GitHub…');

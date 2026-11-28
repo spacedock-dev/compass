@@ -21,7 +21,7 @@ interface PublishedPlanSource {
   readonly fileLabel: string | null;
   /** The file's place among its repository's files of this kind, or null when it is the only one. */
   readonly position: number | null;
-  readonly state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'expired';
+  readonly state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'retrying' | 'expired';
   readonly reason: string | null;
 }
 
@@ -198,7 +198,7 @@ const ITEM_CHECKS = {
     textOrNull(source['fileLabel']) &&
     place(source['position']) &&
     text(source['state']) &&
-    ['ok', 'empty', 'refused', 'refreshing', 'expired'].includes(source['state']) &&
+    ['ok', 'empty', 'refused', 'refreshing', 'retrying', 'expired'].includes(source['state']) &&
     textOrNull(source['reason']),
 } as const;
 
@@ -210,6 +210,12 @@ export function trackerProvider({ kind }: Pick<PublishedPlanSource, 'kind'>) {
 
 export const isTrackerSource = (source: Pick<PublishedPlanSource, 'kind'>) =>
   trackerProvider(source) !== null;
+
+export const isTrackerReadPending = (source: PublishedPlanSource) =>
+  isTrackerSource(source) && (source.state === 'refreshing' || source.state === 'retrying');
+
+export const trackerRetryReason = (reason: PublishedPlanSource['reason']) =>
+  reason === null || reason === 'refreshing' ? 'plan-read-unavailable' : reason;
 
 const completeList = (value: unknown, check: (item: Fields) => boolean) =>
   Array.isArray(value) && value.every((item) => isRecord(item) && check(item));
@@ -296,14 +302,21 @@ export function expirePlanReadings(plan: ReadyPlan, elapsed: number): ReadyPlan 
 
 export function failTrackerRead(plan: ReadyPlan): ReadyPlan {
   const local = expirePlanReadings(plan, Infinity);
-  if (!local.sources.some((source) => isTrackerSource(source) && source.state === 'refreshing')) {
+  if (!local.sources.some(isTrackerReadPending)) {
     return local;
   }
   return {
     ...local,
     sources: local.sources.map((source) =>
-      isTrackerSource(source) && source.state === 'refreshing'
-        ? { ...source, state: 'refused', reason: 'plan-read-unavailable' }
+      isTrackerReadPending(source)
+        ? {
+            ...source,
+            state: 'refused',
+            reason:
+              source.state === 'retrying'
+                ? trackerRetryReason(source.reason)
+                : 'plan-read-unavailable',
+          }
         : source,
     ),
   };

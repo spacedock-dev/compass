@@ -3,7 +3,7 @@ import { createApiClient, type FetchLike } from '../api/client';
 import {
   expirePlanReadings,
   failTrackerRead,
-  isTrackerSource,
+  isTrackerReadPending,
   usablePlan,
   type PlanReading,
   type ReadyPlan,
@@ -193,11 +193,7 @@ export function createBoardRuntime(options: RuntimeOptions) {
         }
         if (
           retries > 0 &&
-          (expiredInTransit ||
-            (next.state === 'ready' &&
-              next.sources.some(
-                (source) => isTrackerSource(source) && source.state === 'refreshing',
-              )))
+          (expiredInTransit || (next.state === 'ready' && next.sources.some(isTrackerReadPending)))
         ) {
           planRetry = env.clock.setTimeout(() => void readPlan(false, retries - 1), PLAN_RETRY_MS);
         }

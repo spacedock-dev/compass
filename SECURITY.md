@@ -1352,8 +1352,10 @@ raw provider IDs and link paths.
 The CLI writes to bounded temporary stdout and stderr files in a private directory. For sources
 with `ask_labels`, the captured response includes the signed-in viewer login, assignee logins and
 labels. The files are removed when capture finishes, including on handled errors. Complete
-measurements are fresh for 30 seconds. Expired measurements may remain in memory until evicted
-on a later observation or settings invalidation. Compass sends no tracker result to the session
+measurements are fresh for 30 seconds. A later Plan fetch can retry a failed read after the same
+30 seconds have elapsed since the failure. The last failure reason remains visible through the
+retry, with the source unmeasured. Expired measurements may remain in memory until evicted on
+a later observation or settings invalidation. Compass sends no tracker result to the session
 summary or a model. The browser withdraws a retained measurement once its freshness time runs
 out or a fetch fails. Tracker asks use the earliest expiry among the sources that declare
 `ask_labels`. Local file rows stay available when tracker rows are withdrawn.
@@ -1406,7 +1408,7 @@ A configured reply has `state: ready` and the following fields.
 | `design` | `title`, `summary` (always null), `decided`, `source` and `date`. |
 | `tracker`, `inventory` | `title`, `group` (including the closed fallback `Status not recognised`), `source` and `date`. |
 | `diagrams` | `title`, `caption`, `kind`, `source`, `date`, `linkHosts` and `body`. |
-| `sources` | `label`, `kind`, `fileLabel` (the file's label from the settings, or null), `position` (the source's place among files of its kind in the repository or tracker declarations of its kind, or null when it is the only one), `state` and a closed `reason`. Tracker states are `ok`, `empty`, `refused`, `refreshing` and `expired`. Tracker reasons are `disabled`, `refreshing`, `expired`, `cli-missing`, `signed-out`, `rate-limited`, `timeout`, `not-found-or-inaccessible`, `partial-result`, `unreadable-output`, `limit-exceeded`, `cli-failed`, `missing-team-scope` and `unknown-workspace`, or null after a complete read. File sources include draft comparisons and refused lane folders. No field carries a path. |
+| `sources` | `label`, `kind`, `fileLabel` (the file's label from the settings, or null), `position` (the source's place among files of its kind in the repository or tracker declarations of its kind, or null when it is the only one), `state` and a closed `reason`. Tracker states are `ok`, `empty`, `refused`, `refreshing`, `retrying` and `expired`. A `retrying` source carries its last failure reason. Tracker reasons are `disabled`, `refreshing`, `expired`, `cli-missing`, `signed-out`, `rate-limited`, `timeout`, `not-found-or-inaccessible`, `partial-result`, `unreadable-output`, `limit-exceeded`, `cli-failed`, `missing-team-scope` and `unknown-workspace`, or null after a complete read. File sources include draft comparisons and refused lane folders. No field carries a path. |
 | `trackerRead` | Null when no complete tracker result is included. Otherwise `freshForMs` is the remaining lifetime of the earliest-expiring result. `localGoals`, `localLanes` and `localSources` hold the rows for when all tracker reads expire, using the same fields as `goals`, `lanes` and `sources`. Each entry in `updates` carries `freshForMs` for the next deadline, the resulting `sources` rows, and `goals` and `lanes` changes. Each set of changes contains `remove` (row IDs) and `upsert` (replacement or new rows using the same goal or lane fields). |
 | `logRejected` | The count of rejected log lines, or null if the log could not be read. |
 | `limits` | Compass cannot detect health information or confidential text typed into these sources. |
