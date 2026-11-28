@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from compass_runtime import io
 
-from . import grammar, sources
+from . import grammar, sources, tracker_source
 from .grammar import SettingsError, array, boolean, choice, integer, keys, string, strings
 
 if TYPE_CHECKING:
@@ -609,16 +609,17 @@ def _private(value: object) -> tuple[tuple[str, ...], sources.Privacy]:
 @dataclass(frozen=True)
 class _Declarations:
     repos: tuple[sources.Repository, ...]
-    briefs: Briefs
-    log: Log
+    briefs: Briefs | None
+    log: Log | None
     roots: tuple[str, ...]
     privacy: sources.Privacy
-    tracker: Tracker
-    diagrams: Diagrams
-    goals: Goals
-    decisions: Decisions
-    inventory: Inventory
+    tracker: Tracker | None
+    diagrams: Diagrams | None
+    goals: Goals | None
+    decisions: Decisions | None
+    inventory: Inventory | None
     summary_enabled: bool
+    trackers: tuple[tracker_source.Declaration, ...]
 
 
 def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -634,51 +635,65 @@ def _unknown_constant(_text: str) -> object:
     raise SettingsError
 
 
+_LOCAL_FIELDS = "repos tracker briefs log private diagrams goals decisions inventory"
+
+
 def _declarations(data: bytes) -> _Declarations:
     raw = keys(
         json.loads(
             data.decode("utf-8"), object_pairs_hook=_unique, parse_constant=_unknown_constant
         ),
-        "version repos tracker briefs log private diagrams goals decisions inventory",
-        optional="summary",
+        "version",
+        optional=f"{_LOCAL_FIELDS} summary trackers",
     )
     integer(raw["version"], 1)
-    repos = tuple(_repository(item) for item in array(raw["repos"], 32))
+    trackers = tracker_source.declarations(raw["trackers"]) if "trackers" in raw else ()
+    if not trackers and not set(_LOCAL_FIELDS.split()) <= raw.keys():
+        raise SettingsError
+    repos = tuple(_repository(item) for item in array(raw.get("repos", []), 32))
     if len(repos) != len({grammar.folded(repo.label) for repo in repos}):
         raise SettingsError
-    roots, privacy = _private(raw["private"])
+    if any(kind not in raw for repo in repos for kind, _ in repo.files):
+        raise SettingsError
+    roots, privacy = _private(raw.get("private", {"roots": [], "markers": []}))
     summary = boolean(keys(raw.get("summary", {"enabled": False}), "enabled")["enabled"])
+    goals = _goals(raw["goals"]) if "goals" in raw else None
+    if goals is not None and goals.lanes_label is not None and "briefs" not in raw:
+        # Explicit goal membership uses the lane-list grammar declared by the briefs.
+        raise SettingsError
     return _Declarations(
         repos,
-        _briefs(raw["briefs"]),
-        _log(raw["log"]),
+        _briefs(raw["briefs"]) if "briefs" in raw else None,
+        _log(raw["log"]) if "log" in raw else None,
         roots,
         privacy,
-        _tracker(raw["tracker"]),
-        _diagrams(raw["diagrams"]),
-        _goals(raw["goals"]),
-        _decisions(raw["decisions"]),
-        _inventory(raw["inventory"]),
+        _tracker(raw["tracker"]) if "tracker" in raw else None,
+        _diagrams(raw["diagrams"]) if "diagrams" in raw else None,
+        goals,
+        _decisions(raw["decisions"]) if "decisions" in raw else None,
+        _inventory(raw["inventory"]) if "inventory" in raw else None,
         summary,
+        trackers,
     )
 
 
 @dataclass(frozen=True)
 class Settings:
     sources: sources.Sources
-    tracker: Tracker
-    briefs: Briefs
-    log: Log
-    diagrams: Diagrams
-    goals: Goals
-    decisions: Decisions
-    inventory: Inventory
+    tracker: Tracker | None
+    briefs: Briefs | None
+    log: Log | None
+    diagrams: Diagrams | None
+    goals: Goals | None
+    decisions: Decisions | None
+    inventory: Inventory | None
     summary_enabled: bool
     private_roots: int
     private_markers: int
     private_marker_files: int
     # SHA-256 of the admitted settings file's bytes: what the saved summary states are bound to.
     digest: str = ""
+    trackers: tuple[tracker_source.Declaration, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -712,7 +727,6 @@ def _make_settings(
         return Loaded(path, reason=exc.reason)
     policy = io.PlanPathPolicy(ids, declared.privacy.marked, declared.privacy.marker_files)
     brief, log = declared.briefs, declared.log
-    brief_src, log_src = sources.local_sources(brief.folder, log.path, log.max_bytes, policy)
     repos = (
         sources.check_repositories(declared.repos, policy, prefixes)
         if git_enabled
@@ -720,12 +734,12 @@ def _make_settings(
     )
     allowed = sources.Sources(
         repos,
-        brief_src,
-        log_src,
+        sources.local_briefs(brief.folder, policy) if brief else None,
+        sources.local_log(log.path, log.max_bytes, policy) if log else None,
         policy,
-        brief.filename,
-        brief.max_files,
-        log.max_bytes,
+        brief.filename if brief else None,
+        brief.max_files if brief else 0,
+        log.max_bytes if log else 0,
         git_enabled,
     )
     return Loaded(
@@ -744,6 +758,7 @@ def _make_settings(
             len(declared.privacy.markers),
             len(declared.privacy.marker_files),
             digest,
+            declared.trackers,
         ),
     )
 

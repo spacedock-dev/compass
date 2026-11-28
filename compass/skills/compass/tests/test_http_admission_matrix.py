@@ -6,6 +6,8 @@ import ast
 import dataclasses
 import http.client
 import json
+import os
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -641,6 +643,56 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
         for kind in ("lan", "allowed-name", "proxy", "signed-in"):
             with self.subTest(kind=kind):
                 self.assertEqual(403, self.request("GET", "/api/plan", kind))
+
+    @unittest.skipIf(os.name == "nt", "Plan settings require POSIX directory descriptors")
+    def test_plan_tracker_scheduling_follows_direct_admission_and_run_switches(self) -> None:
+        app = self.httpd.application
+        with tempfile.TemporaryDirectory(dir="/tmp") as home:
+            Path(home, "compass-plan.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "trackers": [
+                            {
+                                "provider": "github",
+                                "kind": "milestone",
+                                "repo": "owner/repo",
+                                "number": 7,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = dataclasses.replace(app.config, state_home=str(Path(home).resolve()))
+            with (
+                mock.patch.object(app, "config", config),
+                mock.patch.object(app.state.plan_trackers, "observe") as observe,
+            ):
+                for kind in (
+                    "lan",
+                    "allowed-name",
+                    "proxy",
+                    "signed-in",
+                    "navigation",
+                    "duplicate",
+                ):
+                    with self.subTest(kind=kind):
+                        self.assertEqual(403, self.request("GET", "/api/plan", kind))
+                observe.assert_not_called()
+                self.assertEqual(200, self.request("GET", "/api/plan", "direct"))
+                observe.assert_called_once()
+                self.assertTrue(observe.call_args.kwargs["enabled"])
+                self.assertEqual(1, len(observe.call_args.args[1]))
+                observe.reset_mock()
+                app.config = dataclasses.replace(config, plan_trackers_enabled=False)
+                self.assertEqual(200, self.request("GET", "/api/plan", "direct"))
+                observe.assert_called_once()
+                self.assertFalse(observe.call_args.kwargs["enabled"])
+                observe.reset_mock()
+                app.config = dataclasses.replace(config, plan_enabled=False)
+                self.assertEqual(404, self.request("GET", "/api/plan", "direct"))
+                observe.assert_not_called()
 
     def test_duplicate_host_is_refused_on_every_route(self) -> None:
         self.check_class("duplicate")

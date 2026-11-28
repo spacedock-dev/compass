@@ -1129,6 +1129,7 @@ class PlanLaneStateTest(PlanRepoTestCase):
     def test_no_declared_lane_column_measures_no_lane(self) -> None:
         self.write_sources({"tracker": LANE_TRACKER})
         config = super().configure()
+        assert config.tracker is not None
         self.assertIsNone(config.tracker.lane_column)
         model = readers.read_plan(config).model
         self.assertEqual(len(model.tracker), 7)

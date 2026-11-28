@@ -240,7 +240,7 @@ def _goal_match(line: Line, spec: settings.Goals) -> dict[str, str] | None:
 
 
 def goals(
-    text: str, spec: settings.Goals, briefs: settings.Briefs, source: model.Source
+    text: str, spec: settings.Goals, briefs: settings.Briefs | None, source: model.Source
 ) -> tuple[tuple[model.Goal, tuple[str, ...]], ...]:
     labels = [
         (
@@ -274,7 +274,7 @@ def goals(
         values, used_lines = _labels(block, labels, spec.emphasis)
         expected = (
             _ids(values["lanes"], briefs.separators, briefs.max_files, grammar.is_slug)
-            if "lanes" in values
+            if "lanes" in values and briefs is not None
             else ()
         )
         rows[goal_id] = (

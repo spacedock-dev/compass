@@ -56,6 +56,10 @@ PROCESSES = {
         ("['/bin/ps', '-axo', 'pgid=,stat=']",),
         "Fixed POSIX process table reader; no PATH lookup.",
     ),
+    ("compass_runtime/plan/tracker_cli.py", "TrackerCLI._capture"): (
+        ("[self._executable, *arguments]",),
+        "Rooted tracker CLI with adapter-owned argv and one supervised deadline and output budget.",
+    ),
     ("compass_runtime/supervise.py", "_spawn"): (
         ("command", "command"),
         "Group-containment primitive; callers resolve argv (review obligation).",
@@ -487,7 +491,7 @@ def violations(source: str, module: str) -> list[str]:
             and module not in OPENERS
         ):
             found.append(prefix + "unreviewed HTTP opener")
-        if _process(name):
+        if _process(name) or name == "compass_runtime.supervise.run":
             allowed, _reason = PROCESSES.get(key, ((), ""))
             argv = ast.unparse(node.args[0]) if node.args else ""
             process_counts[key] = process_counts.get(key, 0) + 1
@@ -771,6 +775,11 @@ class SecurityPrimitivesTest(unittest.TestCase):
                         "from pathlib import Path\nimport os\n" + call, "compass_runtime/new.py"
                     )
                 )
+
+    def test_an_unreviewed_supervised_tracker_launch_is_refused(self) -> None:
+        source = "from compass_runtime import supervise\ndef launch():\n supervise.run(['gh'])"
+        found = violations(source, "compass_runtime/plan/tracker_cli.py")
+        self.assertTrue(any("unreviewed process executable" in item for item in found), found)
 
     def test_a_new_injected_subprocess_default_also_requires_review(self) -> None:
         source = "import subprocess\ndef run(runner=subprocess.run):\n runner(['git'])"

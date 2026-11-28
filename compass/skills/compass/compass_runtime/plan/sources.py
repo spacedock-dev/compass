@@ -128,10 +128,10 @@ class BriefNames:
 @dataclass(frozen=True)
 class Sources:
     repositories: tuple[Repository, ...]
-    brief_folder: Source
-    events: Source
+    brief_folder: Source | None
+    events: Source | None
     policy: io.PlanPathPolicy
-    filename: Template
+    filename: Template | None
     max_briefs: int
     max_log_bytes: int
     git_enabled: bool
@@ -211,8 +211,7 @@ class Sources:
                 for repo in self.repositories
                 for kind, path in repo.files
             ),
-            self.brief_folder,
-            self.events,
+            *(source for source in (self.brief_folder, self.events) if source is not None),
         )
 
     def declared_tree_source(self, repo: Repository, kind: str, path: str) -> Source:
@@ -220,10 +219,14 @@ class Sources:
 
     def _brief_name_matches(self, name: str) -> bool:
         return (
-            local_name(name) and self.filename.match(unicodedata.normalize("NFC", name)) is not None
+            self.filename is not None
+            and local_name(name)
+            and self.filename.match(unicodedata.normalize("NFC", name)) is not None
         )
 
     def brief_names(self) -> BriefNames:
+        if self.brief_folder is None:
+            return BriefNames(reason=NOT_NAMED)
         if self.brief_folder.reason:
             return BriefNames(reason=self.brief_folder.reason)
         try:
@@ -237,7 +240,7 @@ class Sources:
     def brief_source(self, name: str) -> Source:
         if not local_name(name):
             return Source("lane brief", name, OUTSIDE_ROOT)
-        if not self._brief_name_matches(name):
+        if self.brief_folder is None or not self._brief_name_matches(name):
             return Source("lane brief", name, NOT_NAMED)
         return Source(
             "lane brief", os.path.join(self.brief_folder.path, name), self.brief_folder.reason
@@ -247,6 +250,8 @@ class Sources:
         return self._read(self.brief_source(name), BRIEF_MAX_BYTES)
 
     def read_log(self) -> PlanRead:
+        if self.events is None:
+            return PlanRead(reason=NOT_NAMED)
         return self._read(self.events, self.max_log_bytes)
 
     def lane_folder(self, path: str) -> tuple[FolderIdentity | None, str | None]:
@@ -461,13 +466,14 @@ def check_repositories(
     return tuple(checked)
 
 
-def local_sources(
-    brief_folder: str, event_file: str, max_log_bytes: int, policy: io.PlanPathPolicy
-) -> tuple[Source, Source]:
-    brief = Source("lane briefs", brief_folder, _directory_reason(brief_folder, policy))
+def local_briefs(folder: str, policy: io.PlanPathPolicy) -> Source:
+    return Source("lane briefs", folder, _directory_reason(folder, policy))
+
+
+def local_log(event_file: str, max_log_bytes: int, policy: io.PlanPathPolicy) -> Source:
     reason = None
     try:
         io.inspect_plan_source(event_file, policy, max_log_bytes)
     except io.PlanReadError as exc:
         reason = exc.reason
-    return brief, Source("event log", event_file, reason)
+    return Source("event log", event_file, reason)

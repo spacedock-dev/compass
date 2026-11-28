@@ -2268,6 +2268,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         application = self.server.application
         if not application.config.plan_enabled:
+            application.state.plan_trackers.invalidate()
             self.send_error(404)
             return
         payload = plan_publish.payload(application.config, application.state)

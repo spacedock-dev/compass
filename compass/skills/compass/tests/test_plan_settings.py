@@ -21,6 +21,11 @@ from .test_project_script_checks import GIT
 FIXTURES = Path(__file__).parent / "fixtures" / "plan"
 
 
+def _declared[T](value: T | None) -> T:
+    assert value is not None
+    return value
+
+
 @unittest.skipIf(os.name == "nt", "Plan reads require POSIX directory descriptors")
 class PlanSettingsTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -65,6 +70,65 @@ class PlanSettingsTest(unittest.TestCase):
         read.assert_not_called()
         self.assertEqual(disabled.reason, "plan is off")
         self.assertIsNone(disabled.settings)
+
+    def test_sparse_tracker_settings_leave_local_sources_undeclared(self) -> None:
+        declaration = {"provider": "github", "kind": "milestone", "repo": "Owner/Repo", "number": 7}
+        sparse = self.loaded({"version": 1, "trackers": [declaration]})
+        self.assertEqual((), sparse.sources.declarations())
+        self.assertIsNone(sparse.briefs)
+        self.assertIsNone(sparse.log)
+        (tracker,) = sparse.trackers
+        self.assertEqual(("github", "milestone", "owner/repo", 7), tracker.key)
+
+        legacy = self.loaded(self.fixture())
+        self.assertEqual((), legacy.trackers)
+        self.assertIsNotNone(legacy.briefs)
+        self.assertIsNotNone(legacy.log)
+        mixed = self.loaded({**self.fixture(), "trackers": [declaration]})
+        self.assertEqual(sparse.trackers, mixed.trackers)
+        self.assertEqual(legacy.sources.declarations(), mixed.sources.declarations())
+
+    def test_sparse_settings_require_the_grammar_for_each_local_source(self) -> None:
+        declaration = {"provider": "github", "kind": "milestone", "repo": "owner/repo", "number": 7}
+        fixture = self.fixture()
+        sparse = {"version": 1, "trackers": [declaration]}
+        log_only = self.loaded({**sparse, "log": fixture["log"]})
+        self.assertEqual(["event log"], [source.kind for source in log_only.sources.declarations()])
+        fixture["repos"][0]["files"] = {"tracker": ["tracker.md"]}
+        self.assertEqual(
+            "malformed settings", self.load({**sparse, "repos": fixture["repos"]}).reason
+        )
+        self.loaded({**sparse, "repos": fixture["repos"], "tracker": fixture["tracker"]})
+
+    def test_invalid_tracker_declarations_share_one_closed_reason(self) -> None:
+        declaration = {"provider": "github", "kind": "milestone", "repo": "owner/repo", "number": 7}
+        invalid = [
+            [],
+            {},
+            [declaration] * 33,
+            [declaration, {**declaration, "repo": "OWNER/REPO"}],
+            [{**declaration, "provider": "test"}],
+            [{**declaration, "kind": "anything"}],
+            [{**declaration, "repo": "--owner/repo"}],
+            [{**declaration, "repo": "owner/\u212a"}],
+            [{**declaration, "repo": "owner/repo.git"}],
+            [{**declaration, "repo": "https://github.com/owner/repo"}],
+            [{**declaration, "repo": "owner/.."}],
+            [{**declaration, "repo": "owner/repo/repo"}],
+            [{**declaration, "number": True}],
+            [{**declaration, "number": 0}],
+            [{**declaration, "number": 10_000_001}],
+            [{**declaration, "argv": ["--help"]}],
+        ]
+        for trackers in invalid:
+            with self.subTest(trackers=trackers):
+                loaded = self.load({**self.fixture(), "trackers": trackers})
+                self.assertIsNone(loaded.settings)
+                self.assertEqual("malformed settings", loaded.reason)
+        self.assertEqual(
+            "malformed settings",
+            self.load({"version": 1, "trackers": [declaration], "command": "gh"}).reason,
+        )
 
     def test_settings_refuse_bad_json_and_bounds_as_a_whole(self) -> None:
         valid = json.dumps(self.fixture()).encode()
@@ -140,7 +204,7 @@ class PlanSettingsTest(unittest.TestCase):
         base = self.loaded(self.fixture())
         self.assertFalse(base.summary_enabled)
         self.assertEqual(
-            base.log.match("2026-11-27T00:00:00.123456789Z ask lane:one Check on this"),
+            _declared(base.log).match("2026-11-27T00:00:00.123456789Z ask lane:one Check on this"),
             {
                 "ts": "2026-11-27T00:00:00.123456789Z",
                 "verb": "ask",
@@ -148,8 +212,10 @@ class PlanSettingsTest(unittest.TestCase):
                 "text": "Check on this",
             },
         )
-        self.assertEqual(base.log.match("answer lane:one"), {"verb": "answer", "id": "lane:one"})
-        self.assertEqual(base.briefs.filename.match("one-lane.md"), {"lane": "one-lane"})
+        self.assertEqual(
+            _declared(base.log).match("answer lane:one"), {"verb": "answer", "id": "lane:one"}
+        )
+        self.assertEqual(_declared(base.briefs).filename.match("one-lane.md"), {"lane": "one-lane"})
         for line in (
             "unknown lane:one",
             "ask lane:one",
@@ -160,38 +226,42 @@ class PlanSettingsTest(unittest.TestCase):
             "2026-11-27T00:00:00.1234567890Z ask lane:one Question",
         ):
             with self.subTest(line=line):
-                self.assertIsNone(base.log.match(line))
+                self.assertIsNone(_declared(base.log).match(line))
         variant = self.loaded(self.fixture("variant"))
         self.assertTrue(variant.summary_enabled)
-        self.assertIsNone(variant.briefs.filename.match("one-lane.md"))
-        self.assertEqual(variant.briefs.filename.match("one-lane.brief.md"), {"lane": "one-lane"})
+        self.assertIsNone(_declared(variant.briefs).filename.match("one-lane.md"))
         self.assertEqual(
-            variant.log.match("2026-11-27T00:00:00.123456+00:00 DONE blue one"),
+            _declared(variant.briefs).filename.match("one-lane.brief.md"), {"lane": "one-lane"}
+        )
+        self.assertEqual(
+            _declared(variant.log).match("2026-11-27T00:00:00.123456+00:00 DONE blue one"),
             {"ts": "2026-11-27T00:00:00.123456+00:00", "verb": "DONE", "lane": "blue", "id": "one"},
         )
-        self.assertIsNone(variant.log.match("2026-11-27T00:00:00Z DONE blue one extra"))
-        self.assertIsNone(variant.log.match("2026-11-27T00:00:00Z ASK blue one"))
+        self.assertIsNone(_declared(variant.log).match("2026-11-27T00:00:00Z DONE blue one extra"))
+        self.assertIsNone(_declared(variant.log).match("2026-11-27T00:00:00Z ASK blue one"))
         self.assertEqual(
-            variant.goals.templates[0].match("P42. A goal"), {"n": "42", "title": "A goal"}
+            _declared(variant.goals).templates[0].match("P42. A goal"),
+            {"n": "42", "title": "A goal"},
         )
-        self.assertEqual(variant.inventory.form, "checklist")
+        self.assertEqual(_declared(variant.inventory).form, "checklist")
 
     def test_stand_in_accepts_both_table_headers_and_numbered_goal_ids(self) -> None:
         doc = self.fixture()
         doc["tracker"]["status_column"] = ["Status", "State"]
         doc["goals"]["templates"][0][1]["kind"] = "numbered_goal_id"
         plan = self.loaded(doc)
-        self.assertEqual(plan.tracker.status_columns, ("Status", "State"))
+        self.assertEqual(_declared(plan.tracker).status_columns, ("Status", "State"))
         self.assertEqual(
-            plan.goals.templates[0].match("- P42a: A goal"), {"id": "P42a", "title": "A goal"}
+            _declared(plan.goals).templates[0].match("- P42a: A goal"),
+            {"id": "P42a", "title": "A goal"},
         )
 
     def test_tracker_lane_column_is_optional_and_distinct(self) -> None:
-        self.assertIsNone(self.loaded(self.fixture()).tracker.lane_column)
-        self.assertIsNone(self.loaded(self.fixture("variant")).tracker.lane_column)
+        self.assertIsNone(_declared(self.loaded(self.fixture()).tracker).lane_column)
+        self.assertIsNone(_declared(self.loaded(self.fixture("variant")).tracker).lane_column)
         declared = self.fixture()
         declared["tracker"]["lane_column"] = "Lane"
-        self.assertEqual(self.loaded(declared).tracker.lane_column, "Lane")
+        self.assertEqual(_declared(self.loaded(declared).tracker).lane_column, "Lane")
         for value in (
             "",
             " ",
@@ -239,12 +309,12 @@ class PlanSettingsTest(unittest.TestCase):
         doc["private"]["roots"] = [str(alias)]
         doc["log"]["path"] = str(log)
         plan = self.loaded(doc)
-        self.assertEqual(plan.sources.events.reason, "private")
+        self.assertEqual(_declared(plan.sources.events).reason, "private")
         with mock.patch.object(io, "open_plan_source") as opened:
             self.assertEqual(plan.sources.read_log().reason, "private")
         opened.assert_not_called()
         doc["log"]["path"] = str(alias / "nested" / "log")
-        self.assertEqual(self.loaded(doc).sources.events.reason, "symbolic link")
+        self.assertEqual(_declared(self.loaded(doc).sources.events).reason, "symbolic link")
 
     def test_case_normalisation_and_platform_alias_preserve_private_identity(self) -> None:
         private = self.root / "Café"
@@ -263,7 +333,7 @@ class PlanSettingsTest(unittest.TestCase):
                 doc["private"]["roots"] = [str(private)]
                 doc["log"]["path"] = str(alias / log.name)
                 expected = "private" if alias.exists() else "missing"
-                self.assertEqual(self.loaded(doc).sources.events.reason, expected)
+                self.assertEqual(_declared(self.loaded(doc).sources.events).reason, expected)
 
     def test_private_guard_is_rechecked_when_a_parent_is_replaced(self) -> None:
         plan = self.loaded(self.fixture())
@@ -289,7 +359,7 @@ class PlanSettingsTest(unittest.TestCase):
                 doc["private"]["markers"] = [{"value": mark, "mode": mode}]
                 doc["briefs"]["folder"] = str(folder)
                 plan = self.loaded(doc)
-                self.assertEqual(plan.sources.brief_folder.reason, "private")
+                self.assertEqual(_declared(plan.sources.brief_folder).reason, "private")
                 with mock.patch.object(io, "open_plan_source") as opened:
                     self.assertEqual(plan.sources.read_brief("one.md").reason, "private")
                 opened.assert_not_called()
@@ -309,7 +379,7 @@ class PlanSettingsTest(unittest.TestCase):
         doc = self.fixture()
         doc["private"]["markers"] = [{"value": "hidden", "mode": "component"}]
         doc["briefs"]["folder"] = str(folder)
-        self.assertEqual(self.loaded(doc).sources.brief_folder.reason, "private")
+        self.assertEqual(_declared(self.loaded(doc).sources.brief_folder).reason, "private")
 
     def test_briefs_only_open_direct_matching_regular_files(self) -> None:
         (self.lanes / "one.md").write_bytes(b"Goal: Fixture")
@@ -609,8 +679,8 @@ class PlanSettingsTest(unittest.TestCase):
                 private.chmod(0o111)
                 self.addCleanup(private.chmod, 0o700)
                 plan = self.loaded(doc).sources
-                self.assertEqual(plan.events.reason, "private")
-                self.assertEqual(plan.brief_folder.reason, "private")
+                self.assertEqual(_declared(plan.events).reason, "private")
+                self.assertEqual(_declared(plan.brief_folder).reason, "private")
                 with mock.patch.object(io, "open_plan_source") as opened:
                     self.assertEqual(plan.read_log().reason, "private")
                     self.assertEqual(plan.brief_names().reason, "private")
@@ -675,7 +745,7 @@ class PlanSettingsTest(unittest.TestCase):
         doc = self.fixture()
         doc["private"]["roots"] = ["/private"]
         doc["log"]["path"] = str(self.log).removeprefix("/private")
-        self.assertEqual(self.loaded(doc).sources.events.reason, "private")
+        self.assertEqual(_declared(self.loaded(doc).sources.events).reason, "private")
 
 
 class LineRuleTest(unittest.TestCase):

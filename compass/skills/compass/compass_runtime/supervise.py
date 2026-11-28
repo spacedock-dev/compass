@@ -545,6 +545,7 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
     text: bool = False,
     encoding: str | None = None,
     timeout: float | None = None,
+    deadline: float | None = None,
     check: bool = False,
     on_spawn: Callable[[Group], None] | None = None,
     before_spawn: Callable[[], None] | None = None,
@@ -560,7 +561,8 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
     passed its size in bytes. Additional files in `output_limits` are watched
     independently, including stderr; they never replace `output_limit`.
     `before_spawn` runs after blocking launch admission, immediately before spawn.
-    It must be cheap and nonblocking: it holds the global spawn lock and must
+    An absolute monotonic deadline refuses a late spawn and caps the wait after spawn.
+    The callback must be cheap and nonblocking: it holds the global spawn lock and must
     not acquire other locks or read external state. Raising prevents launch.
     """
     if subprocess.PIPE in (stdout, stderr):
@@ -568,6 +570,8 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
     with _LOCK:
         if _SHUTDOWN.is_set():
             raise ClosedError("Compass is shutting down")
+        if deadline is not None and time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(command, timeout or 0.0)
         if before_spawn is not None:
             before_spawn()
         group = _spawn(
@@ -581,6 +585,9 @@ def run(  # noqa: PLR0913 (subprocess.run's keywords, one each)
             encoding=encoding,
         )
         _LIVE.add(group)
+    if deadline is not None:
+        remaining = max(deadline - time.monotonic(), 0.0)
+        timeout = remaining if timeout is None else min(timeout, remaining)
     group._limit = output_limit  # noqa: SLF001 (set before any wait reads it)
     group._limits = output_limits  # noqa: SLF001 (set before any wait reads it)
     try:

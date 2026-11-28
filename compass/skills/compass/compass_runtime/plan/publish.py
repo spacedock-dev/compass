@@ -215,14 +215,22 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
 
 
 def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
+    fetch = state.plan_trackers.begin_fetch()
     loaded = settings.load(
         config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
     )
     if loaded.settings is None:
+        state.plan_trackers.observe("", (), enabled=False, fetch=fetch)
         if loaded.reason == settings.NOT_CONFIGURED:
             return {"state": "not-configured"}
         return {"state": "refused", "reason": loaded.reason}
 
+    state.plan_trackers.observe(
+        loaded.settings.digest,
+        loaded.settings.trackers,
+        enabled=config.plan_trackers_enabled,
+        fetch=fetch,
+    )
     timeout = config.git_probe_timeout_sec
     plan = readers.read_plan(
         loaded.settings,
@@ -338,11 +346,14 @@ def _summary_lane(config: settings.Settings, cwd: str) -> model.Lane | None:
     the privacy rules, and its brief read, only when a plain stat puts it in `cwd`'s admitted
     ancestry: the same answer, without walking 200 folders inside the hook's time limit.
     """
+    brief = config.briefs
+    if brief is None:
+        return None
     ancestry = io.plan_session_ancestry(cwd, config.sources.policy)
     if not ancestry:
         return None
     matches: list[model.Lane] = []
-    for slug, folder in config.briefs.lane_folders.items():
+    for slug, folder in brief.lane_folders.items():
         try:
             info = os.stat(folder)
         except OSError:

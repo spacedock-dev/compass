@@ -32,18 +32,18 @@ def _parse_file(text: str, source: model.Source, config: settings.Settings) -> _
     rows: tuple[RepoRow, ...]
     unknown: tuple[model.UnknownStatus, ...] = ()
     match source.kind:
-        case "goals":
+        case "goals" if config.goals is not None:
             rows = tuple(
                 replace(goal, lanes=declared)
                 for goal, declared in markdown.goals(text, config.goals, config.briefs, source)
             )
-        case "decisions":
+        case "decisions" if config.decisions is not None:
             rows = markdown.decisions(text, config.decisions, source)
-        case "inventory":
+        case "inventory" if config.inventory is not None:
             rows, unknown = markdown.inventory(text, config.inventory, source)
-        case "tracker":
+        case "tracker" if config.tracker is not None:
             rows, unknown = markdown.tracker(text, config.tracker, source)
-        case "diagrams":
+        case "diagrams" if config.diagrams is not None:
             rows = markdown.diagrams(text, config.diagrams, source)
         case _:
             rows = ()
@@ -225,8 +225,11 @@ def _read_repository(
 
 
 def _read_brief(name: str, config: settings.Settings) -> tuple[model.Source, model.Lane | None]:
+    brief = config.briefs
     declaration = config.sources.brief_source(name)
-    fields = config.briefs.filename.match(unicodedata.normalize("NFC", name))
+    if brief is None:
+        return model.Source(declaration.kind, "", declaration.path, reason=sources.NOT_NAMED), None
+    fields = brief.filename.match(unicodedata.normalize("NFC", name))
     if fields is None:
         return model.Source(declaration.kind, "", declaration.path, reason=sources.NOT_NAMED), None
     slug = fields["lane"]
@@ -239,17 +242,19 @@ def _read_brief(name: str, config: settings.Settings) -> tuple[model.Source, mod
     if result.data is None:
         return replace(source, reason=result.reason), None
     try:
-        goal, done, serves = markdown.brief(markdown.decode(result.data), config.briefs)
+        goal, done, serves = markdown.brief(markdown.decode(result.data), brief)
     except markdown.ParseError as exc:
         return replace(source, reason=exc.reason), None
-    folder = config.briefs.lane_folders.get(slug)
+    folder = brief.lane_folders.get(slug)
     identity, reason = config.sources.lane_folder(folder) if folder is not None else (None, None)
     return source, model.Lane(slug, goal, done, serves, source, identity, reason)
 
 
 def _read_briefs(config: settings.Settings) -> tuple[list[model.Source], tuple[model.Lane, ...]]:
-    names = config.sources.brief_names()
     folder = config.sources.brief_folder
+    if folder is None:
+        return [], ()
+    names = config.sources.brief_names()
     states = [model.Source(folder.kind, "Lane briefs", folder.path, reason=names.reason)]
     lanes: list[model.Lane] = []
     # Two raw filenames can normalise to the same declared lane. Refuse both before opening either.
@@ -290,26 +295,38 @@ def _event_fields(raw: bytes, spec: settings.Log) -> dict[str, str] | None:
 
 def _read_log(
     config: settings.Settings, lane_names: set[str], *, only: str | None = None
-) -> tuple[model.Source, tuple[model.Ask, ...], dict[str, model.ItemDate], int | None]:
+) -> tuple[model.Source | None, tuple[model.Ask, ...], dict[str, model.ItemDate], int | None]:
     """Open asks in log order. With `only`, other lanes' asks are kept as keys, not rows.
 
     Every line is still matched, because a later answer or a repeated key anywhere in the log
     decides whether an ask is open.
     """
-    result = config.sources.read_log()
-    declared = config.sources.events
     spec = config.log
-    source = model.Source(declared.kind, spec.label, declared.path, reason=result.reason)
+    if spec is None:
+        return None, (), {}, None
+    result = config.sources.read_log()
+    source = model.Source("event log", spec.label, spec.path, reason=result.reason)
     if result.data is None:
         return source, (), {}, None
 
+    asks, lane_dates, rejected = _log_rows(result.data, spec, source.label, lane_names, only)
+    return source, asks, lane_dates, rejected
+
+
+def _log_rows(
+    data: bytes,
+    spec: settings.Log,
+    label: str,
+    lane_names: set[str],
+    only: str | None,
+) -> tuple[tuple[model.Ask, ...], dict[str, model.ItemDate], int]:
     seen: set[str] = set()
     # Another lane's open ask under `only` is held as None: its key still pairs with an answer.
     pending: dict[str, model.Ask | None] = {}
     lane_dates: dict[str, model.ItemDate] = {}
     rejected = 0
     # A CR or an invalid byte poisons its physical LF record, including text after that byte.
-    for raw in result.data.removesuffix(b"\n").split(b"\n") if result.data else ():
+    for raw in data.removesuffix(b"\n").split(b"\n") if data else ():
         fields = _event_fields(raw, spec)
         if fields is None:
             rejected += 1
@@ -323,7 +340,7 @@ def _read_log(
                 rejected += 1
                 continue
             pending[key] = (
-                model.Ask(fields["id"], fields.get("text"), timestamp, source.label, lane)
+                model.Ask(fields["id"], fields.get("text"), timestamp, label, lane)
                 if only is None or lane == only
                 else None
             )
@@ -338,7 +355,7 @@ def _read_log(
                 lane_dates.pop(lane, None)
             else:
                 lane_dates[lane] = model.ItemDate("from the log", timestamp)
-    return source, tuple(ask for ask in pending.values() if ask is not None), lane_dates, rejected
+    return tuple(ask for ask in pending.values() if ask is not None), lane_dates, rejected
 
 
 def lane_briefs(config: settings.Settings, slug: str) -> tuple[model.Lane, ...]:
@@ -347,12 +364,15 @@ def lane_briefs(config: settings.Settings, slug: str) -> tuple[model.Lane, ...]:
     Names are listed and checked exactly as `_read_briefs` does, so a lane `read_plan` would not
     publish is not returned here either.
     """
+    brief = config.briefs
+    if brief is None:
+        return ()
     names = config.sources.brief_names().names
     normalised = Counter(unicodedata.normalize("NFC", name) for name in names)
     lanes = []
     for name in names:
         key = unicodedata.normalize("NFC", name)
-        fields = config.briefs.filename.match(key)
+        fields = brief.filename.match(key)
         if normalised[key] > 1 or fields is None or fields["lane"] != slug:
             continue
         _, lane = _read_brief(name, config)
@@ -394,7 +414,8 @@ def _lane_states(files: list[_FileRows], config: settings.Settings) -> dict[str,
     trackers = [file for file in files if file.source.kind == "tracker" and not file.source.draft]
     # An unread tracker file could hold a second row for any lane, so nothing is measured.
     if (
-        config.tracker.lane_column is None
+        config.tracker is None
+        or config.tracker.lane_column is None
         or not trackers
         or any(file.source.reason is not None for file in trackers)
     ):
@@ -436,7 +457,8 @@ def read_plan(
     lane_states = _lane_states(files, config)
     lanes = tuple(replace(lane, state=lane_states.get(lane.slug)) for lane in lanes)
     compared = (
-        config.goals.lanes_label is not None
+        config.goals is not None
+        and config.goals.lanes_label is not None
         and any(s.kind == "goals" and not s.draft for s in states)
         and all(
             source.reason is None
@@ -465,7 +487,7 @@ def read_plan(
             tuple(row for row in rows if isinstance(row, model.Diagram)),
             lanes,
             asks,
-            (*states, *brief_states, *refused_folders, log_source),
+            (*states, *brief_states, *refused_folders, *((log_source,) if log_source else ())),
             rejected,
         ),
         model.PlanDiagnostics(
