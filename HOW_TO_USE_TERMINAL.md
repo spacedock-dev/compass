@@ -364,7 +364,7 @@ with `--lane hull`. With no flag, `COMPASS_LANE` takes precedence over the folde
 The preview works with the dashboard down. Lane state and progress show what a dashboard last
 saved, and read "not measured" when no dashboard has read the plan in the last 24 hours or since the
 settings changed. Empty
-output means the [summary is off](HOW_TO_USE.md#give-a-new-session-its-lane-summary), the plan
+output means the [summary is off](docs/how-to/05-plan-board.md#optional-give-each-new-session-its-lane-summary), the plan
 could not be read, or Compass could not select a single lane. `--plan-slice` runs on its own:
 with any option but `--lane`, `--no-plan` or `--no-update-check`, such as `--stop` or `--port`,
 it stops with a usage error. Codex can act on hook context without quoting it.
@@ -408,7 +408,7 @@ board to do these things:
 - choose Resume AI use, or turn summaries back on
 - read the Plan page: goals and their lanes, open asks, product decisions, tracker items and
   diagrams from your plan files. `--diagnose` reports refused plan settings and sources;
-  [set up the plan board](HOW_TO_USE.md#set-up-the-plan-board) says how
+  [set up the plan board](docs/how-to/05-plan-board.md) says how
 
 [How it works](docs/how-it-works.md#finding-your-way-around) tours the board.
 
