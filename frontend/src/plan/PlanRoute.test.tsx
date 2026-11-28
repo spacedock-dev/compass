@@ -4,6 +4,7 @@ import { describe, it, vi } from 'vitest';
 import {
   crowdedSourceRows,
   crowdedSources,
+  githubPlan,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -511,5 +512,87 @@ describe('the Plan destination follows the published plan', () => {
     await act(async () => page.clock.advance(FALLBACK_POLL_MS));
     expect(primary().queryByRole('link', { name: 'Plan' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan' })).toBeNull();
+  });
+});
+
+describe('tracker plans on Plan', () => {
+  it('shows a due date, a complete lane count and its linked session', async () => {
+    const page = mountPlan(githubPlan('ok'));
+    await page.settle();
+    const goal = within(screen.getByRole('article', { name: 'Open the new library' }));
+    expect(goal.getByText(/Due /)).toHaveAttribute('datetime', '2026-12-08');
+    expect(goal.getByText('1 of 1 lane is done')).toBeVisible();
+    expect(goal.getByRole('link', { name: /Review the shelf layout/ })).toBeVisible();
+  });
+
+  it('distinguishes a complete empty read from missing measurements', async () => {
+    const page = mountPlan(githubPlan('empty'));
+    await page.settle();
+    expect(screen.getByText('No lanes serve this goal yet')).toBeVisible();
+    expect(screen.getByText('No lanes found')).toBeVisible();
+  });
+
+  it.each([
+    ['refused', 'Sign in to GitHub with your GitHub CLI.'],
+    ['refreshing', 'Reading GitHub…'],
+    ['expired', 'The last read is out of date.'],
+  ] as const)('says progress is not measured when the source is %s', async (state, reason) => {
+    const page = mountPlan(githubPlan(state));
+    await page.settle();
+    expect(screen.getByText(reason)).toBeVisible();
+    expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
+    expect(screen.queryByText('No goals are listed.')).toBeNull();
+  });
+
+  it('keeps measured rows visible without reporting a count during a partial read', async () => {
+    const remote = githubPlan('ok');
+    const page = mountPlan({
+      ...remote,
+      sources: [
+        ...remote.sources,
+        {
+          ...githubPlan('refused').sources[0],
+          kind: 'github project',
+          label: 'GitHub project',
+          reason: 'partial-result',
+        },
+      ],
+    });
+    await page.settle();
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    expect(screen.getByText('GitHub returned an incomplete read.')).toBeVisible();
+    expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
+    expect(screen.queryByText('1 of 1 lane is done')).toBeNull();
+  });
+
+  it('withdraws tracker rows and counts after a failed refresh while keeping local rows', async () => {
+    const remote = githubPlan('ok');
+    const page = mountPlan({
+      ...remote,
+      goals: [...readyPlan.goals, ...remote.goals],
+      lanes: [...readyPlan.lanes, ...remote.lanes],
+      trackerRead: {
+        ...remote.trackerRead,
+        localGoals: readyPlan.goals,
+        localLanes: readyPlan.lanes,
+      },
+    });
+    await page.settle();
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    page.getResponses['/api/plan'] = new Response(null, { status: 503 });
+    await act(async () => page.clock.advance(FALLBACK_POLL_MS));
+    expect(screen.queryByText('Put up the welcome sign')).toBeNull();
+    expect(screen.getByText('Set up the pickup shelf')).toBeVisible();
+    expect(screen.queryAllByText(/ of .* lanes? (?:is|are) done/)).toHaveLength(0);
+  });
+
+  it('withdraws a tracker read when its freshness time runs out', async () => {
+    const remote = githubPlan('ok');
+    const page = mountPlan({ ...remote, trackerRead: { ...remote.trackerRead, freshForMs: 100 } });
+    await page.settle();
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    await act(async () => page.clock.advance(100));
+    expect(screen.queryByText('Put up the welcome sign')).toBeNull();
+    expect(screen.getByText('The last read is out of date.')).toBeVisible();
   });
 });

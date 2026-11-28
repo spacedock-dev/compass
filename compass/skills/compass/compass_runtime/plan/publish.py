@@ -6,17 +6,20 @@ import contextlib
 import json
 import os
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
+from dataclasses import replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from compass_runtime import io, records
 
-from . import grammar, markdown, model, readers, settings, summary_states
+from . import grammar, markdown, model, readers, settings, summary_states, tracker_cli
 
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
+
+    from .tracker_refresh import Observation, TrackerRefresh
 
 PLAN_FIELDS: Final = (
     "state",
@@ -29,12 +32,13 @@ PLAN_FIELDS: Final = (
     "diagrams",
     "sources",
     "logRejected",
+    "trackerRead",
     "limits",
 )
 # Published plan fields in SECURITY.md own these wire shapes.
 PLAN_ITEM_FIELDS: Final = MappingProxyType(
     {
-        "goals": frozenset({"id", "title", "doneWhen", "lanes", "proposal"}),
+        "goals": frozenset({"id", "title", "doneWhen", "lanes", "proposal", "date"}),
         "lanes": frozenset({"id", "title", "doneWhen", "state", "date", "sessions"}),
         "asks": frozenset({"id", "text", "at", "timeLabel", "source", "lane"}),
         "asks.lane": frozenset({"id", "title"}),
@@ -42,6 +46,7 @@ PLAN_ITEM_FIELDS: Final = MappingProxyType(
         "tracker": frozenset({"title", "group", "source", "date"}),
         "inventory": frozenset({"title", "group", "source", "date"}),
         "diagrams": frozenset({"title", "caption", "kind", "source", "date", "linkHosts", "body"}),
+        "trackerRead": frozenset({"freshForMs", "localGoals", "localLanes"}),
         "date": frozenset({"label", "at"}),
         "sources": frozenset({"label", "kind", "fileLabel", "position", "state", "reason"}),
     }
@@ -156,32 +161,44 @@ def _lane_sessions(
     return matched
 
 
+def _goals(goals: tuple[model.Goal, ...]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": _text(goal.id),
+            "title": _text(goal.title),
+            "doneWhen": _text(goal.done),
+            "lanes": [slug for slug in goal.lanes if grammar.is_safe_lane_id(slug)],
+            "proposal": "Proposed, not merged" if goal.origin.source.draft else None,
+            "date": _date(goal.origin.date)
+            if goal.origin.date and goal.origin.date.label == "Due"
+            else None,
+        }
+        for goal in goals
+    ]
+
+
+def _lanes(lanes: tuple[model.Lane, ...], matched: dict[str, list[str]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": lane.slug,
+            "title": _text(lane.goal) or lane.slug,
+            "doneWhen": _text(lane.done),
+            "state": lane.state if lane.state in LANE_STATES else None,
+            "date": _date(lane.date),
+            "sessions": matched.get(lane.slug),
+        }
+        for lane in lanes
+        if grammar.is_safe_lane_id(lane.slug)
+    ]
+
+
 def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, Any]:
-    lanes = tuple(lane for lane in plan.lanes if grammar.is_safe_lane_id(lane.slug))
-    lane_titles = {lane.slug: _text(lane.goal) or lane.slug for lane in lanes}
+    lanes = _lanes(plan.lanes, matched)
+    lane_titles = {row["id"]: row["title"] for row in lanes}
     return {
         "state": "ready",
-        "goals": [
-            {
-                "id": _text(goal.id),
-                "title": _text(goal.title),
-                "doneWhen": _text(goal.done),
-                "lanes": [slug for slug in goal.lanes if grammar.is_safe_lane_id(slug)],
-                "proposal": "Proposed, not merged" if goal.origin.source.draft else None,
-            }
-            for goal in plan.goals
-        ],
-        "lanes": [
-            {
-                "id": lane.slug,
-                "title": lane_titles[lane.slug],
-                "doneWhen": _text(lane.done),
-                "state": lane.state if lane.state in LANE_STATES else None,
-                "date": _date(lane.date),
-                "sessions": matched.get(lane.slug),
-            }
-            for lane in lanes
-        ],
+        "goals": _goals(plan.goals),
+        "lanes": lanes,
         "asks": [
             {
                 "id": _text(ask.id),
@@ -210,8 +227,101 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
         "diagrams": [_diagram(diagram) for diagram in plan.diagrams],
         "sources": [_source(source) for source in plan.sources],
         "logRejected": plan.log_rejected,
+        "trackerRead": None,
         "limits": LIMITS,
     }
+
+
+def _merge_tracker_rows(
+    local: model.PlanModel, data: list[model.TrackerData], config: settings.Settings
+) -> model.PlanModel:
+    goals = list(local.goals)
+    lanes = {lane.slug: lane for lane in local.lanes}
+    explicit: dict[str, set[str | None]] = {
+        lane.slug: {lane.state} for lane in local.lanes if lane.state is not None
+    }
+    ordinary: dict[str, set[str | None]] = defaultdict(set)
+    remote_slugs: set[str] = set()
+    for read in data:
+        goals.extend(read.goals)
+        for lane in read.lanes:
+            remote_slugs.add(lane.slug)
+            current = lanes.setdefault(lane.slug, lane)
+            lanes[lane.slug] = replace(
+                current,
+                serves=tuple(dict.fromkeys((*current.serves, *lane.serves))),
+                date=current.date or lane.date,
+            )
+            if lane.slug in read.project_status_lanes:
+                explicit.setdefault(lane.slug, set()).add(lane.state)
+            elif lane.state is not None:
+                ordinary[lane.slug].add(lane.state)
+
+    brief_folders = config.briefs.lane_folders if config.briefs is not None else {}
+    for slug in sorted(remote_slugs):
+        lane = lanes[slug]
+        states = explicit.get(slug) or ordinary[slug]
+        folder = config.lane_folders.get(slug) or brief_folders.get(slug)
+        if folder is not None and lane.folder is None and lane.folder_reason is None:
+            identity, reason = config.sources.lane_folder(folder)
+            lane = replace(lane, folder=identity, folder_reason=reason)
+        lanes[slug] = replace(lane, state=next(iter(states)) if len(states) == 1 else None)
+
+    # Both row types carry membership. Preserve local rows with duplicate goal IDs, which
+    # deliberately have their own lane lists, and add any new edges explicitly named by lanes.
+    members: dict[str, list[str]] = defaultdict(list)
+    for lane in lanes.values():
+        for goal_id in lane.serves:
+            members[goal_id].append(lane.slug)
+    goals = [
+        replace(goal, lanes=tuple(dict.fromkeys((*goal.lanes, *members[goal.id]))))
+        for goal in goals
+    ]
+    return replace(local, goals=tuple(goals), lanes=tuple(lanes.values()))
+
+
+_TRACKER_LABELS: Final = MappingProxyType(
+    {
+        "milestone": "GitHub milestone",
+        "parent-issue": "GitHub parent issue",
+        "project": "GitHub project",
+    }
+)
+
+
+def _tracker_projection(
+    observations: tuple[Observation, ...], settings: settings.Settings, refresh: TrackerRefresh
+) -> tuple[list[dict[str, Any]], list[model.TrackerData], int | None]:
+    kinds = Counter(source.kind for source in settings.trackers)
+    positions: Counter[str] = Counter()
+    sources = []
+    data = []
+    lifetimes = []
+    for declaration, observation in zip(settings.trackers, observations, strict=True):
+        kind = declaration.kind
+        positions[kind] += 1
+        lifetime = refresh.remaining_ms(observation)
+        reason: str | None = observation.reason or tracker_cli.Reason.CLI_FAILED
+        if observation.data is not None and lifetime:
+            data.append(observation.data)
+            lifetimes.append(lifetime)
+            status = "ok" if observation.data.lanes else "empty"
+            reason = None
+        elif observation.data is not None:
+            status, reason = "expired", "expired"
+        else:
+            status = "refreshing" if reason == tracker_cli.Reason.REFRESHING else "refused"
+        sources.append(
+            {
+                "label": _TRACKER_LABELS[kind],
+                "kind": f"github {kind}",
+                "fileLabel": None,
+                "position": positions[kind] if kinds[kind] > 1 else None,
+                "state": status,
+                "reason": reason,
+            }
+        )
+    return sources, data, min(lifetimes, default=None)
 
 
 def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
@@ -226,7 +336,7 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
                 return {"state": "not-configured"}
             return {"state": "refused", "reason": loaded.reason}
 
-        trackers.observe(
+        observations = trackers.observe(
             loaded.settings.digest,
             loaded.settings.trackers,
             enabled=config.plan_trackers_enabled,
@@ -253,6 +363,32 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
             summary_states.save(
                 config.state_home, projected, now=time.time(), settings=loaded.settings.digest
             )
+    tracker_sources, data, _ = _tracker_projection(observations, loaded.settings, trackers)
+    while data:
+        merged = _merge_tracker_rows(plan, data, loaded.settings)
+        goals = _goals(merged.goals)
+        lanes = _lanes(
+            merged.lanes,
+            _lane_sessions(merged.lanes, config, state, loaded.settings.sources.policy),
+        )
+        # Folder admission and the session join can finish after a read's deadline. Each retry
+        # drops at least one observation, so it cannot run again when the clock has caught up.
+        tracker_sources, still_fresh, lifetime = _tracker_projection(
+            observations, loaded.settings, trackers
+        )
+        if len(still_fresh) == len(data):
+            projected.update(
+                goals=goals,
+                lanes=lanes,
+                trackerRead={
+                    "freshForMs": lifetime,
+                    "localGoals": projected["goals"],
+                    "localLanes": projected["lanes"],
+                },
+            )
+            break
+        data = still_fresh
+    projected["sources"].extend(tracker_sources)
     return projected
 
 

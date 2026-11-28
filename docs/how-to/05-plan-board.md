@@ -1,7 +1,8 @@
 # Set up the plan board
 
 The Plan page shows your goals, the lanes of work serving each one, and the questions waiting on
-you. Compass reads them from plan files you already keep in Git. You need Compass 3.3.0 or newer.
+you. Compass reads them from GitHub, or from plan files you already keep in Git. Support for more
+trackers is coming in a later release.
 
 You write one settings file, `compass-plan.json`. Most people have their coding agent write it.
 
@@ -13,9 +14,10 @@ Paste this into a Claude Code or Codex session:
 Please set up the Compass plan board for me.
 
 1. Read https://raw.githubusercontent.com/spacedock-dev/compass/main/docs/how-to/05-plan-board.md
-   and follow "Set it up yourself".
-2. Ask me where my plan files live, and read them to learn their formats. Use only what you find
-   there or what I tell you. If a format is unclear, ask.
+   and follow the steps for GitHub or plan files.
+2. Ask me which GitHub milestone, parent issue or project to read. If I use files, ask where
+   they live and read them to learn their formats. Ask about anything you cannot tell from the
+   sources I gave you.
 3. Show me the compass-plan.json you plan to write before saving it. It is the only file you may
    create or change. Don't edit, move or commit my plan files or anything in my repositories.
 4. Run --diagnose and fix the settings until nothing I expect is refused.
@@ -25,7 +27,72 @@ Please set up the Compass plan board for me.
 When you're done, tell me what you set up and anything Compass refused.
 ```
 
+## Set up a GitHub plan
+
+1. **Check your login.** Install the GitHub CLI and run `gh auth status --hostname github.com`.
+   Sign in to GitHub.com with `gh auth login --hostname github.com` if needed.
+2. **Choose your goals.** Copy an example below into `compass-plan.json` in your Compass home
+   (`~/.compass` unless you set `COMPASS_HOME`). Replace the example names and numbers.
+3. **Check the settings.** Run `spacedock-compass --diagnose` and check **Plan settings**.
+   Diagnosis checks the declaration and whether Compass can find the CLI. For a plugin install,
+   [find the launcher](../../HOW_TO_USE.md#find-the-copy-your-commands-will-run).
+4. **Open Plan.** On the Compass computer, choose **Plan** from the page links or from **Menu**
+   on a narrow screen. Check **Sources** for the read state and wait for the next refresh if
+   Compass is still reading GitHub.
+
+A milestone uses the number in its URL. Its issues become lanes and its due date appears on
+the goal when set.
+
+```json
+{
+  "version": 1,
+  "trackers": [{"provider": "github", "kind": "milestone", "repo": "owner/repo", "number": 7}]
+}
+```
+
+A parent issue uses its issue number. Its direct sub-issues become lanes.
+
+```json
+{
+  "version": 1,
+  "trackers": [{"provider": "github", "kind": "parent-issue", "repo": "owner/repo", "number": 42}]
+}
+```
+
+A GitHub project uses its project number. Run
+`gh project field-list <n> --owner <owner> --format json` and copy the `id` for the **Status**
+field into `status_field`. Match the option names your project uses in `words`.
+
+```json
+{
+  "version": 1,
+  "trackers": [{
+    "provider": "github",
+    "kind": "project",
+    "owner": "owner",
+    "number": 3,
+    "status_field": "PVTSSF_example",
+    "words": {"Todo": "not_started", "In Progress": "running", "Done": "done"}
+  }]
+}
+```
+
+- You can put several sources in `trackers` or add it to existing file settings. An issue can
+  serve several goals.
+- For a project, your stored login needs access to that project and the scope described in
+  `gh project --help`.
+- Compass uses your stored GitHub CLI login. See
+  [what the tracker read sends](../../SECURITY.md#plan-reads-from-github).
+- A read with no matching issues says **No lanes found**. When a source is unavailable,
+  progress reads **not measured**. Waiting on you still shows the asks and waiting sessions
+  Compass has from local records.
+- Start Compass with `--no-plan-trackers` to stop these reads for the run, or remove `trackers`
+  and any top-level `lane_folders` from the settings. If the settings contain only GitHub
+  sources, remove the settings file to turn off Plan.
+
 ## Set it up yourself
+
+Use these steps if you keep your plan in files.
 
 1. **Copy the example.** Save the [example settings](../../compass/skills/compass/tests/fixtures/plan/stand-in.json)
    as `compass-plan.json` in your Compass home: `~/.compass`, or the folder in `COMPASS_HOME`.
@@ -53,7 +120,7 @@ With the standalone program it is `spacedock-compass --diagnose`.
 
 - Put `compass-plan.json` in your Compass home, outside every Git repository.
 - Save it as a regular file you own.
-- Keep every top-level section from the example, even for a kind of file you don't use.
+- For a file plan without GitHub, keep every top-level section from the file example.
 - It must be plain JSON. Comments and unknown keys are refused.
 
 ### Files to read
@@ -97,6 +164,10 @@ none of your declared headers is ignored.
 
 ### Linking sessions to lanes
 
+For GitHub lanes, put `lane_folders` at the top level. Ask your agent to read the lane's
+stable `id` from the local Plan response (`GET /api/plan`) and use it as the key. The ID stays
+the same when the issue title changes.
+
 Under `briefs.lane_folders`, map each lane's brief slug to the folder its sessions run in:
 
 ```json
@@ -121,7 +192,7 @@ Sessions started in that folder then appear under the lane.
 ### When --diagnose refuses something
 
 The **Plan settings** section of `--diagnose` names each refused source, its kind and the reason.
-It includes missing or unreadable draft sources and refused lane folders.
+For file plans, it includes missing or unreadable draft sources and refused lane folders.
 
 | Refusal | Fix |
 |---|---|
@@ -136,7 +207,7 @@ the checkout, so Compass can check them.
 
 ## Optional: give each new session its lane summary
 
-With the summary on, a Claude Code or Codex session started in a lane's folder begins with that
+The summary uses file-based plan data. With the summary on, a Claude Code or Codex session started in a lane's folder begins with that
 lane's goal, state and progress in its context.
 
 That text goes to the session's model provider and is saved in the harness's session files. Read

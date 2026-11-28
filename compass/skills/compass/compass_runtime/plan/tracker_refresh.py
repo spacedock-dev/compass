@@ -103,6 +103,11 @@ class TrackerRefresh:
             self._start_waiting()
             return result
 
+    def remaining_ms(self, observation: Observation) -> int:
+        if observation.observed_at is None:
+            return 0
+        return max(0, int((observation.observed_at + FRESH_SECONDS - self._clock()) * 1000))
+
     def _observe_source(self, source: Declaration, enabled: bool, now: float) -> Observation:
         if not enabled or source.provider not in self._adapters:
             return Observation(reason=tracker_cli.Reason.DISABLED)

@@ -34,6 +34,7 @@ from compass_runtime import (
 from compass_runtime import config as runtime_config
 from compass_runtime import events as runtime_events
 from compass_runtime import transcripts as runtime_transcripts
+from compass_runtime.plan import tracker_source
 
 from .decision_citations import citation_errors
 from .support import (
@@ -46,6 +47,43 @@ from .test_terminal_sessions import PAYLOAD as SESSIONS_PAYLOAD
 if TYPE_CHECKING:
     from collections.abc import Iterator
 from .test_first_layer_words import PUBLIC_TRACKER_TOKENS, _glossary_words
+
+
+class TrackerPlanGuideTest(unittest.TestCase):
+    def test_a_person_can_copy_github_settings_and_find_the_off_switches(self) -> None:
+        root = SERVER_PATH.parents[3]
+        guide = (root / "docs/how-to/05-plan-board.md").read_text(encoding="utf-8")
+        tracker_setup = guide.split("## Set up a GitHub plan", 1)[1].split(
+            "## Set it up yourself", 1
+        )[0]
+        examples = [
+            json.loads(block)
+            for block in re.findall(r"```json\n(.*?)\n```", tracker_setup, re.DOTALL)
+        ]
+        self.assertEqual(
+            [
+                declaration.kind
+                for example in examples
+                for declaration in tracker_source.declarations(example["trackers"])
+            ],
+            ["milestone", "parent-issue", "project"],
+        )
+        self.assertIn("gh project field-list <n> --owner <owner> --format json", tracker_setup)
+        security = (root / "SECURITY.md").read_text(encoding="utf-8")
+        disclosure = next(
+            line for line in security.splitlines() if line.startswith("| Plan tracker reads |")
+        )
+        for detail in (
+            "github.com",
+            "stored",
+            "30 seconds",
+            "--no-plan",
+            "--no-plan-trackers",
+            "declaration",
+        ):
+            self.assertIn(detail, disclosure)
+        for option in ("--no-plan", "--no-plan-trackers"):
+            self.assertIn(option, guide)
 
 
 class CommandManualOptionsTest(unittest.TestCase):

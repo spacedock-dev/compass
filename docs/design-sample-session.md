@@ -441,6 +441,10 @@ The review fixes for that list package at 2,522,607 bytes on Node 26.12.1 and pn
 bytes, for counting refused lane briefs that have no lane name by reason. The bound follows the
 measured package. The fixture bound stays at 250,000 bytes.
 
+GitHub plans package at 2,527,047 bytes on Node 26.12.1 and pnpm 12.19.0, up 4,440 bytes.
+The page adds tracker source states, due dates and expiration of tracker rows in the browser.
+The page bound follows the measured package, and the fixture bound stays at 250,000 bytes.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

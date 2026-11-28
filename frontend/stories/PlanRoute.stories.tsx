@@ -10,6 +10,7 @@ import { createFakeClock, createFakeEnvironment } from '../src/transport/testing
 import {
   crowdedSourceRows,
   crowdedSources,
+  githubPlan,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -174,7 +175,7 @@ export const PublishedPlanOnPhone: Story = {
 };
 
 // The layout floor: the shell keeps 8 px either side, and Plan keeps its 16 px gutter inside the page.
-export const PublishedPlanAt320: Story = {
+export const PublishedPlanAt320 = {
   args: { plan: readyPlan },
   parameters: {
     viewport: {
@@ -194,7 +195,7 @@ export const PublishedPlanAt320: Story = {
       await expect(report.page).toBeLessThanOrEqual(report.client);
       await expect(report.wide).toEqual([]);
     }),
-};
+} satisfies Story;
 
 /* Three inventory files in one repository, a draft branch that does not exist yet and eight lane
    briefs: each file is told apart without a path, the draft is one row, and the briefs that were
@@ -323,3 +324,55 @@ export const InertDiagram: Story = {
     // The Storybook offline guard also fails this story on any external request attempt.
   },
 };
+
+export const GitHubMilestone: Story = {
+  args: { plan: githubPlan('ok') },
+  parameters: PublishedPlanAt320.parameters,
+  globals: PublishedPlanAt320.globals,
+  play: async ({ canvasElement }) =>
+    atPageWidth(320, async () => {
+      const canvas = within(canvasElement);
+      const goal = within(await canvas.findByRole('article', { name: 'Open the new library' }));
+      await expect(goal.getByText(/Due /)).toHaveAttribute('datetime', '2026-12-08');
+      await expect(goal.getByText('1 of 1 lane is done')).toBeVisible();
+      await expect(goal.getByRole('link', { name: /Review the shelf layout/ })).toBeVisible();
+      const sources = within(canvas.getByRole('region', { name: 'Sources' }));
+      await expect(sources.getByText('GitHub milestone')).toBeVisible();
+      await expect(sources.getByText('Read', { exact: true })).toBeVisible();
+      const report = overflowReport();
+      await expect(report.page).toBeLessThanOrEqual(report.client);
+      await expect(report.wide).toEqual([]);
+    }),
+};
+
+export const EmptyGitHubMilestone: Story = {
+  args: { plan: githubPlan('empty') },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText('No lanes serve this goal yet')).toBeVisible();
+    await expect(canvas.getByText('No lanes found')).toBeVisible();
+    await expect(canvas.queryByText('Lane progress is not measured.')).toBeNull();
+  },
+};
+
+function unmeasuredGitHub(state: 'refused' | 'refreshing' | 'expired', reason: string): Story {
+  return {
+    args: { plan: githubPlan(state) },
+    play: async ({ canvasElement }) => {
+      const canvas = within(canvasElement);
+      const sources = within(await canvas.findByRole('region', { name: 'Sources' }));
+      await expect(sources.getByText('GitHub milestone')).toBeVisible();
+      await expect(sources.getByText(reason)).toBeVisible();
+      await expect(canvas.getByText('Lane progress is not measured.')).toBeVisible();
+      await expect(canvas.queryByText('No lanes found')).toBeNull();
+      await expect(canvas.queryByText('Open the new library')).toBeNull();
+    },
+  };
+}
+
+export const SignedOutOfGitHub = unmeasuredGitHub(
+  'refused',
+  'Sign in to GitHub with your GitHub CLI.',
+);
+export const ReadingGitHub = unmeasuredGitHub('refreshing', 'Reading GitHub…');
+export const ExpiredGitHubRead = unmeasuredGitHub('expired', 'The last read is out of date.');

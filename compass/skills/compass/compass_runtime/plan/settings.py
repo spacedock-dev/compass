@@ -7,7 +7,7 @@ import json
 import os
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -224,6 +224,13 @@ class Briefs:
     lane_folders: Mapping[str, str]
 
 
+def _lane_folders(value: object) -> Mapping[str, str]:
+    folders = grammar.dictionary(value)
+    if len(folders) > 200 or not all(grammar.is_safe_lane_id(lane) for lane in folders):
+        raise SettingsError
+    return MappingProxyType({lane: sources.absolute_path(path) for lane, path in folders.items()})
+
+
 def _briefs(value: object) -> Briefs:
     raw = keys(
         value,
@@ -240,9 +247,6 @@ def _briefs(value: object) -> Briefs:
     }
     if len({grammar.folded(label.label) for label in labels.values()}) != len(labels):
         raise SettingsError
-    folders = grammar.dictionary(raw.get("lane_folders", {}))
-    if len(folders) > 200 or not all(grammar.is_safe_lane_id(lane) for lane in folders):
-        raise SettingsError
     return Briefs(
         sources.absolute_path(raw["folder"]),
         filename,
@@ -251,7 +255,7 @@ def _briefs(value: object) -> Briefs:
         strings(raw["separators"], 8, 8, min_items=1),
         integer(raw["max_ids"], 8),
         MappingProxyType(labels),
-        MappingProxyType({lane: sources.absolute_path(path) for lane, path in folders.items()}),
+        _lane_folders(raw.get("lane_folders", {})),
     )
 
 
@@ -620,6 +624,7 @@ class _Declarations:
     inventory: Inventory | None
     summary_enabled: bool
     trackers: tuple[tracker_source.Declaration, ...]
+    lane_folders: Mapping[str, str]
 
 
 def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -644,7 +649,7 @@ def _declarations(data: bytes) -> _Declarations:
             data.decode("utf-8"), object_pairs_hook=_unique, parse_constant=_unknown_constant
         ),
         "version",
-        optional=f"{_LOCAL_FIELDS} summary trackers",
+        optional=f"{_LOCAL_FIELDS} summary trackers lane_folders",
     )
     integer(raw["version"], 1)
     trackers = tracker_source.declarations(raw["trackers"]) if "trackers" in raw else ()
@@ -661,9 +666,18 @@ def _declarations(data: bytes) -> _Declarations:
     if goals is not None and goals.lanes_label is not None and "briefs" not in raw:
         # Explicit goal membership uses the lane-list grammar declared by the briefs.
         raise SettingsError
+    brief = _briefs(raw["briefs"]) if "briefs" in raw else None
+    folders = _lane_folders(raw.get("lane_folders", {}))
+    if "lane_folders" in raw and not trackers:
+        raise SettingsError
+    if brief and any(
+        slug in brief.lane_folders and brief.lane_folders[slug] != path
+        for slug, path in folders.items()
+    ):
+        raise SettingsError
     return _Declarations(
         repos,
-        _briefs(raw["briefs"]) if "briefs" in raw else None,
+        brief,
         _log(raw["log"]) if "log" in raw else None,
         roots,
         privacy,
@@ -674,6 +688,7 @@ def _declarations(data: bytes) -> _Declarations:
         _inventory(raw["inventory"]) if "inventory" in raw else None,
         summary,
         trackers,
+        folders,
     )
 
 
@@ -694,6 +709,7 @@ class Settings:
     # SHA-256 of the admitted settings file's bytes: what the saved summary states are bound to.
     digest: str = ""
     trackers: tuple[tracker_source.Declaration, ...] = ()
+    lane_folders: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
 
 
 @dataclass(frozen=True)
@@ -759,6 +775,7 @@ def _make_settings(
             len(declared.privacy.marker_files),
             digest,
             declared.trackers,
+            declared.lane_folders,
         ),
     )
 

@@ -1,6 +1,6 @@
 import { readBootstrap } from '../api/bootstrap';
 import { createApiClient, type FetchLike } from '../api/client';
-import { usablePlan, type PlanReading } from '../api/plan';
+import { expireTrackerRead, usablePlan, type PlanReading } from '../api/plan';
 import { exactIdentity } from '../api/identity';
 import type { ApiResult, FocusOutcome, SessionIdentity } from '../api/types';
 import { createBoardStore, type BoardSnapshot } from '../store/board';
@@ -48,16 +48,17 @@ const PLAN_READ_FAILED: PlanReading = Object.freeze({ state: 'failed' });
 
 /* Only the server's own answer clears a plan: not configured, 404 for --no-plan, or 403 for a reader
    off the Compass computer. A server error, a timeout, a dropped connection or a reply the page cannot
-   use keeps what is shown, and before any reply says the read failed. An identical reply keeps the
+   use keeps the file plan and withdraws tracker measurements. Before any reply it says the read failed. An identical reply keeps the
    shown object, so nothing repaints. */
 function nextPlan(result: ApiResult<unknown>, current: PlanReading): PlanReading {
   const usable = result.kind === 'ok' ? usablePlan(result.body) : null;
   if (usable) return JSON.stringify(usable) === JSON.stringify(current) ? current : usable;
   const absent =
     (result.kind === 'ok' &&
-      (result.body as { readonly state?: unknown }).state === 'not-configured') ||
+      (result.body as { readonly state?: unknown } | null)?.state === 'not-configured') ||
     (result.kind === 'http-error' && (result.status === 404 || result.status === 403));
   if (absent) return current.state === 'none' ? current : NO_PLAN;
+  if (current.state === 'ready') return expireTrackerRead(current);
   return current.state === 'unread' ? PLAN_READ_FAILED : current;
 }
 
@@ -125,10 +126,19 @@ export function createBoardRuntime(options: RuntimeOptions) {
     const refresh = createRefreshController({ sink, revisions });
     let cancelPlan: (() => void) | null = null;
     let stopped = false;
+    let planExpiry: TimerHandle | null = null;
+
+    function expirePlan(): boolean {
+      const current = store.getSnapshot().plan;
+      if (current.state !== 'ready' || !current.trackerRead) return false;
+      store.setPlan(expireTrackerRead(current));
+      return true;
+    }
 
     async function readPlan(manual: boolean): Promise<void> {
       if (stopped) return;
       cancelPlan?.();
+      const started = env.clock.now();
       const controller = new AbortController();
       const timeout = env.clock.setTimeout(() => controller.abort(), 15_000);
       const cancel = () => {
@@ -141,7 +151,20 @@ export function createBoardRuntime(options: RuntimeOptions) {
         // A newer read or a stop replaced this one; a timeout did not, and counts as a failed read.
         if (cancelPlan !== cancel) return;
         const current = store.getSnapshot().plan;
-        const next = nextPlan(result, current);
+        let next = nextPlan(result, current);
+        if (planExpiry !== null) env.clock.clearTimeout(planExpiry);
+        planExpiry = null;
+        if (next.state === 'ready' && next.trackerRead) {
+          // The response's remaining budget began before it could reach the browser.
+          const remaining = next.trackerRead.freshForMs - Math.max(0, env.clock.now() - started);
+          if (remaining <= 0) next = expireTrackerRead(next);
+          else {
+            planExpiry = env.clock.setTimeout(() => {
+              planExpiry = null;
+              if (expirePlan()) void sink.paint({ manual: false, accepted: true, followUp: true });
+            }, remaining);
+          }
+        }
         if (next === current) return;
         store.setPlan(next);
         // A follow-up to the poll's own paint: where that paint is still held, it carries this one.
@@ -158,6 +181,9 @@ export function createBoardRuntime(options: RuntimeOptions) {
         stopped = true;
         cancelPlan?.();
         cancelPlan = null;
+        if (planExpiry !== null) env.clock.clearTimeout(planExpiry);
+        planExpiry = null;
+        expirePlan();
       },
       context: createContextLoader({ client, store, storage }),
       record: createRecordLoader({ client, store }),
