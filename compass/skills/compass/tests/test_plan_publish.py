@@ -199,18 +199,31 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertNotIn(os.fsencode(self.hull), body)
 
     def read_linear_plan(
-        self, declaration: dict[str, Any], issues: list[dict[str, Any]] | None = None
+        self,
+        declaration: dict[str, Any],
+        issues: list[dict[str, Any]] | None = None,
+        *,
+        viewer: str = linear.VIEWER_ID,
     ) -> model.TrackerData:
         child = mock.Mock()
-        project = {**linear.PROJECT_ROW, "completedAt": linear.COMPLETED}
+        workspace = declaration["workspace"]
+        project_url = linear.PROJECT_ROW["url"]
+        assert isinstance(project_url, str)
+        project = {
+            **linear.PROJECT_ROW,
+            "url": project_url.replace("orchard-labs", workspace),
+            "completedAt": linear.COMPLETED,
+        }
         if issues is None:
             issues = [{**linear.issue(kind="completed"), "completedAt": linear.COMPLETED}]
         responses: list[object] = [project]
         if declaration["kind"] == "milestone":
             responses.append(linear.MILESTONES)
-        responses.append(issues)
+        responses.append(
+            [{**issue, "url": issue["url"].replace("orchard-labs", workspace)} for issue in issues]
+        )
         if declaration.get("ask_labels"):
-            responses.append(linear.VIEWER_RESPONSE)
+            responses.append({"data": {"viewer": {"id": viewer}}})
         child.read_json.side_effect = responses
         return tracker_linear.read(tracker_source.declaration(declaration), child)
 
@@ -647,6 +660,112 @@ class PlanPublicationTest(PlanRepoTestCase):
             results.append(tracker_refresh.Observation(data, observed_at=time.monotonic()))
         with mock.patch.object(app.state.plan_trackers, "observe", return_value=tuple(results)):
             return self.payload(app)
+
+    def linear_ask_payload(
+        self, *reads: tuple[dict[str, Any], model.TrackerData, float]
+    ) -> dict[str, Any]:
+        self.tracker_plan(trackers=[declaration for declaration, _, _ in reads])
+        app = self.application()
+        observations = tuple(
+            tracker_refresh.Observation(data, observed_at=at) for _, data, at in reads
+        )
+        with (
+            mock.patch.object(app.state.plan_trackers, "observe", return_value=observations),
+            mock.patch.object(app.state.plan_trackers, "_clock", return_value=120),
+        ):
+            return self.payload(app)[0]
+
+    def test_saturated_label_pages_abstain_with_or_without_visible_match(self) -> None:
+        project = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        for matching in (False, True):
+            with self.subTest(matching=matching):
+                row = linear.ask_issue(label=linear.ASK_LABEL if matching else "other-0")
+                row["labels"].extend({"name": f"other-{i}"} for i in range(1, 50))
+                payload = self.linear_ask_payload(
+                    (project, self.read_linear_plan(project, [row]), 110)
+                )
+                self.assertEqual(1, len(payload["goals"]))
+                self.assertEqual(1, len(payload["lanes"]))
+                self.assertIsNone(payload["trackerAsks"])
+                self.assertIsNone(payload["trackerAsksFreshForMs"])
+
+    def test_superseding_closed_alias_withdraws_ask(self) -> None:
+        project = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        older = (project, self.read_linear_plan(project, [linear.ask_issue()]), 100)
+        for labels in ([], [linear.ASK_LABEL]):
+            alias = {**project, "project": linear.PROJECT, "ask_labels": labels}
+            if not labels:
+                del alias["ask_labels"]
+            newer = (
+                alias,
+                self.read_linear_plan(alias, [linear.ask_issue(kind="completed")]),
+                110,
+            )
+            for reads in ((older, newer), (newer, older)):
+                with self.subTest(labels=labels, first=reads[0][0]["project"]):
+                    payload = self.linear_ask_payload(*reads)
+                    self.assertEqual("done", payload["lanes"][0]["state"])
+                    self.assertIsNone(payload["trackerAsks"])
+                    self.assertIsNone(payload["trackerAsksFreshForMs"])
+
+    def test_new_alias_member_is_not_a_measured_absence(self) -> None:
+        project = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        alias = {**project, "project": linear.PROJECT, "ask_labels": ["unrelated"]}
+        older = (project, self.read_linear_plan(project, []), 100)
+        newer = (alias, self.read_linear_plan(alias, [linear.ask_issue()]), 110)
+        for reads in ((older, newer), (newer, older)):
+            with self.subTest(first=reads[0][0]["project"]):
+                payload = self.linear_ask_payload(*reads)
+                self.assertEqual(1, len(payload["goals"]))
+                self.assertEqual(1, len(payload["lanes"]))
+                (ask,) = payload["trackerAsks"]
+                self.assertEqual(payload["lanes"][0]["id"], ask["lane"])
+                self.assertEqual(10_000, payload["trackerAsksFreshForMs"])
+
+    def test_tracker_ask_carries_declared_source_label(self) -> None:
+        project = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        milestone = {**project, "kind": "milestone", "milestone": linear.MILESTONE}
+        for source in (project, milestone):
+            with self.subTest(kind=source["kind"]):
+                payload = self.linear_ask_payload(
+                    (source, self.read_linear_plan(source, [linear.ask_issue()]), 110)
+                )
+                self.assertEqual(
+                    payload["sources"][0]["label"], payload["trackerAsks"][0]["source"]
+                )
+
+    def test_triage_and_backlog_issues_can_be_asks(self) -> None:
+        project = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        rows = [
+            linear.ask_issue(3, kind="triage", name="Triage"),
+            linear.ask_issue(4, kind="backlog", name="Backlog"),
+        ]
+        payload = self.linear_ask_payload((project, self.read_linear_plan(project, rows), 110))
+        self.assertEqual(
+            ["Catalogue orchard plot 3", "Catalogue orchard plot 4"],
+            [ask["title"] for ask in payload["trackerAsks"]],
+        )
+
+    def test_different_workspace_viewers_leave_tracker_asks_unmeasured_even_without_issues(
+        self,
+    ) -> None:
+        first = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        second = {**first, "workspace": "other-orchard"}
+        for left, right in (
+            ([linear.ask_issue()], [linear.ask_issue(assignee=linear.OTHER_ID)]),
+            ([linear.ask_issue()], []),
+            ([], []),
+        ):
+            older = (first, self.read_linear_plan(first, left), 100)
+            newer = (second, self.read_linear_plan(second, right, viewer=linear.OTHER_ID), 110)
+            for reads in ((older, newer), (newer, older)):
+                with self.subTest(left=len(left), right=len(right), first=reads[0][0]["workspace"]):
+                    payload = self.linear_ask_payload(*reads)
+                    self.assertTrue(payload["trackerAsksEnabled"])
+                    self.assertEqual(2, len(payload["goals"]))
+                    self.assertEqual(len(left) + len(right), len(payload["lanes"]))
+                    self.assertIsNone(payload["trackerAsks"])
+                    self.assertIsNone(payload["trackerAsksFreshForMs"])
 
     def test_linear_asks_dedupe_expire_and_withdraw_on_conflicting_or_removed_labels(self) -> None:
         project = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}

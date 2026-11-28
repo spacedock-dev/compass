@@ -407,7 +407,8 @@ board to do these things:
 - summarize a Codex goal: choose `Summarize this session` in the project's technical details. The cited session summary is Claude Code only
 - choose Resume AI use, or turn summaries back on
 - read Plan goals and lanes from declared files and trackers. Waiting on you shows open asks from
-  your log, sessions waiting for input and any GitHub issues that match your ask settings.
+  your log, sessions waiting for input and issues from configured tracker sources that match
+  your ask settings.
   Product decisions, tracker tables and diagrams come from your files. Use `--diagnose` to check
   settings and CLI availability. Open Plan to see whether the tracker read succeeded.
   [Set up the plan board](docs/how-to/05-plan-board.md).

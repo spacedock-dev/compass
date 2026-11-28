@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 # The CLI paginates internally for --limit all. Compass bounds its decoded rows as well as bytes.
 _ROW_LIMIT = 200
+# The CLI flattens the default label page without reporting whether another page exists.
+_LABEL_PAGE_SIZE = 50
 _WEB = "https://linear.app"
 _STATE_TYPES = {
     "backlog": "not_started",
@@ -187,7 +189,10 @@ def _ask_issue(value: object, lane: model.Lane, viewer: str) -> model.TrackerAsk
     assigned_id = (
         tracker_source.linear_id(_object(assignee, "id")["id"]) if assignee is not None else None
     )
-    labels = frozenset(_name(_object(label, "name")["name"]) for label in _rows(row["labels"]))
+    label_rows = _rows(row["labels"])
+    if len(label_rows) >= _LABEL_PAGE_SIZE:
+        raise TrackerError(Reason.PARTIAL)
+    labels = frozenset(_name(_object(label, "name")["name"]) for label in label_rows)
     state = grammar.string(_object(row["state"], "type")["type"], 64)
     if state not in _STATE_TYPES:
         raise TrackerError(Reason.PARTIAL)

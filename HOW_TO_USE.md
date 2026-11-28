@@ -897,7 +897,8 @@ every bound the read keeps, the 60 second deadline over the whole GitLab read am
 ## Set up the plan board
 
 [Set up the plan board](docs/how-to/05-plan-board.md) covers GitHub milestones, parent issues,
-Projects v2 and file sources. It also explains how to show GitHub issues in Waiting on you.
+Projects v2, workspace projects and milestones, and file sources. It also explains how to show
+asks from configured tracker sources in Waiting on you.
 
 ### Give a new session its lane summary
 
@@ -917,7 +918,7 @@ Each flag belongs to the dashboard process, so changing one means restarting.
 | `--no-tripwires` | Workflow stage conditions and every read or write of their saved store |
 | `--no-git` | The end-of-session git probe, project check-script reads and plan reads from Git |
 | `--no-plan` | Reading plan settings and sources, and capturing working folders for the plan. `/api/plan` answers 404 |
-| `--no-plan-trackers` | Tracker CLI reads for Plan, including the reads that supply GitHub asks. Plan can still read local files |
+| `--no-plan-trackers` | Tracker CLI reads for Plan, including the reads that supply tracker asks. Plan can still read local files |
 | `--no-ci-read` | Reading a pull request's or merge request's CI checks from GitHub or GitLab when you press Check progress. Read pull request status in Settings is held off. Declared Plan tracker reads have their own switch |
 | `--no-history` | The local history of what the server observed. Nothing is written, and an existing store is not read back |
 | `--no-annotations` | Saved goals, expected outcome lines, readings and local group labels. Nothing is shown or saved, and the page offers no field |

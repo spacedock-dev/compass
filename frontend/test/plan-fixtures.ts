@@ -416,7 +416,7 @@ export const linearAsksPlan = {
       source: 'Linear project milestone',
       linkHost: 'linear.app',
       lane: 'linear-issue-plot',
-      goals: ['linear-milestone-north'],
+      goals: ['linear-milestone-north', 'linear-project-orchard'],
     },
   ],
 } as const;

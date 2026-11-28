@@ -279,9 +279,19 @@ function expireTrackerRead(plan: ReadyPlan, elapsed: number): ReadyPlan {
 
 export function expirePlanReadings(plan: ReadyPlan, elapsed: number): ReadyPlan {
   const current = expireTrackerRead(plan, elapsed);
-  return current.trackerAsksFreshForMs !== null && current.trackerAsksFreshForMs <= elapsed
-    ? { ...current, trackerAsks: null, trackerAsksFreshForMs: null }
-    : current;
+  if (current.trackerAsksFreshForMs !== null && current.trackerAsksFreshForMs <= elapsed) {
+    return { ...current, trackerAsks: null, trackerAsksFreshForMs: null };
+  }
+  if (current === plan || current.trackerAsks === null) return current;
+  return {
+    ...current,
+    trackerAsks: current.trackerAsks.map((ask) => ({
+      ...ask,
+      goals: ask.goals.filter((id) =>
+        current.goals.some((goal) => goal.id === id && goal.lanes.includes(ask.lane)),
+      ),
+    })),
+  };
 }
 
 export function failTrackerRead(plan: ReadyPlan): ReadyPlan {

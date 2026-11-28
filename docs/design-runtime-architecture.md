@@ -370,7 +370,8 @@ The recorded qualification used `schpet/linear-cli` 3.1.0. The installed CLI con
 the executable on rooted PATH and strips inherited `LINEAR_*` variables from both tracker
 children. For a Linear child it sets `LINEAR_API_KEY` to the empty string to mask the global
 config key, sets `LINEAR_IGNORE_ENV_FILE=1`, and places an empty `.linear.toml` in the private
-working directory to shadow ancestor config. Every call includes `--workspace` and `--no-input`.
+working directory to shadow ancestor config. Every call includes `--workspace`. The project,
+milestone and issue commands also include `--no-input`.
 An absent workspace entry is refused even when another stored workspace is the default.
 `project view` resolves the project, and `milestone list` resolves the optional milestone
 within that project. The project and issue URLs must name the declared workspace.

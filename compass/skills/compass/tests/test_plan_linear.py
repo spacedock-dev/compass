@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -15,7 +16,15 @@ from unittest import mock
 from uuid import UUID
 
 from compass_runtime import records
-from compass_runtime.plan import grammar, model, publish, settings, tracker_refresh
+from compass_runtime.plan import (
+    grammar,
+    model,
+    publish,
+    settings,
+    tracker_cli,
+    tracker_refresh,
+    tracker_source,
+)
 
 FIXTURES = Path(__file__).with_name("fixtures") / "plan" / "linear"
 
@@ -266,6 +275,58 @@ class LinearTrackerTest(unittest.TestCase):
                 result = self.measurement(ask_labels=[ASK_LABEL])
                 self.assertEqual(1, len(result.lanes))
                 self.assertIsNone(result.ask_read)
+
+    def test_viewer_timeout_keeps_completed_membership(self) -> None:
+        self.responses["issue", "query"] = (0, [ask_issue()], b"")
+
+        def check_membership(membership_at: float) -> None:
+            now = 100.0
+            viewer_deadlines: list[float] = []
+
+            def run(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
+                nonlocal now
+                if argv[4:6] == ["issue", "query"]:
+                    now = membership_at
+                if argv[3] == "api":
+                    now = options["deadline"]
+                    viewer_deadlines.append(now)
+                return self.run_cli(argv, **options)
+
+            refresh = tracker_refresh.TrackerRefresh(
+                clock=lambda: now, environ=self.environ, runner=run
+            )
+            source = tracker_source.declaration({**DECLARATION, "ask_labels": [ASK_LABEL]})
+            result = refresh._measure(source, tracker_refresh._Flight(threading.Event()), 108.0)
+            self.assertIsNotNone(result.data, result.reason)
+            assert result.data is not None
+            self.assertEqual(1, len(result.data.goals))
+            self.assertEqual(1, len(result.data.lanes))
+            self.assertIsNone(result.data.ask_read)
+            if membership_at == 106.0:
+                (deadline,) = viewer_deadlines
+                self.assertLess(deadline, 108.0)
+            else:
+                self.assertEqual([], viewer_deadlines)
+
+        for membership_at in (106.0, 107.9):
+            with self.subTest(membership_at=membership_at):
+                check_membership(membership_at)
+
+    def test_a_viewer_query_refuses_a_missing_workspace(self) -> None:
+        self.responses["api", VIEWER_QUERY] = (
+            4,
+            b"",
+            b"Workspace 'orchard-labs' not found in credentials",
+        )
+        source = tracker_source.declaration({**DECLARATION, "ask_labels": [ASK_LABEL]})
+        child = tracker_cli.TrackerCLI(
+            source, deadline=time.monotonic() + 8, environ=self.environ, runner=self.runner
+        )
+        with self.assertRaises(tracker_cli.TrackerError) as raised:
+            child.read_json(("--workspace", "orchard-labs", "api", VIEWER_QUERY))
+        self.assertEqual(tracker_cli.Reason.UNKNOWN_WORKSPACE, raised.exception.reason)
+        self.runner.assert_called_once()
+        self.assertEqual("", self.runner.call_args.kwargs["env"]["LINEAR_API_KEY"])
 
     def test_malformed_issue_ask_fields_withdraw_the_whole_ask_read(self) -> None:
         for field, values in (
