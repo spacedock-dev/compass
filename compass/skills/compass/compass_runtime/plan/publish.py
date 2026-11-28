@@ -402,7 +402,7 @@ def _tracker_projection(
         reason: str | None = observation.reason or tracker_cli.Reason.CLI_FAILED
         if observation.data is not None and observation.observed_at is not None and lifetime:
             data[index] = _FreshTrackerRead(observation.data, observation.observed_at, lifetime)
-            if declaration.provider == "github" and declaration.ask_labels:
+            if declaration.ask_labels:
                 ask_lifetimes.append(lifetime)
             status = "ok" if observation.data.lanes else "empty"
             reason = None
@@ -498,21 +498,22 @@ def _tracker_asks(
     lanes: tuple[model.Lane, ...],
 ) -> list[dict[str, Any]] | None:
     by_issue: dict[str, list[tuple[model.TrackerAskIssue, tuple[str, ...]]]] = defaultdict(list)
-    viewer = None
+    account = None
     for declaration, observation, source in zip(declarations, observations, sources, strict=True):
-        if declaration.provider != "github" or not declaration.ask_labels:
+        if not declaration.ask_labels:
             continue
         read = observation.data.ask_read if observation.data is not None else None
         if (
             source["state"] not in ("ok", "empty")
             or read is None
-            or (viewer is not None and viewer != read.viewer)
+            or (account is not None and account != (declaration.provider, read.viewer))
         ):
             return None
-        viewer = read.viewer
+        account = declaration.provider, read.viewer
         for issue in read.issues:
             by_issue[issue.lane.slug].append((issue, declaration.ask_labels))
 
+    link_host = "linear.app" if account is not None and account[0] == "linear" else "github.com"
     asks: dict[str, model.Lane] = {}
     for slug, copies in by_issue.items():
         qualifying = []
@@ -529,7 +530,7 @@ def _tracker_asks(
     return [
         {
             "title": _text(asks[lane.slug].goal),
-            "linkHost": "github.com",
+            "linkHost": link_host,
             "source": _text(asks[lane.slug].source.label),
             "lane": lane.slug,
             "goals": [_text(goal_id) for goal_id in lane.serves],
@@ -610,9 +611,7 @@ def _with_tracker_reads(
             [_source(source) for source in merged.sources[len(plan.sources) :]],
         )
 
-    asks_enabled = any(
-        source.provider == "github" and source.ask_labels for source in settings.trackers
-    )
+    asks_enabled = any(source.ask_labels for source in settings.trackers)
     projected["trackerAsksEnabled"] = asks_enabled
     tracker_sources, reads, _ = _tracker_projection(observations, settings, trackers)
     local_sources = projected["sources"]

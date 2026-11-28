@@ -83,25 +83,32 @@ field into `status_field`. Match the option names your project uses in `words`.
 
 - You can put up to 32 sources in `trackers` or add it to existing file settings. An issue can
   serve several goals.
-- Add `"ask_labels": ["needs-me"]` to a GitHub source to show its open issues in **Waiting on you**
-  when they have a listed label and are assigned to your signed-in GitHub account. Label matching
-  is case-sensitive. Use the exact spelling shown in GitHub. Omit `ask_labels` to leave asks off
-  for that source. Each matching issue appears once even if several sources include it.
 - For a project, your stored login needs access to that project and the scope described in
   `gh project --help`.
 - Compass uses your stored GitHub CLI login. See
   [what the tracker read sends](../../SECURITY.md#plan-reads-from-github).
-- A complete read with no issues says No lanes found. An incomplete read supplies no goals or lane
-  progress of its own. If the sources with `ask_labels` cannot establish a complete set
-  of matches, Waiting on you says "Tracker asks are not measured." The log asks and waiting
-  sessions remain available.
+- A complete read with no issues says "No lanes found." An incomplete issue read supplies no
+  goals or lane progress of its own.
 
 ## Read a workspace project
 
 A second tracker can supply a project or a milestone within a project through its own CLI.
 It needs a stored login for the declared workspace. Its issues become lanes, with status and
-dates from the source. Use GitHub sources for `ask_labels`.
+dates from the source.
 [How workspace tracker reads work](../../SECURITY.md#plan-reads-from-a-workspace-tracker).
+
+## Show tracker asks
+
+Add `"ask_labels": ["needs-me"]` to a GitHub or workspace tracker source. An issue appears in
+**Waiting on you** when it is open, has one of the listed labels and is assigned to your
+signed-in account for that source. Use the exact spelling and case of each label. Omit
+`ask_labels` to leave asks off for that source. Each matching issue appears once even if several
+sources include it.
+
+Every source with `ask_labels` needs a complete read and must identify the same signed-in account.
+Compass cannot establish that account match across providers. When a read is incomplete or
+account agreement is unknown, Waiting on you says "Tracker asks are not measured." Log asks
+and sessions waiting for a reply remain available.
 
 ## Pause tracker reads
 
@@ -220,7 +227,6 @@ or unreadable draft sources and refused lane folders.
 
 | Refusal | Fix |
 |---|---|
-| Tracker asks aren't supported for this tracker yet. | Remove `ask_labels` from that source. |
 | Invalid tracker `ask_labels` | Use 1 to 32 distinct, nonblank labels of up to 128 characters each, or omit the setting. |
 | A file entry or label breaks a rule above | Fix the entry in `files`. |
 | A tracker table lacks your declared lane, title or status column, or misspells one, such as `Statuz` | Fix the header so the table has all three. |

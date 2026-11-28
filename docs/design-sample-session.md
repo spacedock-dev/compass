@@ -458,6 +458,9 @@ same toolchain, up 2,600 bytes. The page bound follows that measurement.
 Per-source Plan expiry and its review fixes package at 2,534,599 bytes on the same toolchain,
 up 1,216 bytes. The page bound follows that measurement.
 
+Admitting Linear ask links and removing the obsolete settings refusal packages at 2,534,495
+bytes on the same toolchain, down 104 bytes. The page bound follows that measurement.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

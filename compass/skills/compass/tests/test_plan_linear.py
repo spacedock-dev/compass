@@ -24,6 +24,11 @@ MILESTONE = "acb05865-94ba-4b5f-b961-6a54c71dc5c2"
 NEXT_MILESTONE = "f9b39525-e6a3-4748-a274-4cc5819aef3b"
 UPDATED = "2024-04-09T13:37:42.451Z"
 COMPLETED = "2024-04-08T15:30:00+02:00"
+VIEWER_ID = "0b786399-d93c-4d36-8c2f-e878db97c85c"
+OTHER_ID = "2aeb43bf-568d-4bc2-9f87-18d847ee21ad"
+VIEWER_QUERY = "query { viewer { id } }"
+VIEWER_RESPONSE = {"data": {"viewer": {"id": VIEWER_ID}}}
+ASK_LABEL = "needs-review"
 TARGET = "2024-05-17"
 DECLARATION = {
     "provider": "linear",
@@ -85,6 +90,27 @@ def issue(
     }
 
 
+def ask_issue(
+    number: int = 3,
+    *,
+    assignee: str | None = VIEWER_ID,
+    label: str | None = ASK_LABEL,
+    kind: str = "unstarted",
+    name: str = "Ready for field work",
+) -> dict[str, Any]:
+    row = issue(number, kind=kind, name=name)
+    if assignee is not None:
+        row["assignee"] = {
+            "id": assignee,
+            "name": "Orchard Surveyor",
+            "displayName": "Surveyor",
+            "initials": "OS",
+        }
+    if label is not None:
+        row["labels"] = [{"id": str(UUID(int=500)), "name": label, "color": "#54199F"}]
+    return row
+
+
 class LinearTrackerTest(unittest.TestCase):
     def setUp(self) -> None:
         root = tempfile.TemporaryDirectory(dir="/tmp" if sys.platform == "darwin" else None)
@@ -103,11 +129,12 @@ class LinearTrackerTest(unittest.TestCase):
             ("project", "view"): (0, PROJECT_ROW, b""),
             ("milestone", "list"): (0, MILESTONES, b""),
             ("issue", "query"): (0, [issue()], b""),
+            ("api", VIEWER_QUERY): (0, VIEWER_RESPONSE, b""),
         }
         self.runner = mock.Mock(side_effect=self.run_cli)
 
     def run_cli(self, argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
-        code, payload, stderr = self.responses[tuple(argv[4:6])]
+        code, payload, stderr = self.responses[tuple(argv[-2:] if argv[3] == "api" else argv[4:6])]
         options["stdout"].write(
             payload if isinstance(payload, bytes) else json.dumps(payload).encode()
         )
@@ -180,6 +207,91 @@ class LinearTrackerTest(unittest.TestCase):
                 self.assertEqual(settings.MALFORMED, self.load([{**DECLARATION, **invalid}]).reason)
         self.assertEqual(settings.MALFORMED, self.load([DECLARATION, DECLARATION]).reason)
         self.runner.assert_not_called()
+
+    def test_ask_rule_replays_project_and_milestone_with_one_fixed_viewer_read(self) -> None:
+        rows = [
+            ask_issue(3),
+            ask_issue(4, kind="completed"),
+            ask_issue(5, kind="canceled"),
+            ask_issue(6, kind="duplicate"),
+            ask_issue(7, assignee=OTHER_ID),
+            {**ask_issue(8, assignee=None), "title": "Ask @Surveyor about the north plot"},
+            ask_issue(9, label=None, name="Waiting"),
+            ask_issue(10, label=ASK_LABEL.upper()),
+            ask_issue(11, kind="started", name="Finished checklist"),
+        ]
+        self.responses["issue", "query"] = (0, rows, b"")
+        viewer_argv = [str(self.binary), "--workspace", "orchard-labs", "api", VIEWER_QUERY]
+        for scope in ({}, {"kind": "milestone", "milestone": MILESTONE}):
+            with self.subTest(scope=scope):
+                self.runner.reset_mock()
+                result = self.measurement(
+                    **scope,
+                    ask_labels=[ASK_LABEL],
+                    words={"Finished checklist": "done", "Waiting": "waiting"},
+                )
+                read = result.ask_read
+                self.assertIsNotNone(read)
+                assert read is not None
+                self.assertEqual(
+                    ["Catalogue orchard plot 3", "Catalogue orchard plot 11"],
+                    [ask.lane.goal for ask in read.issues if ask.matches((ASK_LABEL,))],
+                )
+                (call,) = [call for call in self.runner.call_args_list if call.args[0][3] == "api"]
+                self.assertEqual(viewer_argv, call.args[0])
+                self.assertEqual(b"", call.kwargs["input"])
+                self.assertEqual(
+                    {"LINEAR_API_KEY": "", "LINEAR_IGNORE_ENV_FILE": "1"},
+                    {
+                        key: value
+                        for key, value in call.kwargs["env"].items()
+                        if key.upper().startswith("LINEAR_")
+                    },
+                )
+
+    def test_missing_malformed_or_failed_viewer_leaves_membership_but_no_ask_measurement(
+        self,
+    ) -> None:
+        self.responses["issue", "query"] = (0, [ask_issue()], b"")
+        responses: tuple[tuple[int, object, bytes], ...] = (
+            (0, {"data": {}}, b""),
+            (0, {"data": {"viewer": None}}, b""),
+            (0, {"data": {"viewer": {"id": "bad-id"}}}, b""),
+            (0, {**VIEWER_RESPONSE, "errors": [{"message": "incomplete"}]}, b""),
+            (4, VIEWER_RESPONSE, b"No usable API key"),
+        )
+        for response in responses:
+            with self.subTest(response=response):
+                self.responses["api", VIEWER_QUERY] = response
+                result = self.measurement(ask_labels=[ASK_LABEL])
+                self.assertEqual(1, len(result.lanes))
+                self.assertIsNone(result.ask_read)
+
+    def test_malformed_issue_ask_fields_withdraw_the_whole_ask_read(self) -> None:
+        for field, values in (
+            ("assignee", [..., "someone", {}, {"id": "bad-id"}]),
+            ("labels", [..., None, {}, [None], [{"name": " "}]]),
+            ("state", [{"type": "unknown", "name": "Unfamiliar workflow state"}]),
+        ):
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    row = ask_issue(4, kind="completed")
+                    if value is ...:
+                        del row[field]
+                    else:
+                        row[field] = value
+                    self.responses["issue", "query"] = (0, [ask_issue(), row], b"")
+                    result = self.measurement(ask_labels=[ASK_LABEL])
+                    self.assertEqual(2, len(result.lanes))
+                    self.assertIsNone(result.ask_read)
+
+    def test_partial_issue_read_cannot_publish_asks(self) -> None:
+        self.responses["issue", "query"] = (
+            0,
+            {"data": [ask_issue()], "errors": [{"message": "incomplete"}]},
+            b"",
+        )
+        self.assert_unmeasured("partial-result", ask_labels=[ASK_LABEL])
 
     def test_project_membership_and_dates_replay_with_exact_read_only_argv(self) -> None:
         self.responses["project", "view"] = (0, {**PROJECT_ROW, "completedAt": COMPLETED}, b"")

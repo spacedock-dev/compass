@@ -205,11 +205,13 @@ class PlanPublicationTest(PlanRepoTestCase):
         project = {**linear.PROJECT_ROW, "completedAt": linear.COMPLETED}
         if issues is None:
             issues = [{**linear.issue(kind="completed"), "completedAt": linear.COMPLETED}]
-        child.read_json.side_effect = (
-            (project, linear.MILESTONES, issues)
-            if declaration["kind"] == "milestone"
-            else (project, issues)
-        )
+        responses: list[object] = [project]
+        if declaration["kind"] == "milestone":
+            responses.append(linear.MILESTONES)
+        responses.append(issues)
+        if declaration.get("ask_labels"):
+            responses.append(linear.VIEWER_RESPONSE)
+        child.read_json.side_effect = responses
         return tracker_linear.read(tracker_source.declaration(declaration), child)
 
     def test_a_linear_only_plan_shows_both_sources_and_joins_their_shared_lane(self) -> None:
@@ -645,6 +647,94 @@ class PlanPublicationTest(PlanRepoTestCase):
             results.append(tracker_refresh.Observation(data, observed_at=time.monotonic()))
         with mock.patch.object(app.state.plan_trackers, "observe", return_value=tuple(results)):
             return self.payload(app)
+
+    def test_linear_asks_dedupe_expire_and_withdraw_on_conflicting_or_removed_labels(self) -> None:
+        project = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        milestone = {**project, "kind": "milestone", "milestone": linear.MILESTONE}
+        matching = linear.ask_issue()
+        removed = linear.ask_issue(label=None)
+        self.tracker_plan(trackers=[project, milestone])
+        app = self.application()
+        for left, right, now, count in (
+            (matching, matching, 129.0, 1),
+            (matching, matching, 130.0, None),
+            (matching, removed, 129.0, None),
+            (removed, removed, 129.0, 0),
+        ):
+            reads = (
+                tracker_refresh.Observation(
+                    self.read_linear_plan(project, [left]), observed_at=100
+                ),
+                tracker_refresh.Observation(
+                    self.read_linear_plan(milestone, [right]), observed_at=110
+                ),
+            )
+            with (
+                self.subTest(now=now, count=count),
+                mock.patch.object(app.state.plan_trackers, "observe", return_value=reads),
+                mock.patch.object(app.state.plan_trackers, "_clock", return_value=now),
+            ):
+                payload, body = self.payload(app)
+                self.assertTrue(payload["trackerAsksEnabled"])
+                self.assertNotIn(linear.VIEWER_ID.encode(), body)
+                self.assertNotIn(linear.ASK_LABEL.encode(), body)
+                self.assertNotIn(b"/orchard-labs/", body)
+                if count is None:
+                    self.assertIsNone(payload["trackerAsks"])
+                    self.assertIsNone(payload["trackerAsksFreshForMs"])
+                    continue
+                self.assertEqual(1_000, payload["trackerAsksFreshForMs"])
+                self.assertEqual(count, len(payload["trackerAsks"]))
+                if count:
+                    (ask,) = payload["trackerAsks"]
+                    self.assertEqual("Catalogue orchard plot 3", ask["title"])
+                    self.assertEqual("linear.app", ask["linkHost"])
+                    self.assertEqual(payload["lanes"][0]["id"], ask["lane"])
+                    self.assertCountEqual([goal["id"] for goal in payload["goals"]], ask["goals"])
+
+    def test_mixed_opted_in_providers_cannot_establish_account_agreement(self) -> None:
+        from . import test_plan_github as github  # noqa: PLC0415
+
+        github_source = {**github.MILESTONE, "ask_labels": [github.ASK_LABEL]}
+        linear_source = {**linear.DECLARATION, "ask_labels": [linear.ASK_LABEL]}
+        self.tracker_plan(mixed=True, trackers=[github_source, linear_source])
+        self.log.write_text("ask hull:1 Check the test hull?\n", encoding="utf-8")
+        app = self.application()
+        child = mock.Mock()
+        child.read_json.side_effect = (
+            github.MILESTONE_INFO,
+            github.with_viewer(
+                github.milestone_page(github.ask_issue(assignee=linear.VIEWER_ID)),
+                linear.VIEWER_ID,
+            ),
+        )
+        github_data = tracker_github.read(tracker_source.declaration(github_source), child)
+        linear_data = self.read_linear_plan(linear_source, [linear.ask_issue()])
+        for data in (github_data, linear_data):
+            read = data.ask_read
+            self.assertIsNotNone(read)
+            assert read is not None
+            self.assertEqual(linear.VIEWER_ID, read.viewer)
+            self.assertTrue(read.issues[0].open_and_assigned)
+        now = time.monotonic()
+        observations = tuple(
+            tracker_refresh.Observation(data, observed_at=now)
+            for data in (github_data, linear_data)
+        )
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=observations):
+            payload, _ = self.payload(app)
+        self.assertTrue(payload["trackerAsksEnabled"])
+        self.assertIsNone(payload["trackerAsks"])
+        self.assertIsNone(payload["trackerAsksFreshForMs"])
+        self.assertEqual(
+            ["ok", "ok"],
+            [
+                source["state"]
+                for source in payload["sources"]
+                if source["kind"].startswith(("github", "linear"))
+            ],
+        )
+        self.assertEqual(["Check the test hull?"], [ask["text"] for ask in payload["asks"]])
 
     def test_different_signed_in_accounts_leave_tracker_asks_unmeasured(self) -> None:
         from . import test_plan_github as github  # noqa: PLC0415

@@ -401,6 +401,26 @@ export const linearPlan = {
   trackerRead: { freshForMs: 20_000, localGoals: [], localLanes: [] },
 } as const;
 
+export const linearAsksPlan = {
+  ...linearPlan,
+  lanes: linearPlan.lanes.map((lane) => ({
+    ...lane,
+    state: 'not_started' as const,
+    additionalDates: lane.additionalDates.filter(({ label }) => label !== 'Completed'),
+  })),
+  trackerAsksEnabled: true,
+  trackerAsksFreshForMs: 20_000,
+  trackerAsks: [
+    {
+      title: 'Map the old apple trees',
+      source: 'Linear project milestone',
+      linkHost: 'linear.app',
+      lane: 'linear-issue-plot',
+      goals: ['linear-milestone-north'],
+    },
+  ],
+} as const;
+
 const githubAsks = githubAsksPlan('present');
 export const mixedTrackerPlan = {
   ...githubAsks,

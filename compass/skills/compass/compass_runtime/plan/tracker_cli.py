@@ -21,6 +21,8 @@ if TYPE_CHECKING:
 
 GITHUB_API = "https://api.github.com"
 GITHUB_GRAPHQL = f"{GITHUB_API}/graphql"
+LINEAR_VIEWER_QUERY = "query { viewer { id } }"
+_LINEAR_READ_COMMANDS = frozenset({("project", "view"), ("milestone", "list"), ("issue", "query")})
 
 STDOUT_LIMIT = 256 * 1024
 STDERR_LIMIT = 8 * 1024
@@ -163,8 +165,8 @@ class TrackerCLI:
         self._check_current = check_current
         self._on_spawn = on_spawn
         self._env = environment(os.environ if environ is None else environ)
-        self._linear = source.provider == "linear"
-        if self._linear:
+        self._linear_workspace = source.workspace if source.provider == "linear" else None
+        if self._linear_workspace is not None:
             # The empty override masks the CLI's global config key while allowing stored logins.
             self._env.update(LINEAR_API_KEY="", LINEAR_IGNORE_ENV_FILE="1")
         executable = resolve(source, self._env)
@@ -190,7 +192,7 @@ class TrackerCLI:
             tempfile.TemporaryDirectory(prefix="compass-tracker-cwd-") as cwd,
             tempfile.TemporaryDirectory(prefix="compass-tracker-out-") as output_dir,
         ):
-            if self._linear:
+            if self._linear_workspace is not None:
                 # Stop the CLI finding ancestor configuration when its temp root is in a repo.
                 (Path(cwd) / ".linear.toml").touch()
             with (
@@ -221,6 +223,13 @@ class TrackerCLI:
 
     def read_json(self, arguments: tuple[str, ...]) -> object:
         """Read a fixed adapter command with validated operands. Any refusal discards its output."""
+        if self._linear_workspace is not None:
+            scope = ("--workspace", self._linear_workspace)
+            if arguments != (*scope, "api", LINEAR_VIEWER_QUERY) and (
+                arguments[:3] != (*scope, "--no-input")
+                or arguments[3:5] not in _LINEAR_READ_COMMANDS
+            ):
+                raise TrackerError(Reason.UNREADABLE_OUTPUT)
         self._remaining()
         if self._calls >= REFRESH_CALLS or self._bytes >= REFRESH_BYTES:
             raise TrackerError(Reason.LIMIT_EXCEEDED)
@@ -236,6 +245,6 @@ class TrackerCLI:
         self._bytes += len(stdout) + len(stderr)
         if len(stdout) > STDOUT_LIMIT or len(stderr) > STDERR_LIMIT or self._bytes > REFRESH_BYTES:
             raise TrackerError(Reason.LIMIT_EXCEEDED)
-        if self._linear:
+        if self._linear_workspace is not None:
             _check_linear_result(code, stdout, stderr)
         return _response(code, stdout, stderr, graphql=arguments[:2] == ("api", GITHUB_GRAPHQL))

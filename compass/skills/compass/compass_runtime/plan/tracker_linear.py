@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from compass_runtime import records
 
 from . import grammar, markdown, model, tracker_source
-from .tracker_cli import Reason, TrackerError
+from .tracker_cli import LINEAR_VIEWER_QUERY, Reason, TrackerError
 
 if TYPE_CHECKING:
     from .tracker_cli import TrackerCLI
@@ -181,6 +181,40 @@ def _lane(
     )
 
 
+def _ask_issue(value: object, lane: model.Lane, viewer: str) -> model.TrackerAskIssue:
+    row = _object(value, "assignee labels state")
+    assignee = row["assignee"]
+    assigned_id = (
+        tracker_source.linear_id(_object(assignee, "id")["id"]) if assignee is not None else None
+    )
+    labels = frozenset(_name(_object(label, "name")["name"]) for label in _rows(row["labels"]))
+    state = grammar.string(_object(row["state"], "type")["type"], 64)
+    if state not in _STATE_TYPES:
+        raise TrackerError(Reason.PARTIAL)
+    # An issue's provider workflow type determines whether it is open, even with a custom lane word.
+    is_open = _STATE_TYPES[state] not in ("done", "dropped")
+    return model.TrackerAskIssue(lane, is_open and assigned_id == viewer, labels)
+
+
+def _ask_read(
+    source: tracker_source.LinearDeclaration,
+    child: TrackerCLI,
+    rows: list[object],
+    lanes: tuple[model.Lane, ...],
+) -> model.TrackerAskRead | None:
+    if not source.ask_labels:
+        return None
+    try:
+        response = child.read_json(("--workspace", source.workspace, "api", LINEAR_VIEWER_QUERY))
+        data = _object(_object(response, "data")["data"], "viewer")
+        viewer = tracker_source.linear_id(_object(data["viewer"], "id")["id"])
+        issues = tuple(_ask_issue(row, lane, viewer) for row, lane in zip(rows, lanes, strict=True))
+    except (ValueError, TrackerError):
+        # Issue membership already passed its own completeness checks.
+        return None
+    return model.TrackerAskRead(viewer, issues)
+
+
 def _read(source: tracker_source.LinearDeclaration, child: TrackerCLI) -> model.TrackerData:
     root = ("--workspace", source.workspace, "--no-input")
     project = _project(child, root, source.workspace, source.project)
@@ -212,7 +246,8 @@ def _read(source: tracker_source.LinearDeclaration, child: TrackerCLI) -> model.
             "--no-pager",
         )
     )
-    lanes = tuple(_lane(row, source, project_id, milestone_id, goal_id) for row in _rows(result))
+    rows = _rows(result)
+    lanes = tuple(_lane(row, source, project_id, milestone_id, goal_id) for row in rows)
     slugs = tuple(lane.slug for lane in lanes)
     if len(set(slugs)) != len(slugs):
         raise TrackerError(Reason.PARTIAL)
@@ -224,7 +259,7 @@ def _read(source: tracker_source.LinearDeclaration, child: TrackerCLI) -> model.
         additional_dates=additional_dates,
     )
     goal = model.Goal(goal_id, _title(name), None, origin, slugs)
-    return model.TrackerData((goal,), lanes)
+    return model.TrackerData((goal,), lanes, ask_read=_ask_read(source, child, rows, lanes))
 
 
 def read(source: tracker_source.Declaration, child: TrackerCLI) -> model.TrackerData:

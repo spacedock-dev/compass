@@ -273,6 +273,28 @@ class TrackerLauncherTest(TrackerTestCase):
             read()
         self.assertEqual([False, False, True], local_errors)
 
+    def test_linear_launcher_refuses_unreviewed_viewer_argv_before_spawn(self) -> None:
+        source = tracker_source.declaration(
+            {"provider": "linear", "kind": "project", "workspace": "chosen", "project": "Example"}
+        )
+        (self.root / ("linear.exe" if os.name == "nt" else "linear")).touch(mode=0o700)
+        child = tracker_cli.TrackerCLI(
+            source,
+            deadline=self.clock() + 8.0,
+            clock=self.clock,
+            environ=self.environ,
+            runner=self.runner,
+        )
+        for args in (
+            ("--workspace", "other", "api", "query { viewer { id } }"),
+            ("--workspace", "chosen", "api", "query { viewer { id email } }"),
+            ("--workspace", "chosen", "api", "query { viewer { id } }", "--help"),
+            ("api", "query { viewer { id } }", "--workspace", "chosen"),
+        ):
+            with self.subTest(args=args), self.assertRaises(tracker_cli.TrackerError):
+                child.read_json(args)
+        self.assertEqual(0, self.runner.call_count)
+
     def test_missing_rooted_cli_starts_nothing(self) -> None:
         self.environ["PATH"] = "."
         with self.assertRaises(tracker_cli.TrackerError) as raised:
@@ -914,11 +936,11 @@ class TrackerEntryPointTest(TrackerTestCase):
                 self.assertNotIn(canary, lines)
                 self.runner.assert_not_called()
 
-    def test_workspace_tracker_asks_are_refused_before_any_read(self) -> None:
+    def test_invalid_workspace_tracker_ask_labels_are_refused_before_any_read(self) -> None:
         canary = "synthetic-privately-named-label"
-        reason = "Tracker asks aren't supported for this tracker yet."
+        reason = settings.MALFORMED
         for kind, selector in (("project", {}), ("milestone", {"milestone": "Spring survey"})):
-            for labels in ([canary], [], None):
+            for labels in ([canary, canary], [], None):
                 with self.subTest(kind=kind, labels=labels):
                     source = {
                         "provider": "linear",
@@ -940,7 +962,7 @@ class TrackerEntryPointTest(TrackerTestCase):
                     self.runner.assert_not_called()
                     self.assertEqual([], report["trackers"])
                     lines = "\n".join(diagnostics._plan_lines(report))
-                    self.assertIn(reason, lines)
+                    self.assertIn("invalid tracker ask_labels", lines)
                     self.assertNotIn(canary, lines)
                     self.assertEqual(200, status)
                     self.assertEqual({"state": "refused", "reason": reason}, json.loads(body))

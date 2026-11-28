@@ -1,8 +1,8 @@
 {
   "document": {
-    "bytes": 2534599,
+    "bytes": 2534495,
     "file": "react.html",
-    "sha256": "3ea9227c9c285809afe9d6159445cb402abf170b0c8b2ab4903d89e402a1c083"
+    "sha256": "008d1b1432f59300318f0dc6517aca73fd95a719cffc39d149bec90daa9109fd"
   },
   "format": 1,
   "frontend": "react",
@@ -247,7 +247,7 @@
       },
       {
         "file": "frontend/src/api/plan.ts",
-        "sha256": "bcbe904094894c700f439cfbe8fd19660c3db5aab96a45ea49a9f2113bd8d416"
+        "sha256": "2960ccdb5de33a642cb2a3ea6e1fe1365ba717c594f126525eb7310dd38d89ca"
       },
       {
         "file": "frontend/src/api/promptCapacity.ts",
@@ -1003,7 +1003,7 @@
       },
       {
         "file": "frontend/src/plan/PlanPage.tsx",
-        "sha256": "9718687c518ac0f16667ad0dc0686b5f3030a50ba83afecd5446a86f2a2f1977"
+        "sha256": "747c1879e623ef3c9818462a269e2c579b54f9ec8abc01342aff8fdfc8e0d9b9"
       },
       {
         "file": "frontend/src/plan/PlanView.tsx",

@@ -33,7 +33,7 @@ interface PublishedPlanItem {
 
 interface PublishedTrackerAsk {
   readonly title: string;
-  readonly linkHost: 'github.com';
+  readonly linkHost: 'github.com' | 'linear.app';
   readonly source: string;
   readonly lane: string;
   readonly goals: readonly string[];
@@ -216,7 +216,7 @@ const completeList = (value: unknown, check: (item: Fields) => boolean) =>
 
 const trackerAsk = (item: Fields) =>
   text(item['title']) &&
-  item['linkHost'] === 'github.com' &&
+  (item['linkHost'] === 'github.com' || item['linkHost'] === 'linear.app') &&
   text(item['source']) &&
   text(item['lane']) &&
   texts(item['goals']);

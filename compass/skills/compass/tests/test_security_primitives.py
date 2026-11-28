@@ -60,7 +60,8 @@ PROCESSES = {
         ("[self._executable, *arguments]",),
         (
             "Rooted tracker CLI with adapter-owned argv, a supervised deadline and an output cap. "
-            "Linear pins its workspace and uses issue query, milestone list and project view only."
+            "Linear pins its workspace for issue query, milestone list and project view. Its only "
+            "API command is linear --workspace <slug> api 'query { viewer { id } }'."
         ),
     ),
     ("compass_runtime/supervise.py", "_spawn"): (
