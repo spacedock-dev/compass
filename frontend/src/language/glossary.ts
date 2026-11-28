@@ -147,12 +147,15 @@ export const PLAN_WORDS = {
   inProgress: 'In progress',
   lane: 'Lane',
   noLanesFound: 'No lanes found',
+  noTrackerAsks: 'No tracker asks.',
   notDecidedYet: 'Not decided yet',
   notMeasured: 'Not measured',
   planned: 'Planned',
   productDecisions: 'Product decisions',
   readingGitHub: 'Reading GitHub…',
   statusNotRecognised: 'Status not recognised',
+  trackerAsks: 'Tracker asks',
+  trackerAsksNotMeasured: 'Tracker asks are not measured.',
   waiting: 'Waiting',
 } as const;
 
@@ -1120,6 +1123,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Not measured',
       'Tracker source on Plan',
     ]),
+    planNoTrackerAsks: kept([
+      PLAN_WORDS.noTrackerAsks,
+      'New label',
+      'A complete ask read with no matching issues',
+      'Tracker asks are not measured.',
+      'Waiting on you on Plan',
+    ]),
     planNotDecidedYet: kept([
       PLAN_WORDS.notDecidedYet,
       'New label',
@@ -1161,6 +1171,20 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'A tracker status word the settings do not list, never echoed',
       'Not measured',
       'Plan lane group and tracker row',
+    ]),
+    planTrackerAsks: kept([
+      PLAN_WORDS.trackerAsks,
+      'New label',
+      'Open issues with a declared label assigned to the signed-in account',
+      'Log asks and sessions waiting for a reply',
+      'Waiting on you on Plan',
+    ]),
+    planTrackerAsksNotMeasured: kept([
+      PLAN_WORDS.trackerAsksNotMeasured,
+      'New label',
+      'An opted-in source lacks a complete ask read',
+      'No tracker asks.',
+      'Waiting on you on Plan',
     ]),
     planWaiting: kept([
       PLAN_WORDS.waiting,

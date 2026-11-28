@@ -35,6 +35,7 @@ from compass_runtime.plan import (
     tracker_cli,
     tracker_github,
     tracker_refresh,
+    tracker_source,
 )
 
 from .support import make_config
@@ -48,6 +49,9 @@ READY_FIELDS = {
     "goals",
     "lanes",
     "asks",
+    "trackerAsks",
+    "trackerAsksEnabled",
+    "trackerAsksFreshForMs",
     "design",
     "tracker",
     "inventory",
@@ -137,16 +141,21 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertIn(b"Content-Type: application/json", headers)
         return json.loads(body), body
 
-    def tracker_plan(self, *, mixed: bool = False, count: int = 1, **extra: Any) -> None:
+    def tracker_plan(
+        self, *, mixed: bool = False, count: int = 1, asks: int = 0, **extra: Any
+    ) -> None:
         file = self.home / settings.FILENAME
         if mixed:
             self.write_sources(STAND_IN)
             self.configure()
         doc = json.loads(file.read_bytes()) if mixed else {"version": 1}
-        doc["trackers"] = [
+        declarations: list[dict[str, Any]] = [
             {"provider": "github", "kind": "milestone", "repo": "owner/repo", "number": n}
             for n in range(1, count + 1)
         ]
+        for declaration in declarations[:asks]:
+            declaration["ask_labels"] = ["needs-material-review"]
+        doc["trackers"] = declarations
         file.write_text(json.dumps({**doc, **extra}), encoding="utf-8")
 
     def tracker_data(
@@ -191,15 +200,18 @@ class PlanPublicationTest(PlanRepoTestCase):
         self,
     ) -> None:
         missing = self.hull / "missing"
-        self.tracker_plan(lane_folders={"hull": str(missing)})
+        self.tracker_plan(asks=1, lane_folders={"hull": str(missing)})
         app = self.application()
-        tracker = tracker_refresh.Observation(self.tracker_data(), observed_at=time.monotonic())
+        tracker = tracker_refresh.Observation(
+            self.measured_tracker_data(), observed_at=time.monotonic()
+        )
         with mock.patch.object(app.state.plan_trackers, "observe", return_value=(tracker,)) as read:
             payload, body = self.payload(app)
             read.reset_mock()
             report = diagnostics._plan_report(app.state)
             read.assert_not_called()
         self.assertIsNone(payload["lanes"][0]["sessions"])
+        self.assertEqual("Build the hull", payload["trackerAsks"][0]["title"])
         self.assertNotIn(os.fsencode(missing), body)
         self.assertNotIn(str(missing), json.dumps(report))
         self.assertIn(
@@ -254,7 +266,7 @@ class PlanPublicationTest(PlanRepoTestCase):
         document["tracker"]["lane_column"] = "Lane"
         config_file.write_text(json.dumps(document), encoding="utf-8")
         goal = tracker_github._goal("project", "PVT_example_board", "Project goal")
-        project = tracker_github._rows(goal, [(issue(1), "done")])
+        project = tracker_github._rows(goal, [(issue(1), "done")], ask_labels=(), viewers=set())
         slug = project.lanes[0].slug
         table = f"| Item | Lane | Status |\n| --- | --- | --- |\n| Prepare | {slug} | driving |\n"
         self.write_sources({"tracker": table})
@@ -280,7 +292,10 @@ class PlanPublicationTest(PlanRepoTestCase):
         config_file.write_text(json.dumps(document), encoding="utf-8")
         goal = tracker_github._goal("milestone", "MI_example_7", "Milestone goal")
         milestone = tracker_github._rows(
-            goal, [(issue(1, state="CLOSED", reason="COMPLETED"), None)]
+            goal,
+            [(issue(1, state="CLOSED", reason="COMPLETED"), None)],
+            ask_labels=(),
+            viewers=set(),
         )
         slug = milestone.lanes[0].slug
         table = f"| Item | Lane | Status |\n| --- | --- | --- |\n| Prepare | {slug} | driving |\n"
@@ -301,10 +316,14 @@ class PlanPublicationTest(PlanRepoTestCase):
         closed = tracker_github._rows(
             tracker_github._goal("milestone", "MI_example_7", "Milestone goal"),
             [(issue(1, state="CLOSED"), None)],
+            ask_labels=(),
+            viewers=set(),
         )
         opened = tracker_github._rows(
             tracker_github._goal("parent-issue", "I_example_parent", "Parent goal"),
             [(issue(1), None)],
+            ask_labels=(),
+            viewers=set(),
         )
         now = time.monotonic()
         observations = tuple(
@@ -356,6 +375,244 @@ class PlanPublicationTest(PlanRepoTestCase):
                 self.assertEqual(payload["sources"][0]["reason"], reason)
                 self.assertEqual(payload["lanes"], [])
                 self.assertEqual(len(payload["goals"]), int(status == "empty"))
+
+    def measured_tracker_data(
+        self, goal_id: str = "remote", *, matches: bool = True
+    ) -> model.TrackerData:
+        data = self.tracker_data(goal_id, state="not_started")
+        issue = model.TrackerAskIssue(data.lanes[0], matches, frozenset({"needs-material-review"}))
+        return replace(data, ask_read=model.TrackerAskRead("reader", (issue,)))
+
+    def tracker_ask_payload(
+        self, *reads: tuple[dict[str, Any], tuple[dict[str, Any], ...]]
+    ) -> tuple[dict[str, Any], bytes]:
+        (self.home / settings.FILENAME).write_text(
+            json.dumps({"version": 1, "trackers": [declaration for declaration, _ in reads]}),
+            encoding="utf-8",
+        )
+        app = self.application()
+        results = []
+        for declaration, responses in reads:
+            child = mock.Mock()
+            child.read_json.side_effect = responses
+            data = tracker_github.read(tracker_source.declaration(declaration), child)
+            results.append(tracker_refresh.Observation(data, observed_at=time.monotonic()))
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=tuple(results)):
+            return self.payload(app)
+
+    def test_different_signed_in_accounts_leave_tracker_asks_unmeasured(self) -> None:
+        from . import test_plan_github as github  # noqa: PLC0415
+
+        other = "another-cartographer"
+        for empty in (True, False):
+            first = () if empty else (github.ask_issue(),)
+            second = () if empty else ({**github.ask_issue(assignee=other), **github.issue(22)},)
+            with self.subTest(empty=empty):
+                payload, body = self.tracker_ask_payload(
+                    (
+                        {**github.MILESTONE, "ask_labels": [github.ASK_LABEL]},
+                        (github.MILESTONE_INFO, github.with_viewer(github.milestone_page(*first))),
+                    ),
+                    (
+                        {**github.PARENT, "ask_labels": [github.ASK_LABEL]},
+                        (github.with_viewer(github.parent_page(*second), other),),
+                    ),
+                )
+                self.assertTrue(payload["trackerAsksEnabled"])
+                self.assertNotIn(github.VIEWER.encode(), body)
+                self.assertNotIn(other.encode(), body)
+                self.assertIsNone(payload["trackerAsks"])
+
+    def test_conflicting_issue_observations_leave_tracker_asks_unmeasured(self) -> None:
+        from . import test_plan_github as github  # noqa: PLC0415
+
+        issue = github.ask_issue()
+        first = (
+            {**github.MILESTONE, "ask_labels": [github.ASK_LABEL]},
+            (github.MILESTONE_INFO, github.with_viewer(github.milestone_page(issue))),
+        )
+        for change in (
+            {"state": "CLOSED", "stateReason": "COMPLETED"},
+            {"labels": github.connection()},
+            {"assignees": github.connection({"login": "another-cartographer"})},
+        ):
+            revised = {**issue, **change, "updatedAt": "2026-11-25T19:26:20Z"}
+            second = (
+                {**github.PARENT, "ask_labels": [github.ASK_LABEL]},
+                (github.with_viewer(github.parent_page(revised)),),
+            )
+            for reads in ((first, second), (second, first)):
+                with self.subTest(change=change, first=reads[0][0]["kind"]):
+                    payload, _ = self.tracker_ask_payload(*reads)
+                    self.assertIsNone(payload["trackerAsks"])
+
+    def test_an_ask_shows_the_newest_title_in_either_source_order(self) -> None:
+        from . import test_plan_github as github  # noqa: PLC0415
+
+        old = github.ask_issue()
+        new = {**old, "title": "Approve the revised map", "updatedAt": "2026-11-25T14:26:20-05:00"}
+        first = (
+            {**github.MILESTONE, "ask_labels": [github.ASK_LABEL]},
+            (github.MILESTONE_INFO, github.with_viewer(github.milestone_page(old))),
+        )
+        second = (
+            {**github.PARENT, "ask_labels": [github.ASK_LABEL]},
+            (github.with_viewer(github.parent_page(new)),),
+        )
+        for reads in ((first, second), (second, first)):
+            with self.subTest(first=reads[0][0]["kind"]):
+                payload, _ = self.tracker_ask_payload(*reads)
+                self.assertEqual(
+                    ["Approve the revised map"], [a["title"] for a in payload["trackerAsks"]]
+                )
+
+    def test_different_label_rules_can_agree_on_the_same_issue_evidence(self) -> None:
+        from . import test_plan_github as github  # noqa: PLC0415
+
+        issue = github.ask_issue()
+        payload, _ = self.tracker_ask_payload(
+            (
+                {**github.MILESTONE, "ask_labels": [github.ASK_LABEL]},
+                (github.MILESTONE_INFO, github.with_viewer(github.milestone_page(issue))),
+            ),
+            (
+                {**github.PARENT, "ask_labels": ["unrelated-label"]},
+                (github.with_viewer(github.parent_page(issue), github.VIEWER.upper()),),
+            ),
+        )
+        self.assertEqual(1, len(payload["trackerAsks"]))
+        self.assertEqual(2, len(payload["trackerAsks"][0]["goals"]))
+
+    def test_contradictory_issue_states_leave_tracker_asks_unmeasured(self) -> None:
+        from . import test_plan_github as github  # noqa: PLC0415
+
+        for issue_state, reason, count in (
+            ("OPEN", "COMPLETED", None),
+            ("CLOSED", "REOPENED", None),
+            ("OPEN", "REOPENED", 1),
+            ("CLOSED", None, 0),
+        ):
+            with self.subTest(state=issue_state, reason=reason):
+                issue = {**github.ask_issue(state=issue_state), "stateReason": reason}
+                payload, _ = self.tracker_ask_payload(
+                    (
+                        {**github.MILESTONE, "ask_labels": [github.ASK_LABEL]},
+                        (github.MILESTONE_INFO, github.with_viewer(github.milestone_page(issue))),
+                    )
+                )
+                self.assertEqual("ok", payload["sources"][0]["state"])
+                asks = payload["trackerAsks"]
+                self.assertEqual(count, len(asks) if asks is not None else None)
+
+    def test_a_parent_issue_ask_uses_the_same_label_as_sources(self) -> None:
+        from . import test_plan_github as github  # noqa: PLC0415
+
+        payload, _ = self.tracker_ask_payload(
+            (
+                {**github.PARENT, "ask_labels": [github.ASK_LABEL]},
+                (github.with_viewer(github.parent_page(github.ask_issue())),),
+            )
+        )
+        self.assertEqual("GitHub parent issue", payload["sources"][0]["label"])
+        self.assertEqual(payload["sources"][0]["label"], payload["trackerAsks"][0]["source"])
+
+    def test_an_issue_in_two_tracker_sources_is_one_ask_with_both_goals(self) -> None:
+        self.tracker_plan(count=2, asks=2)
+        app = self.application()
+        observations = tuple(
+            tracker_refresh.Observation(
+                self.measured_tracker_data(goal),
+                observed_at=time.monotonic(),
+            )
+            for goal in ("remote-a", "remote-b")
+        )
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=observations):
+            payload, _ = self.payload(app)
+        self.assertTrue(payload["trackerAsksEnabled"])
+        self.assertEqual(
+            payload["trackerAsks"],
+            [
+                {
+                    "title": "Build the hull",
+                    "linkHost": "github.com",
+                    "source": "GitHub milestone",
+                    "lane": "hull",
+                    "goals": ["remote-a", "remote-b"],
+                }
+            ],
+        )
+        self.assertEqual(set(payload["trackerAsks"][0]), publish.PLAN_ITEM_FIELDS["trackerAsks"])
+
+    def test_an_incomplete_enabled_source_withdraws_tracker_asks_and_keeps_log_asks(self) -> None:
+        self.tracker_plan(mixed=True, count=2, asks=2)
+        self.log.write_text("ask hull:1 Check the test hull?\n", encoding="utf-8")
+        app = self.application()
+        now = time.monotonic()
+        measured = tracker_refresh.Observation(
+            self.measured_tracker_data("remote-a"), observed_at=now
+        )
+        for missing in (
+            tracker_refresh.Observation(self.tracker_data("remote-b"), observed_at=now),
+            tracker_refresh.Observation(reason=tracker_cli.Reason.SIGNED_OUT),
+            tracker_refresh.Observation(reason=tracker_cli.Reason.DISABLED),
+            replace(measured, observed_at=now - 31),
+        ):
+            with (
+                self.subTest(missing=missing),
+                mock.patch.object(
+                    app.state.plan_trackers, "observe", return_value=(measured, missing)
+                ),
+            ):
+                payload, _ = self.payload(app)
+                self.assertTrue(payload["trackerAsksEnabled"])
+                self.assertIsNone(payload["trackerAsks"])
+                self.assertEqual(["Check the test hull?"], [ask["text"] for ask in payload["asks"]])
+
+    def test_a_source_without_ask_labels_does_not_affect_the_ask_measurement(self) -> None:
+        self.tracker_plan(count=2, asks=1)
+        app = self.application()
+        results = (
+            tracker_refresh.Observation(
+                self.measured_tracker_data(matches=False), observed_at=time.monotonic()
+            ),
+            tracker_refresh.Observation(reason=tracker_cli.Reason.SIGNED_OUT),
+        )
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=results):
+            payload, _ = self.payload(app)
+        self.assertTrue(payload["trackerAsksEnabled"])
+        self.assertEqual([], payload["trackerAsks"])
+
+    def test_ask_freshness_uses_only_enabled_sources_even_when_the_measurement_is_zero(
+        self,
+    ) -> None:
+        self.tracker_plan(count=3, asks=2)
+        app = self.application()
+        refresh = app.state.plan_trackers
+        for matches in (True, False):
+            with self.subTest(matches=matches):
+                results = (
+                    tracker_refresh.Observation(
+                        self.measured_tracker_data("remote-a", matches=matches), observed_at=100
+                    ),
+                    tracker_refresh.Observation(
+                        self.measured_tracker_data("remote-b", matches=matches), observed_at=105
+                    ),
+                    tracker_refresh.Observation(self.tracker_data("remote-c"), observed_at=90),
+                )
+                with (
+                    mock.patch.object(refresh, "_clock", return_value=105),
+                    mock.patch.object(refresh, "observe", return_value=results),
+                ):
+                    payload, _ = self.payload(app)
+                self.assertEqual(int(matches), len(payload["trackerAsks"]))
+                self.assertEqual(15_000, payload["trackerRead"]["freshForMs"])
+                self.assertEqual(25_000, payload.get("trackerAsksFreshForMs"))
+
+    def test_tracker_asks_are_off_without_labels(self) -> None:
+        self.tracker_plan()
+        payload, _ = self.payload(self.application(plan_trackers_enabled=False))
+        self.assertFalse(payload["trackerAsksEnabled"])
+        self.assertIsNone(payload["trackerAsks"])
 
     def test_missing_and_refused_settings_have_no_partial_data(self) -> None:
         self.assertEqual(self.payload()[0], {"state": "not-configured"})
@@ -412,6 +669,7 @@ class PlanPublicationTest(PlanRepoTestCase):
             "lanes": {"id", "title", "doneWhen", "state", "date", "sessions"},
             "asks": {"id", "text", "at", "timeLabel", "source", "lane"},
             "asks.lane": {"id", "title"},
+            "trackerAsks": {"title", "linkHost", "source", "lane", "goals"},
             "design": {"title", "summary", "decided", "source", "date"},
             "tracker": {"title", "group", "source", "date"},
             "inventory": {"title", "group", "source", "date"},
@@ -447,7 +705,7 @@ class PlanPublicationTest(PlanRepoTestCase):
                 ]
                 for name, fields in expected.items():
                     with self.subTest(row=name):
-                        if name == "trackerRead":
+                        if name in ("trackerRead", "trackerAsks"):
                             self.assertIsNone(rows[name])
                             continue
                         self.assertTrue(rows[name])

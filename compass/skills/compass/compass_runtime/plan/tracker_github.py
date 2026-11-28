@@ -23,17 +23,30 @@ _MAX_ITEMS = 200
 _PAGE_SIZE = 50
 _MAX_PAGES = 8
 _MAX_FIELDS = 100
+_MAX_ASK_MEMBERS = 20
 _MAX_GRAPHQL_INT = 2**31 - 1
 _DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_LOGIN = re.compile(r"[A-Za-z0-9_-]{1,128}(?:\[bot\])?")
 _CLOSED_STATES = {"COMPLETED": "done", "NOT_PLANNED": "dropped", "DUPLICATE": "dropped"}
 
-_ISSUE = "id number title url state stateReason updatedAt"
 _CONNECTION = "totalCount pageInfo { hasNextPage endCursor }"
+_READ_ASKS = "$readAsks: Boolean!"
+_VIEWER = "viewer @include(if: $readAsks) { login }"
+_ISSUE = f"""
+  id number title url state stateReason updatedAt
+  labels(first: {_MAX_ASK_MEMBERS + 1}) @include(if: $readAsks) {{
+    {_CONNECTION} nodes {{ name }}
+  }}
+  assignees(first: {_MAX_ASK_MEMBERS + 1}) @include(if: $readAsks) {{
+    {_CONNECTION} nodes {{ login }}
+  }}
+"""
 
 # The issue-list milestone filter uses search. The milestone connection gives its own
 # issue-only count and cursors without conflating pull requests with issues.
 MILESTONE_QUERY = f"""
-query MilestoneIssues($id: ID!, $cursor: String) {{
+query MilestoneIssues($id: ID!, $cursor: String, {_READ_ASKS}) {{
+  {_VIEWER}
   node(id: $id) {{
     ... on Milestone {{
       id number url
@@ -47,7 +60,8 @@ query MilestoneIssues($id: ID!, $cursor: String) {{
 
 # gh issue view's nested subIssues has no pageInfo or child stateReason.
 PARENT_QUERY = f"""
-query SubIssues($owner: String!, $repo: String!, $number: Int!, $cursor: String) {{
+query SubIssues($owner: String!, $repo: String!, $number: Int!, $cursor: String, {_READ_ASKS}) {{
+  {_VIEWER}
   repository(owner: $owner, name: $repo) {{
     issue(number: $number) {{
       id number title url
@@ -77,7 +91,8 @@ query ProjectFields($owner: String!, $number: Int!) {{
 
 # item-list flattens field names and omits the issue's state and close reason.
 PROJECT_ITEMS_QUERY = f"""
-query ProjectIssues($id: ID!, $status: String!, $cursor: String) {{
+query ProjectIssues($id: ID!, $status: String!, $cursor: String, {_READ_ASKS}) {{
+  {_VIEWER}
   node(id: $id) {{
     ... on ProjectV2 {{
       id
@@ -105,9 +120,14 @@ type Record = dict[str, object]
 type PageReader = Callable[[str | None], tuple[str, Record]]
 
 
-def _has_graphql_data(data: object) -> bool:
+def _has_graphql_target_data(data: object) -> bool:
     # A failed lookup can still return the query's wrapper objects around a null target.
-    remaining = [data]
+    # The top-level viewer can resolve independently of that target.
+    remaining = (
+        [value for key, value in data.items() if key != "viewer"]
+        if isinstance(data, dict)
+        else [data]
+    )
     while remaining:
         value = remaining.pop()
         if isinstance(value, dict):
@@ -129,7 +149,7 @@ def _graphql(child: TrackerCLI, query: str, *variables: str, cursor: str | None 
             raise grammar.SettingsError
         if errors:
             kinds = [grammar.dictionary(error).get("type") for error in errors]
-            if _has_graphql_data(envelope.get("data")):
+            if _has_graphql_target_data(envelope.get("data")):
                 raise TrackerError(Reason.PARTIAL)
             if all(kind in ("NOT_FOUND", "FORBIDDEN", "INSUFFICIENT_SCOPES") for kind in kinds):
                 raise TrackerError(Reason.NOT_FOUND)
@@ -232,27 +252,98 @@ def _repo_url(raw: object, kind: str, number: int) -> str:
     return tracker_source.repository(url[len(prefix) : -len(suffix)])
 
 
-def _issue_state(issue: Record) -> str | None:
+def _issue_status(issue: Record) -> tuple[str | None, str | None]:
     raw_state = issue.get("state")
     raw_reason = issue.get("stateReason")
     state = None if raw_state in (None, "") else grammar.string(raw_state, 64)
     reason = None if raw_reason in (None, "") else grammar.string(raw_reason, 64)
+    if (state == "OPEN" and reason not in (None, "REOPENED")) or (
+        state == "CLOSED" and reason == "REOPENED"
+    ):
+        return None, reason
+    return state, reason
+
+
+def _issue_state(issue: Record) -> str | None:
+    state, reason = _issue_status(issue)
     if state is None:
         return None
     if state == "OPEN":
-        return "not_started" if reason in (None, "REOPENED") else None
+        return "not_started"
     if state == "CLOSED":
-        return None if reason in (None, "REOPENED") else _CLOSED_STATES.get(reason, STATUS_UNKNOWN)
+        return None if reason is None else _CLOSED_STATES.get(reason, STATUS_UNKNOWN)
     return STATUS_UNKNOWN
 
 
 def _goal(kind: str, identity: str, title: object, due: model.ItemDate | None = None) -> model.Goal:
-    source = model.Source(f"github {kind}", f"GitHub {kind}", _WEB)
+    source = model.Source(f"github {kind}", tracker_source.GITHUB_SOURCE_LABELS[kind], _WEB)
     return model.Goal(_slug(kind, identity), _title(title), None, model.Origin(source, date=due))
 
 
+def _viewer(data: Record) -> str | None:
+    viewer = data.get("viewer")
+    login = viewer.get("login") if isinstance(viewer, dict) else None
+    return login.lower() if isinstance(login, str) and _LOGIN.fullmatch(login) else None
+
+
+def _ask_variables(source: tracker_source.Declaration) -> tuple[str, str]:
+    # GitHub rejects an omitted non-null variable even when the query declares a default.
+    value = "true" if source.ask_labels else "false"
+    return "-F", f"variables[readAsks]={value}"
+
+
+def _ask_values(issue: Record, field: str, key: str) -> set[str]:
+    total, nodes, cursor = _page(
+        grammar.dictionary(issue[field]), limit=_MAX_ASK_MEMBERS, size=_MAX_ASK_MEMBERS
+    )
+    values = {grammar.string(node[key], 128) for node in nodes}
+    if key == "login":
+        if any(not _LOGIN.fullmatch(login) for login in values):
+            raise grammar.SettingsError
+        values = {login.lower() for login in values}
+    if cursor is not None or total != len(nodes) or len(values) != total:
+        raise TrackerError(Reason.PARTIAL)
+    if key == "name" and any(not name.strip() for name in values):
+        raise grammar.SettingsError
+    return values
+
+
+def _ask_read(
+    lanes: dict[str, model.Lane],
+    issues: list[tuple[Record, str | None]],
+    labels: tuple[str, ...],
+    viewers: set[str | None],
+) -> model.TrackerAskRead | None:
+    if not labels or len(viewers) != 1:
+        return None
+    login = next(iter(viewers))
+    if login is None:
+        return None
+    observations = []
+    try:
+        for lane, (issue, _) in zip(lanes.values(), issues, strict=True):
+            names = _ask_values(issue, "labels", "name")
+            assignees = _ask_values(issue, "assignees", "login")
+            state, _ = _issue_status(issue)
+            if state not in ("OPEN", "CLOSED"):
+                return None
+            observations.append(
+                model.TrackerAskIssue(
+                    lane, state == "OPEN" and login in assignees, frozenset(names)
+                )
+            )
+    except (KeyError, ValueError, TrackerError):
+        return None
+    return model.TrackerAskRead(login, tuple(observations))
+
+
 def _rows(
-    goal: model.Goal, issues: list[tuple[Record, str | None]], *, repo: str | None = None
+    goal: model.Goal,
+    issues: list[tuple[Record, str | None]],
+    *,
+    repo: str | None = None,
+    ask_labels: tuple[str, ...],
+    viewers: set[str | None],
 ) -> model.TrackerData:
     lanes: dict[str, model.Lane] = {}
     coordinates: set[tuple[str, int]] = set()
@@ -278,7 +369,10 @@ def _rows(
             state=project_status if project_status is not None else ordinary_state,
         )
     return model.TrackerData(
-        (replace(goal, lanes=tuple(lanes)),), tuple(lanes.values()), frozenset(project_status_lanes)
+        (replace(goal, lanes=tuple(lanes)),),
+        tuple(lanes.values()),
+        frozenset(project_status_lanes),
+        _ask_read(lanes, issues, ask_labels, viewers),
     )
 
 
@@ -308,9 +402,18 @@ def _milestone(
     _check_repository(info, source, "milestone", "html_url")
     rest_id = tracker_source.node_id(info["node_id"])
     due = _item_date(info["due_on"], "Due", allow_day=True)
+    viewers: set[str | None] = set()
 
     def get_milestone(node_id: str, cursor: str | None) -> Record:
-        data = _graphql(child, MILESTONE_QUERY, "-f", f"variables[id]={node_id}", cursor=cursor)
+        data = _graphql(
+            child,
+            MILESTONE_QUERY,
+            "-f",
+            f"variables[id]={node_id}",
+            *_ask_variables(source),
+            cursor=cursor,
+        )
+        viewers.add(_viewer(data))
         milestone = _lookup(data, "node")
         _check_repository(milestone, source, "milestone", "url")
         return milestone
@@ -324,7 +427,13 @@ def _milestone(
         milestone = first if cursor is None else get_milestone(identity, cursor)
         return tracker_source.node_id(milestone["id"]), grammar.dictionary(milestone["issues"])
 
-    return _rows(goal, [(issue, None) for issue in _members(page, identity)], repo=source.repo)
+    return _rows(
+        goal,
+        [(issue, None) for issue in _members(page, identity)],
+        repo=source.repo,
+        ask_labels=source.ask_labels,
+        viewers=viewers,
+    )
 
 
 def _parent(source: tracker_source.RepositoryDeclaration, child: TrackerCLI) -> model.TrackerData:
@@ -336,10 +445,13 @@ def _parent(source: tracker_source.RepositoryDeclaration, child: TrackerCLI) -> 
         f"variables[repo]={repo}",
         "-F",
         f"variables[number]={source.number}",
+        *_ask_variables(source),
     )
+    viewers: set[str | None] = set()
 
     def get_parent(cursor: str | None) -> Record:
         data = _graphql(child, PARENT_QUERY, *variables, cursor=cursor)
+        viewers.add(_viewer(data))
         parent = _lookup(_lookup(data, "repository"), "issue")
         _check_repository(parent, source, "issues", "url")
         return parent
@@ -352,7 +464,12 @@ def _parent(source: tracker_source.RepositoryDeclaration, child: TrackerCLI) -> 
         parent = first if cursor is None else get_parent(cursor)
         return tracker_source.node_id(parent["id"]), grammar.dictionary(parent["subIssues"])
 
-    return _rows(goal, [(issue, None) for issue in _members(page, identity)])
+    return _rows(
+        goal,
+        [(issue, None) for issue in _members(page, identity)],
+        ask_labels=source.ask_labels,
+        viewers=viewers,
+    )
 
 
 def _project_field(project: Record, wanted: str) -> str:
@@ -417,6 +534,7 @@ def _project(source: tracker_source.ProjectDeclaration, child: TrackerCLI) -> mo
     identity = tracker_source.node_id(project["id"])
     goal = _goal("project", identity, project["title"])
     name = _project_field(project, source.status_field)
+    viewers: set[str | None] = set()
 
     def page(cursor: str | None) -> tuple[str, Record]:
         response = _graphql(
@@ -426,8 +544,10 @@ def _project(source: tracker_source.ProjectDeclaration, child: TrackerCLI) -> mo
             f"variables[id]={identity}",
             "-f",
             f"variables[status]={name}",
+            *_ask_variables(source),
             cursor=cursor,
         )
+        viewers.add(_viewer(response))
         node = _lookup(response, "node")
         field = node["statusField"]
         if field is None or grammar.dictionary(field).get("id") != source.status_field:
@@ -446,7 +566,7 @@ def _project(source: tracker_source.ProjectDeclaration, child: TrackerCLI) -> mo
             issues.append((content, _project_status(item, source)))
         elif kind not in ("DraftIssue", "PullRequest"):
             raise grammar.SettingsError
-    return _rows(goal, issues)
+    return _rows(goal, issues, ask_labels=source.ask_labels, viewers=viewers)
 
 
 def read(source: tracker_source.Declaration, child: TrackerCLI) -> model.TrackerData:

@@ -1,11 +1,12 @@
 import { readBootstrap } from '../api/bootstrap';
 import { createApiClient, type FetchLike } from '../api/client';
 import {
-  expireTrackerRead,
+  expirePlanReadings,
   failTrackerRead,
   isTrackerSource,
   usablePlan,
   type PlanReading,
+  type ReadyPlan,
 } from '../api/plan';
 import { exactIdentity } from '../api/identity';
 import type { ApiResult, FocusOutcome, SessionIdentity } from '../api/types';
@@ -138,11 +139,27 @@ export function createBoardRuntime(options: RuntimeOptions) {
     let planExpiry: TimerHandle | null = null;
     let planRetry: TimerHandle | null = null;
 
-    function expirePlan(): boolean {
-      const current = store.getSnapshot().plan;
-      if (current.state !== 'ready' || !current.trackerRead) return false;
-      store.setPlan(expireTrackerRead(current));
-      return true;
+    function schedulePlanExpiry(plan: ReadyPlan, started: number) {
+      const deadline = Math.min(
+        plan.trackerRead?.freshForMs ?? Infinity,
+        plan.trackerAsksFreshForMs ?? Infinity,
+      );
+      if (!Number.isFinite(deadline)) return;
+      planExpiry = env.clock.setTimeout(
+        () => {
+          planExpiry = null;
+          const current = store.getSnapshot().plan;
+          if (current.state !== 'ready') return;
+          const next = expirePlanReadings(current, Math.max(0, env.clock.now() - started));
+          schedulePlanExpiry(next, started);
+          if (next !== current) {
+            store.setPlan(next);
+            void sink.paint({ manual: false, accepted: true, followUp: true });
+            if (!cancelPlan) void readPlan(false);
+          }
+        },
+        Math.max(0, deadline - Math.max(0, env.clock.now() - started)),
+      );
     }
 
     async function readPlan(manual: boolean, retries = PLAN_RETRIES): Promise<void> {
@@ -167,19 +184,12 @@ export function createBoardRuntime(options: RuntimeOptions) {
         let expiredInTransit = false;
         if (planExpiry !== null) env.clock.clearTimeout(planExpiry);
         planExpiry = null;
-        if (next.state === 'ready' && next.trackerRead) {
-          // The response's remaining budget began before it could reach the browser.
-          const remaining = next.trackerRead.freshForMs - Math.max(0, env.clock.now() - started);
-          if (remaining <= 0) {
-            next = expireTrackerRead(next);
-            expiredInTransit = true;
-          } else {
-            planExpiry = env.clock.setTimeout(() => {
-              planExpiry = null;
-              if (expirePlan()) void sink.paint({ manual: false, accepted: true, followUp: true });
-              if (!cancelPlan) void readPlan(false);
-            }, remaining);
-          }
+        if (next.state === 'ready') {
+          // Both freshness budgets began before the response could reach the browser.
+          const fresh = expirePlanReadings(next, Math.max(0, env.clock.now() - started));
+          expiredInTransit = fresh !== next;
+          next = fresh;
+          schedulePlanExpiry(fresh, started);
         }
         if (
           retries > 0 &&
@@ -211,7 +221,8 @@ export function createBoardRuntime(options: RuntimeOptions) {
         planExpiry = null;
         if (planRetry !== null) env.clock.clearTimeout(planRetry);
         planRetry = null;
-        expirePlan();
+        const current = store.getSnapshot().plan;
+        if (current.state === 'ready') store.setPlan(expirePlanReadings(current, Infinity));
       },
       context: createContextLoader({ client, store, storage }),
       record: createRecordLoader({ client, store }),

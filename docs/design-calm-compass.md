@@ -361,12 +361,15 @@ wording when its redesign ships. Route tokens still belong to the router.
 | In progress | New label | A lane with work underway | Working, a session state | Plan lane and tracker group |
 | Lane | New label | A line of work serving a plan goal | Working, a session state | Plan goals and lane counts |
 | No lanes found | New label | A complete tracker read with no issues to show | Not measured | Tracker source on Plan |
+| No tracker asks. | New label | A complete ask read with no matching issues | Tracker asks are not measured. | Waiting on you on Plan |
 | Not decided yet | New label | A design note the decision log has not marked decided | Product decisions | Design section on Plan |
 | Not measured | New label | A lane with no usable state, or an incomplete tracker read | Planned, a lane not started | Plan lane group and tracker source state |
 | Planned | New label | A lane whose tracker row is not started | Not measured | Plan lane and tracker group |
 | Product decisions | New label | Decisions from the plan design notes | Decisions, the Project tab | Design section on Plan |
 | Reading GitHub… | New label | A GitHub read is queued or running | A complete empty read | Tracker source on Plan |
 | Status not recognised | New label | A tracker status word the settings do not list, never echoed | Not measured | Plan lane group and tracker row |
+| Tracker asks | New label | Open issues with a declared label assigned to the signed-in account | Log asks and sessions waiting for a reply | Waiting on you on Plan |
+| Tracker asks are not measured. | New label | An opted-in source lacks a complete ask read | No tracker asks. | Waiting on you on Plan |
 | Waiting | New label | A lane paused on something outside it | Waiting on you, a session state | Plan lane and tracker group |
 
 Check means a Compass progress check on the first layer. Use "tests and builds" for the

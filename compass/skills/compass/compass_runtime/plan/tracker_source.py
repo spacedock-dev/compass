@@ -17,9 +17,22 @@ _REPO = re.compile(r"[A-Za-z0-9._-]{1,100}")
 _NODE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_=/+:-]{0,255}")
 MAX_SOURCES = 32
 MAX_NUMBER = 10_000_000
+MAX_ASK_LABELS = 32
+MAX_ASK_LABEL_CHARS = 128
+GITHUB_SOURCE_LABELS = MappingProxyType(
+    {
+        "milestone": "GitHub milestone",
+        "parent-issue": "GitHub parent issue",
+        "project": "GitHub project",
+    }
+)
 
 type SourceKey = tuple[str, str, str, int]
 type Declaration = RepositoryDeclaration | ProjectDeclaration
+
+
+class InvalidAskLabels(grammar.SettingsError):
+    """Report the refused field without exposing its values."""
 
 
 @dataclass(frozen=True)
@@ -28,6 +41,7 @@ class RepositoryDeclaration:
     kind: Literal["milestone", "parent-issue"]
     repo: str
     number: int
+    ask_labels: tuple[str, ...] = ()
 
     @property
     def key(self) -> SourceKey:
@@ -46,6 +60,7 @@ class ProjectDeclaration:
     number: int
     status_field: str
     words: Mapping[str, str]
+    ask_labels: tuple[str, ...] = ()
 
     @property
     def key(self) -> SourceKey:
@@ -72,6 +87,20 @@ def node_id(value: object) -> str:
     return identity
 
 
+def _ask_labels(raw: dict[str, object]) -> tuple[str, ...]:
+    if "ask_labels" not in raw:
+        return ()
+    try:
+        labels = grammar.strings(
+            raw["ask_labels"], MAX_ASK_LABELS, MAX_ASK_LABEL_CHARS, min_items=1
+        )
+    except grammar.SettingsError:
+        raise InvalidAskLabels from None
+    if any(not label.strip() for label in labels):
+        raise InvalidAskLabels
+    return labels
+
+
 def declaration(value: object) -> Declaration:
     raw = grammar.dictionary(value)
     if raw.get("provider") != "github":
@@ -79,7 +108,9 @@ def declaration(value: object) -> Declaration:
     number = grammar.integer(raw.get("number"), MAX_NUMBER)
     kind = raw.get("kind")
     if kind == "project":
-        raw = grammar.keys(raw, "provider kind owner number status_field words")
+        raw = grammar.keys(
+            raw, "provider kind owner number status_field words", optional="ask_labels"
+        )
         owner = grammar.string(raw["owner"], 39)
         if not _OWNER.fullmatch(owner):
             raise grammar.SettingsError
@@ -91,10 +122,13 @@ def declaration(value: object) -> Declaration:
             number,
             node_id(raw["status_field"]),
             MappingProxyType(words),
+            _ask_labels(raw),
         )
     if kind in ("milestone", "parent-issue"):
-        raw = grammar.keys(raw, "provider kind repo number")
-        return RepositoryDeclaration("github", kind, repository(raw["repo"]), number)
+        raw = grammar.keys(raw, "provider kind repo number", optional="ask_labels")
+        return RepositoryDeclaration(
+            "github", kind, repository(raw["repo"]), number, _ask_labels(raw)
+        )
     raise grammar.SettingsError
 
 

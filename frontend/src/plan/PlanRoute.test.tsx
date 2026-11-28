@@ -4,7 +4,9 @@ import { describe, it, vi } from 'vitest';
 import {
   crowdedSourceRows,
   crowdedSources,
+  githubAsksPlan,
   githubPlan,
+  githubPlanWithLog,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -516,6 +518,38 @@ describe('the Plan destination follows the published plan', () => {
 });
 
 describe('tracker plans on Plan', () => {
+  it.each([
+    [null, null],
+    ['decisions', 'Design'],
+    ['tracker', 'Tracker'],
+    ['diagrams', 'Diagrams'],
+  ] as const)('shows only file sections declared in a sparse plan (%s)', async (kind, section) => {
+    const page = mountPlan({
+      ...githubPlanWithLog,
+      sources: kind
+        ? [
+            ...githubPlanWithLog.sources,
+            {
+              label: 'Declared file',
+              kind,
+              fileLabel: null,
+              position: null,
+              state: 'refused',
+              reason: 'not in branch',
+            },
+          ]
+        : githubPlanWithLog.sources,
+    });
+    await page.settle();
+    expect(screen.getByText(readyPlan.asks[0].text)).toBeVisible();
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    for (const name of ['Design', 'Tracker', 'Diagrams']) {
+      const heading = screen.queryByRole('heading', { name, level: 2 });
+      if (name === section) expect(heading).toBeVisible();
+      else expect(heading).toBeNull();
+    }
+  });
+
   it('shows a refused lane folder without adding file sections to a tracker-only plan', async () => {
     const tracker = githubPlan('ok');
     const page = mountPlan({
@@ -593,6 +627,80 @@ describe('tracker plans on Plan', () => {
     expect(screen.getByText(readyPlan.asks[0].text)).toBeVisible();
   });
 
+  it('shows the issue title as a host-only link in Waiting on you', async () => {
+    const page = mountPlan(githubAsksPlan('present'));
+    await page.settle();
+    const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+    const asks = within(waiting.getByRole('list', { name: 'Tracker asks' }));
+    const link = asks.getByRole('link', { name: 'Approve the sign lettering' });
+    expect(link).toBeVisible();
+    expect(link).toHaveAttribute('href', 'https://github.com');
+    expect(asks.getByText('GitHub milestone · github.com')).toBeVisible();
+    expect(waiting.queryByText('Tracker asks are not measured.')).toBeNull();
+  });
+
+  it('shows a measured absence when no issues match', async () => {
+    const page = mountPlan(githubAsksPlan('none'));
+    await page.settle();
+    expect(screen.getByText('No tracker asks.')).toBeVisible();
+    expect(screen.queryByText('Tracker asks are not measured.')).toBeNull();
+  });
+
+  it('keeps the other waits visible when tracker asks are not measured', async () => {
+    const page = mountPlan(githubAsksPlan('not measured'));
+    await page.settle();
+    const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+    expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+    expect(waiting.queryByText('No tracker asks.')).toBeNull();
+    expect(waiting.getByText('Who can check the entrance signs?')).toBeVisible();
+    expect(waiting.getByRole('link', { name: 'Review the shelf layout' })).toBeVisible();
+  });
+
+  it('does not claim a measurement for a malformed ask row', async () => {
+    const plan = githubAsksPlan('present');
+    const page = mountPlan({
+      ...plan,
+      trackerAsks: [{ ...plan.trackerAsks?.[0], linkHost: 'github.com/private-repo' }],
+    });
+    await page.settle();
+    expect(screen.getByText('Tracker asks are not measured.')).toBeVisible();
+    expect(screen.getByText('Who can check the entrance signs?')).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Approve the sign lettering' })).toBeNull();
+  });
+
+  it.each(['present', 'none'] as const)(
+    'keeps tracker asks (%s) through an earlier source expiry while a refresh is pending',
+    async (state) => {
+      const plan = githubAsksPlan(state);
+      const page = mountPlan({
+        ...plan,
+        sources: [
+          ...plan.sources,
+          { ...plan.sources[0], kind: 'github parent-issue', label: 'GitHub parent issue' },
+        ],
+        trackerRead: { ...plan.trackerRead, freshForMs: 20_000 },
+        trackerAsksFreshForMs: 30_000,
+      });
+      await page.settle();
+      const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+      const measurement = () =>
+        state === 'present'
+          ? waiting.queryByRole('list', { name: 'Tracker asks' })
+          : waiting.queryByText('No tracker asks.');
+      expect(measurement()).toBeVisible();
+      page.getResponses['/api/plan'] = () => new Promise<Response>(() => undefined);
+      await act(async () => page.clock.advance(20_000));
+      expect(page.gets('/api/plan')).toBeGreaterThan(1);
+      expect(measurement()).toBeVisible();
+      expect(waiting.queryByText('Tracker asks are not measured.')).toBeNull();
+      await act(async () => page.clock.advance(10_000));
+      expect(measurement()).toBeNull();
+      expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+      expect(waiting.getByText(readyPlan.asks[0].text)).toBeVisible();
+      expect(waiting.getByRole('link', { name: 'Review the shelf layout' })).toBeVisible();
+    },
+  );
+
   it('shows a due date, a complete lane count and its linked session', async () => {
     const page = mountPlan(githubPlan('ok'));
     await page.settle();
@@ -614,6 +722,7 @@ describe('tracker plans on Plan', () => {
     async (withLocalAsks) => {
       const reply = (state: 'refreshing' | 'ok' | 'empty') => ({
         ...githubPlan(state),
+        trackerAsksEnabled: true,
         asks: withLocalAsks ? readyPlan.asks : [],
       });
       const getResponses = { '/api/plan': reply('refreshing') };
@@ -699,5 +808,20 @@ describe('tracker plans on Plan', () => {
     await act(async () => page.clock.advance(100));
     expect(screen.queryByText('Put up the welcome sign')).toBeNull();
     expect(screen.getByText('The last read is out of date.')).toBeVisible();
+  });
+
+  it('withdraws a still-fresh ask when the pending refresh fails', async () => {
+    const plan = githubAsksPlan('present');
+    const page = mountPlan({ ...plan, trackerRead: { ...plan.trackerRead, freshForMs: 100 } });
+    await page.settle();
+    let respond: (response: Response) => void = () => undefined;
+    page.getResponses['/api/plan'] = () => new Promise<Response>((resolve) => (respond = resolve));
+    await act(async () => page.clock.advance(100));
+    const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+    expect(waiting.getByRole('link', { name: 'Approve the sign lettering' })).toBeVisible();
+    await act(async () => respond(new Response(null, { status: 503 })));
+    expect(waiting.queryByRole('list', { name: 'Tracker asks' })).toBeNull();
+    expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+    expect(waiting.getByText(readyPlan.asks[0].text)).toBeVisible();
   });
 });

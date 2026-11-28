@@ -807,6 +807,32 @@ class TrackerEntryPointTest(TrackerTestCase):
             )
         launch.assert_not_called()
 
+    def test_diagnose_names_invalid_ask_labels_without_echoing_them_or_reading_github(self) -> None:
+        canary = "synthetic-privately-named-label"
+        for invalid in (
+            [],
+            [""],
+            ["   "],
+            [canary, canary],
+            ["x" * 129],
+            [f"label-{n}" for n in range(33)],
+            canary,
+            None,
+        ):
+            with self.subTest(invalid=invalid):
+                (self.root / settings.FILENAME).write_text(
+                    json.dumps(
+                        {"version": 1, "trackers": [{**DECLARATION, "ask_labels": invalid}]}
+                    ),
+                    encoding="utf-8",
+                )
+                report = diagnostics._plan_report(self.application().state)
+                lines = "\n".join(diagnostics._plan_lines(report))
+                self.assertIn("Plan settings", lines)
+                self.assertIn("invalid tracker ask_labels", lines)
+                self.assertNotIn(canary, lines)
+                self.runner.assert_not_called()
+
 
 def tracker_source_digest(root: Path) -> str:
     plan = settings.load(str(root)).settings

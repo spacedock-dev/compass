@@ -157,16 +157,20 @@ function SessionReferences({
 function WaitingOnYou({
   asks,
   waitingSessions,
-  trackerAsksUnmeasured,
-}: Pick<PlanModel, 'asks' | 'waitingSessions' | 'trackerAsksUnmeasured'>) {
+  trackerAsks,
+}: Pick<PlanModel, 'asks' | 'waitingSessions' | 'trackerAsks'>) {
   const waitingId = useId();
+  const hasRows = asks.length > 0 || !!trackerAsks?.length || waitingSessions.length > 0;
   return (
     <PlanSection title={SESSION_ROW_WORDS.waitingOnYou}>
-      {trackerAsksUnmeasured && (
-        <p className="m-0 text-muted-foreground">Tracker asks are not measured.</p>
+      {trackerAsks === null && (
+        <p className="m-0 text-muted-foreground">{PLAN_WORDS.trackerAsksNotMeasured}</p>
       )}
-      {asks.length === 0 && waitingSessions.length === 0 ? (
-        !trackerAsksUnmeasured && (
+      {trackerAsks?.length === 0 && (
+        <p className="m-0 text-muted-foreground">{PLAN_WORDS.noTrackerAsks}</p>
+      )}
+      {!hasRows ? (
+        trackerAsks === undefined && (
           <p className="m-0 text-muted-foreground">
             No open asks or sessions waiting for a reply are listed.
           </p>
@@ -227,6 +231,36 @@ function WaitingOnYou({
                     </li>
                   );
                 })}
+              </ul>
+            </div>
+          )}
+          {!!trackerAsks?.length && (
+            <div className="grid gap-2">
+              <h3 className="m-0 flex items-center gap-2 text-value font-bold">
+                <Icon name="help" className="shrink-0 text-[var(--amber)]" />
+                {PLAN_WORDS.trackerAsks}
+              </h3>
+              <ul
+                role="list"
+                aria-label={PLAN_WORDS.trackerAsks}
+                className="m-0 grid list-none gap-3 p-0"
+              >
+                {trackerAsks.map(({ lane, title, source, linkHost }) => (
+                  <li key={lane} className="grid min-w-0 gap-1">
+                    <a
+                      href={`https://${linkHost}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(titleLink, 'w-fit max-w-[var(--measure)] font-semibold')}
+                      data-authored
+                    >
+                      {title}
+                    </a>
+                    <p className="m-0 text-label leading-relaxed text-muted-foreground">
+                      {source} · {linkHost}
+                    </p>
+                  </li>
+                ))}
               </ul>
             </div>
           )}
@@ -570,7 +604,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
         <WaitingOnYou
           asks={model.asks}
           waitingSessions={model.waitingSessions}
-          trackerAsksUnmeasured={model.trackerAsksUnmeasured}
+          trackerAsks={model.trackerAsks}
         />
         <PlanSection title="Goals">
           {model.trackerIncomplete && (
@@ -589,7 +623,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
                 />
               ))}
         </PlanSection>
-        {(!model.trackerOnly || model.design.length > 0) && (
+        {model.fileSections.design && (
           <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>
             {model.design.length === 0 ? (
               <p className="m-0 text-muted-foreground">No product decisions are listed.</p>
@@ -613,8 +647,8 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
             )}
           </PlanSection>
         )}
-        {(!model.trackerOnly || model.tracker.length > 0) && <Tracker items={model.tracker} />}
-        {(!model.trackerOnly || model.diagrams.length > 0) && (
+        {model.fileSections.tracker && <Tracker items={model.tracker} />}
+        {model.fileSections.diagrams && (
           <PlanSection title="Diagrams" sourceLabels={model.diagrams.map((note) => note.source)}>
             {model.diagrams.length === 0 ? (
               <p className="m-0 text-muted-foreground">No diagrams are listed.</p>

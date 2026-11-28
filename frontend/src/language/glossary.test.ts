@@ -79,12 +79,15 @@ describe('the first-layer glossary', () => {
       'In progress',
       'Lane',
       'No lanes found',
+      'No tracker asks.',
       'Not decided yet',
       'Not measured',
       'Planned',
       'Product decisions',
       'Reading GitHub…',
       'Status not recognised',
+      'Tracker asks',
+      'Tracker asks are not measured.',
       'Waiting',
     ]);
     expect(GLOSSARY).toHaveProperty('planInProgress.distinctFrom', 'Working, a session state');

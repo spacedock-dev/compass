@@ -8,24 +8,38 @@ import os
 import time
 from collections import Counter, defaultdict
 from dataclasses import replace
+from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
 from compass_runtime import io, records
 
-from . import grammar, markdown, model, readers, settings, summary_states, tracker_cli
+from . import (
+    grammar,
+    markdown,
+    model,
+    readers,
+    settings,
+    summary_states,
+    tracker_cli,
+    tracker_source,
+)
 
 if TYPE_CHECKING:
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
 
     from .tracker_refresh import Observation, TrackerRefresh
+    from .tracker_source import Declaration
 
 PLAN_FIELDS: Final = (
     "state",
     "goals",
     "lanes",
     "asks",
+    "trackerAsks",
+    "trackerAsksEnabled",
+    "trackerAsksFreshForMs",
     "design",
     "tracker",
     "inventory",
@@ -42,6 +56,7 @@ PLAN_ITEM_FIELDS: Final = MappingProxyType(
         "lanes": frozenset({"id", "title", "doneWhen", "state", "date", "sessions"}),
         "asks": frozenset({"id", "text", "at", "timeLabel", "source", "lane"}),
         "asks.lane": frozenset({"id", "title"}),
+        "trackerAsks": frozenset({"title", "linkHost", "source", "lane", "goals"}),
         "design": frozenset({"title", "summary", "decided", "source", "date"}),
         "tracker": frozenset({"title", "group", "source", "date"}),
         "inventory": frozenset({"title", "group", "source", "date"}),
@@ -212,6 +227,9 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
             }
             for ask in plan.asks
         ],
+        "trackerAsks": None,
+        "trackerAsksEnabled": False,
+        "trackerAsksFreshForMs": None,
         "design": [
             {
                 "title": _text(decision.title),
@@ -283,23 +301,15 @@ def _merge_tracker_rows(
     return replace(local, goals=tuple(goals), lanes=tuple(lanes.values()), sources=tuple(sources))
 
 
-_TRACKER_LABELS: Final = MappingProxyType(
-    {
-        "milestone": "GitHub milestone",
-        "parent-issue": "GitHub parent issue",
-        "project": "GitHub project",
-    }
-)
-
-
 def _tracker_projection(
     observations: tuple[Observation, ...], settings: settings.Settings, refresh: TrackerRefresh
-) -> tuple[list[dict[str, Any]], list[model.TrackerData], int | None]:
+) -> tuple[list[dict[str, Any]], list[model.TrackerData], int | None, int | None]:
     kinds = Counter(source.kind for source in settings.trackers)
     positions: Counter[str] = Counter()
     sources = []
     data = []
     lifetimes = []
+    ask_lifetimes = []
     for declaration, observation in zip(settings.trackers, observations, strict=True):
         kind = declaration.kind
         positions[kind] += 1
@@ -308,6 +318,8 @@ def _tracker_projection(
         if observation.data is not None and lifetime:
             data.append(observation.data)
             lifetimes.append(lifetime)
+            if declaration.ask_labels:
+                ask_lifetimes.append(lifetime)
             status = "ok" if observation.data.lanes else "empty"
             reason = None
         elif observation.data is not None:
@@ -316,7 +328,7 @@ def _tracker_projection(
             status = "refreshing" if reason == tracker_cli.Reason.REFRESHING else "refused"
         sources.append(
             {
-                "label": _TRACKER_LABELS[kind],
+                "label": tracker_source.GITHUB_SOURCE_LABELS[kind],
                 "kind": f"github {kind}",
                 "fileLabel": None,
                 "position": positions[kind] if kinds[kind] > 1 else None,
@@ -324,7 +336,62 @@ def _tracker_projection(
                 "reason": reason,
             }
         )
-    return sources, data, min(lifetimes, default=None)
+    return sources, data, min(lifetimes, default=None), min(ask_lifetimes, default=None)
+
+
+def _ask_revision(issue: model.TrackerAskIssue) -> tuple[datetime, str, str]:
+    lane = issue.lane
+    timestamp = lane.date.value if lane.date else None
+    revision = datetime.fromisoformat(timestamp) if timestamp else datetime.min.replace(tzinfo=UTC)
+    return revision, lane.goal or "", lane.source.label
+
+
+def _tracker_asks(
+    declarations: tuple[Declaration, ...],
+    observations: tuple[Observation, ...],
+    sources: list[dict[str, Any]],
+    lanes: tuple[model.Lane, ...],
+) -> list[dict[str, Any]] | None:
+    by_issue: dict[str, list[tuple[model.TrackerAskIssue, tuple[str, ...]]]] = defaultdict(list)
+    viewer = None
+    for declaration, observation, source in zip(declarations, observations, sources, strict=True):
+        if not declaration.ask_labels:
+            continue
+        read = observation.data.ask_read if observation.data is not None else None
+        if (
+            source["state"] not in ("ok", "empty")
+            or read is None
+            or (viewer is not None and viewer != read.viewer)
+        ):
+            return None
+        viewer = read.viewer
+        for issue in read.issues:
+            by_issue[issue.lane.slug].append((issue, declaration.ask_labels))
+
+    asks: dict[str, model.Lane] = {}
+    for slug, copies in by_issue.items():
+        qualifying = []
+        for issue, rule in copies:
+            matches = issue.matches(rule)
+            # Apply each rule to every copy. Two declarations can legitimately ask
+            # different questions about the same issue.
+            if any(other.matches(rule) != matches for other, _ in copies):
+                return None
+            if matches:
+                qualifying.append(issue)
+        if qualifying:
+            asks[slug] = max(qualifying, key=_ask_revision).lane
+    return [
+        {
+            "title": _text(asks[lane.slug].goal),
+            "linkHost": "github.com",
+            "source": _text(asks[lane.slug].source.label),
+            "lane": lane.slug,
+            "goals": [_text(goal_id) for goal_id in lane.serves],
+        }
+        for lane in lanes
+        if lane.slug in asks
+    ]
 
 
 def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
@@ -366,7 +433,9 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
             summary_states.save(
                 config.state_home, projected, now=time.time(), settings=loaded.settings.digest
             )
-    tracker_sources, data, _ = _tracker_projection(observations, loaded.settings, trackers)
+    tracker_sources, data, _, _ = _tracker_projection(observations, loaded.settings, trackers)
+    asks_enabled = any(source.ask_labels for source in loaded.settings.trackers)
+    projected["trackerAsksEnabled"] = asks_enabled
     while data:
         merged = _merge_tracker_rows(plan, data, loaded.settings)
         goals = _goals(merged.goals)
@@ -376,13 +445,10 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
         )
         # Folder admission and the session join can finish after a read's deadline. Each retry
         # drops at least one observation, so it cannot run again when the clock has caught up.
-        tracker_sources, still_fresh, lifetime = _tracker_projection(
+        tracker_sources, still_fresh, lifetime, ask_lifetime = _tracker_projection(
             observations, loaded.settings, trackers
         )
         if len(still_fresh) == len(data):
-            tracker_sources.extend(
-                _source(source) for source in merged.sources[len(plan.sources) :]
-            )
             projected.update(
                 goals=goals,
                 lanes=lanes,
@@ -391,6 +457,15 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
                     "localGoals": projected["goals"],
                     "localLanes": projected["lanes"],
                 },
+            )
+            if asks_enabled:
+                asks = _tracker_asks(
+                    loaded.settings.trackers, observations, tracker_sources, merged.lanes
+                )
+                if asks is not None:
+                    projected.update(trackerAsks=asks, trackerAsksFreshForMs=ask_lifetime)
+            tracker_sources.extend(
+                _source(source) for source in merged.sources[len(plan.sources) :]
             )
             break
         data = still_fresh

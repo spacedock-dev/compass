@@ -75,6 +75,9 @@ export const unconfiguredPlan = { state: 'not-configured' } as const;
 export const readyPlan = {
   state: 'ready',
   trackerRead: null,
+  trackerAsksEnabled: false,
+  trackerAsks: null,
+  trackerAsksFreshForMs: null,
   goals: [
     {
       id: 'pickup',
@@ -189,6 +192,22 @@ export const readyPlan = {
       state: 'refused',
       reason: 'private',
     },
+    {
+      label: 'Pickup tracker',
+      kind: 'tracker',
+      fileLabel: null,
+      position: null,
+      state: 'ok',
+      reason: null,
+    },
+    {
+      label: 'Library diagrams',
+      kind: 'diagrams',
+      fileLabel: null,
+      position: null,
+      state: 'ok',
+      reason: null,
+    },
   ],
   logRejected: 0,
   limits: planLimits,
@@ -277,6 +296,9 @@ export function githubPlan(state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'e
           ]
         : [],
     asks: [],
+    trackerAsksEnabled: false,
+    trackerAsks: null,
+    trackerAsksFreshForMs: null,
     design: [],
     tracker: [],
     inventory: [],
@@ -293,5 +315,42 @@ export function githubPlan(state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'e
     ],
     trackerRead: measured ? { freshForMs: 30_000, localGoals: [], localLanes: [] } : null,
     logRejected: null,
+  } as const;
+}
+
+const githubMilestonePlan = githubPlan('ok');
+export const githubPlanWithLog = {
+  ...githubMilestonePlan,
+  asks: readyPlan.asks,
+  sources: [...githubMilestonePlan.sources, wireSource('Library plan log', 'event log')],
+  logRejected: 0,
+};
+
+export function githubAsksPlan(state: 'present' | 'none' | 'not measured') {
+  const plan = githubPlan('ok');
+  const title = 'Approve the sign lettering';
+  return {
+    ...plan,
+    lanes:
+      state === 'present'
+        ? plan.lanes.map((lane) => ({ ...lane, title, state: 'not_started' as const }))
+        : plan.lanes,
+    asks: readyPlan.asks,
+    trackerAsksEnabled: true,
+    trackerAsksFreshForMs: state === 'not measured' ? null : 30_000,
+    trackerAsks:
+      state === 'present'
+        ? [
+            {
+              title,
+              source: 'GitHub milestone',
+              linkHost: 'github.com' as const,
+              lane: 'github-issue',
+              goals: ['github-milestone'],
+            },
+          ]
+        : state === 'none'
+          ? []
+          : null,
   } as const;
 }

@@ -721,6 +721,7 @@ class Loaded:
     path: str
     settings: Settings | None = None
     reason: str | None = None
+    detail: str | None = None
 
 
 def _repo_ids(repos: tuple[sources.Repository, ...]) -> frozenset[tuple[int, int]]:
@@ -796,6 +797,8 @@ def load(home: str, *, enabled: bool = True, git_enabled: bool = True) -> Loaded
         )
     try:
         declared = _declarations(data)
+    except tracker_source.InvalidAskLabels:
+        return Loaded(path, reason=MALFORMED, detail="invalid tracker ask_labels")
     except (ValueError, RecursionError):
         return Loaded(path, reason=MALFORMED)
     return _make_settings(
@@ -807,7 +810,7 @@ def report(loaded: Loaded) -> dict[str, Any]:
     plan = loaded.settings
     return {
         "path": loaded.path,
-        "reason": loaded.reason,
+        "reason": loaded.detail or loaded.reason,
         "sources": [
             {"kind": source.kind, "reason": source.reason} for source in plan.sources.declarations()
         ]

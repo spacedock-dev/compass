@@ -24,6 +24,14 @@ interface PublishedPlanItem {
   readonly date: PublishedPlanDate | null;
 }
 
+interface PublishedTrackerAsk {
+  readonly title: string;
+  readonly linkHost: 'github.com';
+  readonly source: string;
+  readonly lane: string;
+  readonly goals: readonly string[];
+}
+
 export interface ReadyPlan {
   readonly state: 'ready';
   readonly goals: readonly {
@@ -51,6 +59,9 @@ export interface ReadyPlan {
     readonly source: string;
     readonly lane: { readonly id: string; readonly title: string } | null;
   }[];
+  readonly trackerAsksEnabled: boolean;
+  readonly trackerAsks: readonly PublishedTrackerAsk[] | null;
+  readonly trackerAsksFreshForMs: number | null;
   readonly design: readonly (PublishedPlanItem & {
     readonly summary: string | null;
     readonly decided: boolean;
@@ -168,7 +179,17 @@ export const isTrackerSource = (source: Pick<PublishedPlanSource, 'kind'>) =>
 const completeList = (value: unknown, check: (item: Fields) => boolean) =>
   Array.isArray(value) && value.every((item) => isRecord(item) && check(item));
 
-export function expireTrackerRead(plan: ReadyPlan): ReadyPlan {
+const trackerAsk = (item: Fields) =>
+  text(item['title']) &&
+  item['linkHost'] === 'github.com' &&
+  text(item['source']) &&
+  text(item['lane']) &&
+  texts(item['goals']);
+
+const freshness = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 30_000;
+
+function expireTrackerRead(plan: ReadyPlan): ReadyPlan {
   if (!plan.trackerRead) return plan;
   return {
     ...plan,
@@ -183,8 +204,16 @@ export function expireTrackerRead(plan: ReadyPlan): ReadyPlan {
   };
 }
 
+export function expirePlanReadings(plan: ReadyPlan, elapsed: number): ReadyPlan {
+  const local =
+    plan.trackerRead && plan.trackerRead.freshForMs <= elapsed ? expireTrackerRead(plan) : plan;
+  return local.trackerAsksFreshForMs !== null && local.trackerAsksFreshForMs <= elapsed
+    ? { ...local, trackerAsks: null, trackerAsksFreshForMs: null }
+    : local;
+}
+
 export function failTrackerRead(plan: ReadyPlan): ReadyPlan {
-  const local = expireTrackerRead(plan);
+  const local = expirePlanReadings(plan, Infinity);
   if (!local.sources.some((source) => isTrackerSource(source) && source.state === 'refreshing')) {
     return local;
   }
@@ -209,10 +238,7 @@ export function usablePlan(body: unknown): ConfiguredPlan | null {
   if (trackerRead !== null) {
     if (
       !isRecord(trackerRead) ||
-      typeof trackerRead['freshForMs'] !== 'number' ||
-      !Number.isInteger(trackerRead['freshForMs']) ||
-      trackerRead['freshForMs'] < 0 ||
-      trackerRead['freshForMs'] > 30_000 ||
+      !freshness(trackerRead['freshForMs']) ||
       !completeList(trackerRead['localGoals'], ITEM_CHECKS.goals) ||
       !completeList(trackerRead['localLanes'], ITEM_CHECKS.lanes) ||
       !completeList(body['goals'], ITEM_CHECKS.goals) ||
@@ -234,5 +260,20 @@ export function usablePlan(body: unknown): ConfiguredPlan | null {
     list,
     (body[list] as readonly unknown[]).filter((item) => isRecord(item) && check(item)),
   ]);
-  return { ...body, ...Object.fromEntries(kept) } as unknown as ReadyPlan;
+  const trackerAsksEnabled = body['trackerAsksEnabled'] === true;
+  const askFreshness = body['trackerAsksFreshForMs'];
+  const trackerAsks =
+    trackerAsksEnabled &&
+    trackerRead !== null &&
+    freshness(askFreshness) &&
+    completeList(body['trackerAsks'], trackerAsk)
+      ? body['trackerAsks']
+      : null;
+  return {
+    ...body,
+    ...Object.fromEntries(kept),
+    trackerAsksEnabled,
+    trackerAsks,
+    trackerAsksFreshForMs: trackerAsks === null ? null : askFreshness,
+  } as unknown as ReadyPlan;
 }

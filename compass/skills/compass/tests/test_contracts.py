@@ -2399,6 +2399,7 @@ class RuntimeImportGraphTest(unittest.TestCase):
             "compass_runtime.plan.summary_states",
             "compass_runtime.plan.tracker_cli",
             "compass_runtime.plan.tracker_refresh",
+            "compass_runtime.plan.tracker_source",  # Type-only ask declaration.
             "compass_runtime.records",
             "compass_runtime.state",
         },
