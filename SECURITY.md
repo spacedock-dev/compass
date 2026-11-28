@@ -108,9 +108,11 @@ The posture rests on two invariants:
    Six kinds of outbound request are implemented, and they are named apart rather than counted
    together because they are not the same
    exposure. The quota poll carries a vendor token out and quota numbers back, and no session
-   content whatever. The pull request and merge request CI read, described in Pull request CI reads below, starts
-   your own `gh` when you press Check progress and sends GitHub a repository and a pull request number (or a pushed branch's name, where that bound
-   it), or your own `glab` and sends a GitLab host you have signed in to a project and a merge request number; it carries no session text. A harness invocation, described in Light harness usage below, can carry
+   content whatever. The pull request and merge request CI read
+   starts your own `gh` when you press Check progress and sends GitHub a repository and a pull request number
+   or a pushed branch name. For GitLab, `glab` sends the project and merge request number to the host you
+   signed in to. These reads carry no session text.
+   A harness invocation, described in Light harness usage below, can carry
    session-derived text: it is the one pathway by which the operator's own words may leave this
    machine. A nudge to an endpoint the operator supplies, described in Off-machine nudges below,
    carries two counts and nothing that names a session. The observer model and reader-requested
@@ -120,9 +122,10 @@ The posture rests on two invariants:
    each for its own path and no other. The fifth kind is the daily release lookup to
    spacedock.md, described in [Daily update checks](#daily-update-checks). It is on by default;
    `--no-update-check` or turning off Look for new versions once a day in Settings stops it.
-   The sixth is the Plan read through your own GitHub CLI for sources you declare.
-   `--no-plan-trackers` stops these reads. [Plan reads from GitHub](#plan-reads-from-github)
-   describes the data and retention.
+   The sixth is the Plan read through the installed tracker CLI for a source you declare.
+   It uses the CLI's stored login and carries no session text. `--no-plan-trackers` stops
+   these reads. [Outbound requests and program launches](#outbound-requests-and-program-launches)
+   lists the tracker reads and their data and retention.
    [What launches and what sends](#what-launches-and-what-sends) tables every switch against the
    test that fails when it leaks.
    Nothing else Compass does reaches the network. One further pathway is written down and reaches
@@ -606,7 +609,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 | A press for a reading that reads a pull request's CI checks | Your own `gh`, started as a supervised child on a press only, to read one pull request your goal or the session's own records name. GitHub is sent the repository and the pull request number, or, where a pushed branch bound it, the repository and that branch's name, under your own login. For a merge request your goal names by URL, your own `glab` reads it the same way, and the host is sent the project and the merge request number under the login `glab` stored for that host; the checks that come back go to the reading model with the rest of the entries. [Pull request CI reads](#pull-request-ci-reads) owns the bounds. | `--no-ci-read`, switching off Read pull request status in Settings, and the refusals every press meets first (`--no-observer-model`, Pause all AI use, the rolling cap) | `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_binding_no_launch`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_flag_no_launch_and_the_page_cannot_lift_it`, `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_the_page_setting_off_no_launch` and `test_ci_read.NoCommandRunsWithoutAPressABindingAndTheSwitchOn.test_no_observer_model_no_launch` patch the process starters to raise, as do `test_ci_read_gitlab.TheLaunchKeepsEverySafeguard.test_a_host_glab_does_not_name_launches_nothing` and `test_ci_read_gitlab.APressOnAnUnconfiguredHostStartsNothing.test_a_goal_url_on_a_host_not_in_glabs_configuration_launches_nothing` for a goal URL on a host glab does not name |
 | The git probe, and the committed-file read of a project's check scripts | One bounded `git` command per session end, and four read-only ones (`rev-parse`, `rev-list`, `ls-tree`, `cat-file`) against the commit a session began on, in a repository you chose; and two more fixed `git` commands (`rev-parse HEAD` and `config --get remote.origin.url`), plus `merge-base --is-ancestor` for a merged pull request, inside an admitted progress check that reads a pull request's checks and, at collection and in the Live monitor's estimate, only when a recorded `gh pr checks` or `gh run view --exit-status` poll needs binding, in the session folder and in a directory such a poll ran in. Nothing leaves the machine from any of them, though GitHub is later sent the repository the last one names. | `--no-git` | `test_observation.GitProbeDispatchTest.test_no_git_stops_the_probe_running_at_all`; `test_project_script_checks.ADeclaredScriptReadsAsACheck.test_no_git_stops_the_read_so_the_script_is_a_command_again` and `test_ci_read.ThePressTimeIdentityReadsTheFolder.test_no_git_launches_nothing` and `test_command_tiers.ACiPollReadsTheSessionFoldersRepository.test_no_git_launches_nothing_for_a_session_holding_a_poll` |
 | The native long-source Git identity probes | `reading_source_collect` supplies the subprocess runner to the existing `ci_read.probe_session` / `git_status.identity` owner: fixed `rev-parse --verify --quiet HEAD` and `config --get remote.origin.url`, with hooks/fsmonitor disabled and optional locks off, in at most four admitted native directories. Each keeps the configured Git timeout (10 seconds by default); the full pair must fit remaining preparation time, with live checkpoints before and after each call. Elapsed work and retained inputs share the source account; Git I/O is not counted as native transcript bytes. Nothing leaves the machine from these probes. | `--no-git`, source cancellation/currentness and preparation/graph limits. Network CI acquisition remains separately governed by `--no-ci-read`. | `test_launch_and_send_pins.TheNativeLongGitIdentityTest.test_native_ci_probe_uses_only_fixed_git_identity_argv`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_caps_disabled_missing_identity_and_default_are_explicit`; `test_reading_source_ci.FrozenCiBindingTest.test_current_probe_requires_remaining_timeout_and_checks_cancel_between_git_calls`; `test_reading_source_ci.FrozenCiBindingTest.test_current_input_graph_and_elapsed_probe_work_remain_in_original_allowance` |
-| Plan tracker reads | Your own `gh` runs fixed read-only GitHub queries for the milestone, parent issue or project you declare. The CLI connects to GitHub.com (`api.github.com`) using its stored login. The reads bring back titles, issue and source identities, membership, status and dates. Sources with `ask_labels` also bring back label names, assignee logins and the signed-in login. Compass captures CLI output in temporary stdout and stderr files and removes them when capture finishes. Complete results are fresh for 30 seconds and are excluded from the session summary. [Plan reads from GitHub](#plan-reads-from-github) gives the field and process bounds. | `--no-plan`, `--no-plan-trackers`, or removing the declaration | `test_plan_trackers.TrackerEntryPointTest` checks that disabled, denied and diagnostic paths launch nothing. `test_plan_github` checks the queries and incomplete reads. |
+| Plan tracker reads | Your own `gh` runs fixed read-only GitHub queries for the milestone, parent issue or project you declare. The CLI connects to GitHub.com (`api.github.com`) using its stored login. The reads bring back titles, issue and source identities, membership, status and dates. Sources with `ask_labels` also bring back label names, assignee logins and the signed-in login. Compass captures CLI output in temporary stdout and stderr files and removes them when capture finishes. A second tracker uses its own CLI and a stored workspace credential. Complete results are fresh for 30 seconds and stay out of the session summary. [GitHub reads](#plan-reads-from-github) and [workspace reads](#plan-reads-from-a-workspace-tracker) give the field and process bounds. | `--no-plan`, `--no-plan-trackers`, or removing the declaration | `test_plan_trackers.TrackerEntryPointTest` checks that disabled, denied and diagnostic paths launch nothing. `test_plan_github` checks the GitHub queries and incomplete reads. The workspace adapter tests check workspace scope and membership. `test_plan_trackers.TrackerLauncherTest.test_workspace_cli_ignores_global_key_and_ancestor_config` checks credential isolation. |
 | Plan files and dates | A loopback plan fetch or diagnosis can run the resolved Git executable to read declared files at local branch tips and date their lines. A fetch gives all Git work one deadline. Nothing leaves the machine. [Plan reads of committed files](#plan-reads-of-committed-files) lists the commands and bounds. | `--no-git` or `--no-plan` | `test_plan_dates.PlanDatesTest.test_no_git_and_no_plan_start_no_plan_commands`, `test_git_status.PlanTreeGitTest.test_plan_history_uses_only_short_blame_and_no_walk_commit_times`, and `test_plan_publish.PlanPublicationTest.test_slow_git_shares_the_request_deadline_across_commands_and_repos` |
 | The Spacedock workflow discovery | `spacedock status --discover`, a fixed read-only command with no shell and a two-second timeout, run in a project root Compass verified. Nothing leaves the machine. [Cockpit dispatch and terminal reads](#cockpit-dispatch-and-terminal-reads) states its bounds. | `--no-spacedock` | `test_launch_and_send_pins.TheSpacedockDiscoveryStartsNothingUnderItsSwitchTest` |
 | The focus command | Local terminal automation. Nothing leaves the machine. | `--no-focus`, and `--no-events` | `test_focus.RouteTest.test_the_feature_being_off_answers_503_before_any_token_is_read`; `test_focus.OffSwitchTest.test_no_events_turns_focus_off_as_well` |
@@ -1321,12 +1324,15 @@ and log readers available. `--no-plan` disables the entire plan read.
 
 ### Plan reads from GitHub
 
-A direct loopback plan fetch can schedule one refresh per declaration in `compass-plan.json`.
-Compass runs its resolved `gh` off the request thread with closed input, a private working
-folder, bounded output and one eight-second deadline per source. The CLI contacts GitHub.com
-using the login it stored for that host. Compass holds no tracker credentials and removes
-inherited GitHub token variables from the child's environment. Diagnosis and SessionStart start
-no tracker reads.
+A direct loopback Plan fetch, including an automatic refresh, can schedule one read per
+declaration in `compass-plan.json`. Compass runs the resolved CLI off the request thread with
+closed input and a private working folder. Up to four sources run at once, each with an
+eight-second deadline, at most 32 commands and a 1 MiB combined output budget. Per command,
+stdout is capped at 256 KiB and stderr at 8 KiB. Diagnosis and SessionStart start no tracker
+process.
+
+For GitHub, `gh` contacts GitHub.com using the login it stored for that host. Compass holds no
+tracker credentials and removes inherited GitHub token variables from the child's environment.
 
 The queries read the declaration's source and its issue membership. They use IDs, numbers,
 titles and URLs, issue state and close reason, issue update times, milestone due dates, project
@@ -1349,9 +1355,26 @@ labels. The files are removed when capture finishes, including on handled errors
 measurements are fresh for 30 seconds. Expired measurements may remain in memory until evicted
 on a later observation or settings invalidation. Compass sends no tracker result to the session
 summary or a model. The browser withdraws a retained measurement once its freshness time runs
-out or a fetch fails. `--no-plan`,
-`--no-plan-trackers`, and removing the declaration stop subsequent reads. `--no-git` controls local
-Git reads independently.
+out or a fetch fails. Tracker asks use the earliest expiry among the GitHub sources that
+declare ask labels. Local file rows stay available when tracker rows are withdrawn.
+
+### Plan reads from a workspace tracker
+
+A second tracker uses its own installed CLI. A declaration selects a workspace and a project,
+with an optional project milestone. The CLI contacts the provider with the credential it stored
+for that workspace. Compass strips inherited account overrides, masks the global API key in the
+CLI configuration, disables dotenv loading and puts an empty config file in the private working
+directory to prevent discovery of ancestor configuration. A missing workspace credential refuses the
+read. The project and issue URLs must name the declared workspace.
+
+The CLI reads the project, resolves the optional milestone and queries the issues across all teams
+within that selection. Titles, workflow states and available dates feed the same bounded capture,
+redaction and freshness rules used for GitHub. A list of 200 or more rows makes the read unmeasured.
+The provider CLI applies its normal archive filter. Workspace sources supply goals and lanes.
+Only GitHub supports `ask_labels`.
+
+Remove a declaration or start with `--no-plan-trackers` or `--no-plan` to stop tracker reads.
+`--no-git` controls local Git reads independently. The CI-read switch controls Check progress.
 
 ### Published plan fields
 
@@ -1366,21 +1389,27 @@ A configured reply has `state: ready` and the following fields.
 
 | Field | Published contents |
 |---|---|
-| `goals` | `id`, `title`, `doneWhen`, `lanes` (stable lane IDs), `proposal` (`Proposed, not merged` for draft-only goals, null otherwise) and `date` (a milestone due date or null). |
-| `lanes` | `id` (the stable issue ID derived by Compass or the admitted brief slug), `title`, `doneWhen`, `state`, `date` and `sessions` (board session keys or null). `state` is one of the six board groups or `Status not recognised`, taken from a completed GitHub read or the one file tracker row that names the lane. Conflicting explicit states yield null. For file tracker rows it is null when the settings declare no lane column, no row or more than one row names the lane, the only row is on a draft branch, or a declared primary tracker file could not be read. |
+| `goals` | `id`, `title`, `doneWhen`, `lanes` (stable lane IDs), `proposal` (`Proposed, not merged` for draft-only goals, null otherwise), `date` (a tracker due or target date, or null) and `additionalDates` (available tracker update and completion dates). |
+| `lanes` | `id` (the stable issue ID derived by Compass or the admitted brief slug), `title`, `doneWhen`, `state`, `date`, `additionalDates` (available tracker due and completion dates) and `sessions` (board session keys or null). `state` is one of the six board groups or `Status not recognised`, taken from a complete tracker read or the one file tracker row that names the lane. Conflicting explicit states yield null. For file tracker rows it is null when the settings declare no lane column, no row or more than one row names the lane, the only row is on a draft branch, or a declared primary tracker file could not be read. |
 | `asks` | `id`, `text`, `at` (the log time or null), `timeLabel` (`from the log` when timestamped, otherwise null), `source` and `lane` (its `id` and `title`, or null). |
-| `trackerAsksEnabled` | Whether any source declares `ask_labels`. |
+| `trackerAsksEnabled` | Whether any GitHub source declares `ask_labels`. |
 | `trackerAsks` | Null when no source declares `ask_labels`, any such source lacks a complete ask read, signed-in accounts differ or issue observations conflict about whether a rule matches. Otherwise one row per matching open issue, with `title`, `linkHost` (`github.com`), `source` (the source label), `lane` (published lane ID) and `goals` (published goal IDs). An empty list means a complete read found no matches. |
 | `trackerAsksFreshForMs` | Null when tracker asks are unmeasured. Otherwise the remaining lifetime in milliseconds of the earliest-expiring source with `ask_labels`, including when the measured list is empty. |
 | `design` | `title`, `summary` (always null), `decided`, `source` and `date`. |
 | `tracker`, `inventory` | `title`, `group` (including the closed fallback `Status not recognised`), `source` and `date`. |
 | `diagrams` | `title`, `caption`, `kind`, `source`, `date`, `linkHosts` and `body`. |
-| `sources` | `label`, `kind`, `fileLabel` (the file's label from the settings, or null), `position` (the source's place among files of its kind in the repository or tracker declarations of its kind, or null when it is the only one), `state` and a closed `reason`. Tracker states are `ok`, `empty`, `refused`, `refreshing` and `expired`. Tracker reasons are `disabled`, `refreshing`, `expired`, `cli-missing`, `signed-out`, `rate-limited`, `timeout`, `not-found-or-inaccessible`, `partial-result`, `unreadable-output`, `limit-exceeded` and `cli-failed`, or null after a complete read. File sources include draft comparisons and refused lane folders. No field carries a path. |
-| `trackerRead` | Null when no complete tracker result is included. Otherwise `freshForMs` is the remaining lifetime of the earliest-expiring result, while `localGoals` and `localLanes` carry the file rows with the same fields as `goals` and `lanes` for the browser to use after expiry. |
+| `sources` | `label`, `kind`, `fileLabel` (the file's label from the settings, or null), `position` (the source's place among files of its kind in the repository or tracker declarations of its kind, or null when it is the only one), `state` and a closed `reason`. Tracker states are `ok`, `empty`, `refused`, `refreshing` and `expired`. Tracker reasons are `disabled`, `refreshing`, `expired`, `cli-missing`, `signed-out`, `rate-limited`, `timeout`, `not-found-or-inaccessible`, `partial-result`, `unreadable-output`, `limit-exceeded`, `cli-failed`, `missing-team-scope` and `unknown-workspace`, or null after a complete read. File sources include draft comparisons and refused lane folders. No field carries a path. |
+| `trackerRead` | Null when no complete tracker result is included. Otherwise `freshForMs` is the remaining lifetime of the earliest-expiring result. `localGoals`, `localLanes` and `localSources` hold the rows for when all tracker reads expire, using the same fields as `goals`, `lanes` and `sources`. Each entry in `updates` carries `freshForMs` for the next deadline, the resulting `sources` rows, and `goals` and `lanes` changes. Each set of changes contains `remove` (row IDs) and `upsert` (replacement or new rows using the same goal or lane fields). |
 | `logRejected` | The count of rejected log lines, or null if the log could not be read. |
 | `limits` | Compass cannot detect health information or confidential text typed into these sources. |
 
-A date contains `label` and `at`. Unavailable dates are null. Compass applies its credential
+The workspace tracker refusal list includes these reasons.
+
+- `unknown-workspace` shows “Sign in to the declared workspace with your tracker CLI.”
+- `missing-team-scope` shows “Set a default team in your tracker CLI.”
+
+A date contains `label` and `at`. A missing primary date is null. The additional dates list
+includes only dates the tracker supplied. Compass applies its credential
 redaction to source text and replaces link candidates with their host before capping text. It masks
 the rest of each link token through the next whitespace, including tails attached to Markdown links,
 and drops destinations with no usable host. A host with a non-ASCII letter or combining mark, or
@@ -1443,12 +1472,12 @@ session rows. It writes to disk only while the session summary is on, and then o
 
 ### Saved lane states for the session summary
 
-The SessionStart hook starts no program, so it cannot read the tracker, which is read through Git.
+The SessionStart hook starts no program. It uses saved file-based lane states and leaves out CLI tracker results.
 The board saves what it published instead.
 
 | File | What it holds | Who writes and reads it | Age limit | Off switches |
 |---|---|---|---|---|
-| `compass-plan-states.json` in the Compass home | The time it was written, the SHA-256 of the `compass-plan.json` bytes it was built under, each file-based lane ID with its published `state` from the closed list above, and the lane IDs that serve each file-based goal on the main branch. No plan text, goal IDs, titles, dates, paths, session keys or draft goals. Owner-only (`0600`), at most 256 KiB. | `GET /api/plan` rewrites the whole file through a temporary file and a rename each time it builds a ready plan while `summary.enabled` is on and Git reads are on. A board run with `--no-git` reads no tracker, so it leaves the last file in place. A board that reads the settings with `summary.enabled` off deletes the file. A failed write leaves the earlier file to age out. The SessionStart hook and `--plan-slice` read it through the guarded state read, which refuses a symbolic link, a hard link or a file that is not an owned regular file, and reject duplicate keys, unknown fields, values of the wrong type, lane IDs outside the lane ID rule and states outside the closed list. They use it only while the settings file has the digest it names and while every declared tracker and goals file is still admitted (by the board's metadata checks, with no Git): changed settings, or a repository that has gone or become private, read "not measured" until the board reads the plan again. It is never published. | 24 hours from the time it records. A file older than that, or dated more than 60 seconds ahead of the clock, reads as missing, and state and progress say "not measured". | Turning `summary.enabled` off stops new writes, and the next board read deletes the file. `--no-plan` writes nothing and removes nothing. `--forget` deletes the file. |
+| `compass-plan-states.json` in the Compass home | The time it was written, the SHA-256 of the `compass-plan.json` bytes it was built under, each file-based lane ID with its published `state` from the closed list above, and the lane IDs that serve each file-based goal on the main branch. No plan text, goal IDs, titles, dates, paths, session keys or draft goals. Owner-only (`0600`), at most 256 KiB. | `GET /api/plan` rewrites the whole file through a temporary file and a rename each time it builds a ready plan while `summary.enabled` is on and Git reads are on. A board run with `--no-git` leaves the last file in place because it skips the local Git reads. A board that reads the settings with `summary.enabled` off deletes the file. A failed write leaves the earlier file to age out. The SessionStart hook and `--plan-slice` read it through the guarded state read, which refuses a symbolic link, a hard link or a file that is not an owned regular file, and reject duplicate keys, unknown fields, values of the wrong type, lane IDs outside the lane ID rule and states outside the closed list. They use it only while the settings file has the digest it names and while every declared local tracker and goals file is still admitted (by the board's metadata checks, with no Git): changed settings, or a repository that has gone or become private, read "not measured" until the board reads the plan again. It is never published. | 24 hours from the time it records. A file older than that, or dated more than 60 seconds ahead of the clock, reads as missing, and state and progress say "not measured". | Turning `summary.enabled` off stops new writes, and the next board read deletes the file. `--no-plan` writes nothing and removes nothing. `--forget` deletes the file. |
 
 ## Reaching a session's terminal (the focus command)
 

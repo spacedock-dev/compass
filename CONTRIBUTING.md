@@ -569,6 +569,10 @@ a runtime file or an import between two of them: the import graph is asserted by
 allowlist changes only in a PR that makes a reviewed ownership decision.
 
 - Stdlib only, Python 3.12+. No dependencies, ever. The skill must run on a bare `python3`.
+- Plan tracker queries belong in their provider adapter. Keep the selector validation, executable
+  resolution, deadline and result caps in the Plan runtime. Use the captured responses under
+  `compass/skills/compass/tests/fixtures/plan/` when exercising GitHub or Linear reads without
+  a live account. [Plan module map](docs/design-runtime-architecture.md#r-1-one-responsibility-per-file-and-the-launcher-owns-none).
 - Read-only. The server only reads harness session stores. It must never write to them or block a
   live agent's writes, so use `mode=ro` SQLite connections with short timeouts.
 - Defensive parsing. A broken or unexpected harness store is skipped, never fatal. One bad record

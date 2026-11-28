@@ -357,8 +357,8 @@ call inside a session, other sessions' words can reach that session's model prov
 
 ## Preview the plan summary
 
-Use `spacedock-compass --plan-slice` from the session's working folder to see the plan text the
-hook would provide using the current settings. To inspect a specific lane, pass its brief slug
+Use `spacedock-compass --plan-slice` from the session's working folder to see the file-based
+summary the hook would provide. The preview and hook open no socket and start no tracker CLI. To inspect a specific lane, pass its brief slug
 with `--lane hull`. With no flag, `COMPASS_LANE` takes precedence over the folder match.
 
 The preview works with the dashboard down. Lane state and progress show what a dashboard last
@@ -406,9 +406,11 @@ board to do these things:
 - use Check progress for harnesses other than Claude Code and Codex
 - summarize a Codex goal: choose `Summarize this session` in the project's technical details. The cited session summary is Claude Code only
 - choose Resume AI use, or turn summaries back on
-- read the Plan page: goals and their lanes, open asks, product decisions, tracker items and
-  diagrams from your plan files. `--diagnose` reports refused plan settings and sources;
-  [set up the plan board](docs/how-to/05-plan-board.md) says how
+- read Plan goals and lanes from declared files and trackers. Waiting on you shows open asks from
+  your log, sessions waiting for input and any GitHub issues that match your ask settings.
+  Product decisions, tracker tables and diagrams come from your files. Use `--diagnose` to check
+  settings and CLI availability. Open Plan to see whether the tracker read succeeded.
+  [Set up the plan board](docs/how-to/05-plan-board.md).
 
 [How it works](docs/how-it-works.md#finding-your-way-around) tours the board.
 

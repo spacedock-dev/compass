@@ -180,7 +180,10 @@ safety polls, and after manual refresh. The store holds one of four answers in m
 a first read that failed, no plan, or the latest configured reply. Only the server's own answer
 clears a configured reply: not configured, a 404 for `--no-plan`, or a 403 for a reader off the
 Compass computer. A server error, a timeout, a dropped connection or a reply without its lists or
-its limits sentence keeps what is shown. A single list item the page cannot read (an ask, a goal,
+its limits sentence keeps the file plan and withdraws tracker measurements. On a successful
+fetch, the browser schedules withdrawal using the earliest published tracker expiry, measured from
+when the request started. At expiry it restores the file-only goals and lanes. Tracker asks have
+their own expiry and can stay visible if an unrelated source expires. A single list item the page cannot read (an ask, a goal,
 a lane, a design note, a tracker row, a diagram or a source) is dropped and the rest is shown; an
 ask whose words the settings keep off the board reads "An open ask with no text". The board shows Sessions for a Plan bookmark only once the read says there is
 no plan; before the first answer the Plan destination draws nothing, and a first read that failed

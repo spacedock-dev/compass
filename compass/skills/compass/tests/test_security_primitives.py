@@ -58,7 +58,10 @@ PROCESSES = {
     ),
     ("compass_runtime/plan/tracker_cli.py", "TrackerCLI._capture"): (
         ("[self._executable, *arguments]",),
-        "Rooted tracker CLI with adapter-owned argv and one supervised deadline and output budget.",
+        (
+            "Rooted tracker CLI with adapter-owned argv, a supervised deadline and an output cap. "
+            "Linear pins its workspace and uses issue query, milestone list and project view only."
+        ),
     ),
     ("compass_runtime/supervise.py", "_spawn"): (
         ("command", "command"),

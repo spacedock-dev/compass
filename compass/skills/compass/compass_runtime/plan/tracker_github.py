@@ -286,7 +286,7 @@ def _viewer(data: Record) -> str | None:
     return login.lower() if isinstance(login, str) and _LOGIN.fullmatch(login) else None
 
 
-def _ask_variables(source: tracker_source.Declaration) -> tuple[str, str]:
+def _ask_variables(source: tracker_source.GitHubDeclaration) -> tuple[str, str]:
     # GitHub rejects an omitted non-null variable even when the query declares a default.
     value = "true" if source.ask_labels else "false"
     return "-F", f"variables[readAsks]={value}"
@@ -573,6 +573,8 @@ def read(source: tracker_source.Declaration, child: TrackerCLI) -> model.Tracker
     try:
         if isinstance(source, tracker_source.ProjectDeclaration):
             return _project(source, child)
+        if not isinstance(source, tracker_source.RepositoryDeclaration):
+            raise TrackerError(Reason.UNREADABLE_OUTPUT)
         if source.kind == "milestone":
             return _milestone(source, child)
         return _parent(source, child)

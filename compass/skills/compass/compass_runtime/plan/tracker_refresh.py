@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from compass_runtime import supervise
 
-from . import model, tracker_cli, tracker_github
+from . import model, tracker_cli, tracker_github, tracker_linear
 
 if TYPE_CHECKING:
     import subprocess
@@ -27,7 +27,9 @@ MAX_WORKERS = 4
 TrackerData = model.TrackerData
 
 type Adapter = Callable[[Declaration, tracker_cli.TrackerCLI], TrackerData]
-_ADAPTERS: Mapping[str, Adapter] = MappingProxyType({"github": tracker_github.read})
+_ADAPTERS: Mapping[str, Adapter] = MappingProxyType(
+    {"github": tracker_github.read, "linear": tracker_linear.read}
+)
 
 
 @dataclass(frozen=True)
@@ -103,10 +105,14 @@ class TrackerRefresh:
             self._start_waiting()
             return result
 
-    def remaining_ms(self, observation: Observation) -> int:
-        if observation.observed_at is None:
-            return 0
-        return max(0, int((observation.observed_at + FRESH_SECONDS - self._clock()) * 1000))
+    def remaining_ms(self, observations: tuple[Observation, ...]) -> tuple[int, ...]:
+        now = self._clock()
+        return tuple(
+            0
+            if observation.observed_at is None
+            else max(0, int((observation.observed_at + FRESH_SECONDS - now) * 1000))
+            for observation in observations
+        )
 
     def _observe_source(self, source: Declaration, enabled: bool, now: float) -> Observation:
         if not enabled or source.provider not in self._adapters:

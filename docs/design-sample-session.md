@@ -452,6 +452,12 @@ Showing GitHub asks in Waiting on you and limiting file sections to declared sou
 at 2,530,783 bytes on Node 26.12.1 and pnpm 12.19.0, up 2,956 bytes. The page bound follows
 that measurement. The fixture bound stays at 250,000 bytes.
 
+Showing Linear projects and project milestones on Plan packages at 2,533,383 bytes on the
+same toolchain, up 2,600 bytes. The page bound follows that measurement.
+
+Per-source Plan expiry and its review fixes package at 2,534,599 bytes on the same toolchain,
+up 1,216 bytes. The page bound follows that measurement.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

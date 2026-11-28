@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from compass_runtime import ci_read, git_status, io, supervise
@@ -29,7 +30,7 @@ REFRESH_CALLS = 32
 _ENV_OVERRIDES = frozenset(
     {"GITHUB_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GIT_DIR", "GIT_WORK_TREE", "DEBUG"}
 )
-_CLI_OVERRIDES = ("GH_", "GITLAB_", "GL_", "GLAB_", "OAUTH_TOKEN", "REMOTE_ALIAS")
+_CLI_OVERRIDES = ("GH_", "GITLAB_", "GL_", "GLAB_", "OAUTH_TOKEN", "REMOTE_ALIAS", "LINEAR_")
 
 
 class Reason(StrEnum):
@@ -44,12 +45,30 @@ class Reason(StrEnum):
     UNREADABLE_OUTPUT = "unreadable-output"
     LIMIT_EXCEEDED = "limit-exceeded"
     CLI_FAILED = "cli-failed"
+    MISSING_TEAM_SCOPE = "missing-team-scope"
+    UNKNOWN_WORKSPACE = "unknown-workspace"
 
 
 class TrackerError(Exception):
     def __init__(self, reason: Reason) -> None:
         super().__init__(reason.value)
         self.reason = reason
+
+
+def _check_linear_result(code: int, stdout: bytes, stderr: bytes) -> None:
+    error = stderr.lower()
+    if code == 4:
+        reason = (
+            Reason.UNKNOWN_WORKSPACE if b"not found in credentials" in error else Reason.SIGNED_OUT
+        )
+        raise TrackerError(reason)
+    if code == 3:
+        raise TrackerError(Reason.NOT_FOUND)
+    if code == 1 and b"no default team configured" in error:
+        raise TrackerError(Reason.MISSING_TEAM_SCOPE)
+    if b"partial data" in error or (code != 0 and stdout.strip()) or (code == 0 and stderr.strip()):
+        # An array accompanied by a CLI failure or warning cannot prove full membership.
+        raise TrackerError(Reason.PARTIAL)
 
 
 def environment(environ: Mapping[str, str]) -> dict[str, str]:
@@ -144,6 +163,10 @@ class TrackerCLI:
         self._check_current = check_current
         self._on_spawn = on_spawn
         self._env = environment(os.environ if environ is None else environ)
+        self._linear = source.provider == "linear"
+        if self._linear:
+            # The empty override masks the CLI's global config key while allowing stored logins.
+            self._env.update(LINEAR_API_KEY="", LINEAR_IGNORE_ENV_FILE="1")
         executable = resolve(source, self._env)
         if executable is None:
             raise TrackerError(Reason.CLI_MISSING)
@@ -167,6 +190,9 @@ class TrackerCLI:
             tempfile.TemporaryDirectory(prefix="compass-tracker-cwd-") as cwd,
             tempfile.TemporaryDirectory(prefix="compass-tracker-out-") as output_dir,
         ):
+            if self._linear:
+                # Stop the CLI finding ancestor configuration when its temp root is in a repo.
+                (Path(cwd) / ".linear.toml").touch()
             with (
                 tempfile.NamedTemporaryFile(dir=output_dir, delete=False) as stdout,
                 tempfile.NamedTemporaryFile(dir=output_dir, delete=False) as stderr,
@@ -210,4 +236,6 @@ class TrackerCLI:
         self._bytes += len(stdout) + len(stderr)
         if len(stdout) > STDOUT_LIMIT or len(stderr) > STDERR_LIMIT or self._bytes > REFRESH_BYTES:
             raise TrackerError(Reason.LIMIT_EXCEEDED)
+        if self._linear:
+            _check_linear_result(code, stdout, stderr)
         return _response(code, stdout, stderr, graphql=arguments[:2] == ("api", GITHUB_GRAPHQL))

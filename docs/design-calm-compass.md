@@ -356,6 +356,7 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Customize | Always-visible prompt limits | Prompt size controls | Your AI allowance | Opens How much a progress check reads |
 | An open ask with no text | New label | A log ask whose words the Plan settings keep off the board | No open asks | Open asks on Plan |
 | Blocked | New label | A lane with work that cannot continue | A session waiting for a reply | Plan lane and tracker group |
+| Completed | New label | When the tracker recorded completion | Target, a planned date | Plan goal and lane dates |
 | Done | New label | A lane whose tracker row is done | Ended, a session state | Plan lane and tracker group; the only group the progress count counts as done |
 | Dropped | New label | A lane set aside and left out of the progress count | Done, a finished lane | Plan lane and tracker group |
 | In progress | New label | A lane with work underway | Working, a session state | Plan lane and tracker group |
@@ -367,9 +368,12 @@ wording when its redesign ships. Route tokens still belong to the router.
 | Planned | New label | A lane whose tracker row is not started | Not measured | Plan lane and tracker group |
 | Product decisions | New label | Decisions from the plan design notes | Decisions, the Project tab | Design section on Plan |
 | Reading GitHub… | New label | A GitHub read is queued or running | A complete empty read | Tracker source on Plan |
+| Reading Linear… | New label | A Linear read is queued or running | A complete empty read | Tracker source on Plan |
 | Status not recognised | New label | A tracker status word the settings do not list, never echoed | Not measured | Plan lane group and tracker row |
+| Target | New label | The tracker’s planned date for a goal | Completed, a recorded outcome | Plan goal dates |
 | Tracker asks | New label | Open issues with a declared label assigned to the signed-in account | Log asks and sessions waiting for a reply | Waiting on you on Plan |
 | Tracker asks are not measured. | New label | An opted-in source lacks a complete ask read | No tracker asks. | Waiting on you on Plan |
+| Updated | New label | When the tracker last changed a goal | Completed, a recorded outcome | Plan goal dates |
 | Waiting | New label | A lane paused on something outside it | Waiting on you, a session state | Plan lane and tracker group |
 
 Check means a Compass progress check on the first layer. Use "tests and builds" for the

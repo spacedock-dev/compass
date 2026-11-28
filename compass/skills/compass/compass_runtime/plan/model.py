@@ -13,8 +13,13 @@ BOARD_GROUPS = ("not_started", "running", "waiting", "blocked", "done", "dropped
 
 @dataclass(frozen=True)
 class ItemDate:
-    label: Literal["Changed", "Proposed, not merged", "from the log", "Due", "Updated"]
+    label: DateLabel
     value: str | None
+
+
+type DateLabel = Literal[
+    "Changed", "Proposed, not merged", "from the log", "Due", "Updated", "Target", "Completed"
+]
 
 
 @dataclass(frozen=True)
@@ -41,6 +46,7 @@ class Origin:
     line: int | None = None
     related_lines: tuple[int, ...] = ()
     date: ItemDate | None = None
+    additional_dates: tuple[ItemDate, ...] = ()
 
     @property
     def commit(self) -> str | None:
@@ -100,6 +106,7 @@ class Lane:
     date: ItemDate | None = None
     # None means not measured, never a default group (AGENTS.md "Measured Invariants").
     state: str | None = None
+    additional_dates: tuple[ItemDate, ...] = ()
 
 
 @dataclass(frozen=True)

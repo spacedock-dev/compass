@@ -34,6 +34,7 @@ from compass_runtime import (
 from compass_runtime import config as runtime_config
 from compass_runtime import events as runtime_events
 from compass_runtime import transcripts as runtime_transcripts
+from compass_runtime.plan import settings as plan_settings
 from compass_runtime.plan import tracker_source
 
 from .decision_citations import citation_errors
@@ -50,6 +51,35 @@ from .test_first_layer_words import PUBLIC_TRACKER_TOKENS, _glossary_words
 
 
 class TrackerPlanGuideTest(unittest.TestCase):
+    def test_workspace_tracker_refusal_sentences_are_documented(self) -> None:
+        security = (SERVER_PATH.parents[3] / "SECURITY.md").read_text(encoding="utf-8")
+        reasons = " ".join(
+            security.split("### Published plan fields", 1)[1].split("### ", 1)[0].split()
+        )
+        for reason, explanation in (
+            ("unknown-workspace", "Sign in to the declared workspace with your tracker CLI."),
+            ("missing-team-scope", "Set a default team in your tracker CLI."),
+        ):
+            with self.subTest(reason=reason):
+                self.assertIn(f"`{reason}` shows “{explanation}”", reasons)
+
+    def test_public_setup_covers_workspace_sources_and_unsupported_ask_labels(self) -> None:
+        root = SERVER_PATH.parents[3]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        guide = (root / "docs/how-to/05-plan-board.md").read_text(encoding="utf-8")
+        prompt = guide.split("## Let your agent set it up", 1)[1].split("## ", 1)[0]
+        for document, passage, expected in (
+            ("README", readme, "your files and configured trackers"),
+            ("setup prompt", prompt, "ask for its workspace, project and any project milestone"),
+            (
+                "refusal table",
+                guide,
+                f"| {plan_settings.UNSUPPORTED_TRACKER_ASKS} | Remove `ask_labels` from that source. |",
+            ),
+        ):
+            with self.subTest(document=document):
+                self.assertIn(expected, " ".join(passage.split()))
+
     def test_a_person_can_copy_github_settings_and_find_the_off_switches(self) -> None:
         root = SERVER_PATH.parents[3]
         guide = (root / "docs/how-to/05-plan-board.md").read_text(encoding="utf-8")
@@ -70,6 +100,7 @@ class TrackerPlanGuideTest(unittest.TestCase):
         )
         self.assertIn("gh project field-list <n> --owner <owner> --format json", tracker_setup)
         milestone = tracker_source.declarations(examples[0]["trackers"])[0]
+        assert milestone.provider == "github"
         self.assertEqual(("needs-me",), milestone.ask_labels)
         self.assertIn("Label matching is case-sensitive.", " ".join(tracker_setup.split()))
         security = (root / "SECURITY.md").read_text(encoding="utf-8")
@@ -1045,6 +1076,48 @@ class DocumentationMatchesCodeTest(unittest.TestCase):
             platform_name="darwin", environ={}, home="/HOME"
         )
         return roots
+
+    def test_plan_tracker_inventory_describes_every_supported_selector(self) -> None:
+        architecture = (SERVER_PATH.parents[3] / "docs/design-runtime-architecture.md").read_text(
+            encoding="utf-8"
+        )
+        row = next(
+            line
+            for line in architecture.splitlines()
+            if line.startswith("| `plan/tracker_source.py`")
+        )
+        github = {"provider": "github", "repo": "orchard/trees", "number": 7}
+        workspace = {
+            "provider": "linear",
+            "workspace": "orchard-labs",
+            "project": "Orchard Inventory",
+        }
+        cases = (
+            ({**github, "kind": "milestone"}, "GitHub", "milestone"),
+            ({**github, "kind": "parent-issue"}, "GitHub", "parent issue"),
+            (
+                {
+                    "provider": "github",
+                    "kind": "project",
+                    "owner": "orchard",
+                    "number": 7,
+                    "status_field": "SAMPLE",
+                    "words": {"Done": "done"},
+                },
+                "GitHub",
+                "Projects v2 project",
+            ),
+            ({**workspace, "kind": "project"}, "Linear", "project"),
+            (
+                {**workspace, "kind": "milestone", "milestone": "Spring Survey"},
+                "Linear",
+                "milestone",
+            ),
+        )
+        admitted = tracker_source.declarations([case[0] for case in cases])
+        for source, (_, provider, selector) in zip(admitted, cases, strict=True):
+            with self.subTest(provider=source.provider, kind=source.kind):
+                self.assertIn(selector, row.partition(f"{provider} selectors")[2].partition(".")[0])
 
     def test_intent_card_docs_do_not_describe_the_old_card(self) -> None:
         # The Intent card moved How Intent and drift works and Clear into its More menu

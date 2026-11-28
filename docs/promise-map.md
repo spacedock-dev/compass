@@ -284,9 +284,10 @@ for you. The one shape it is allowed is the session asking and Compass
 answering, as the [ask lane design](design-ask-lane.md) describes.
 
 The Plan page shows your open asks and waiting sessions, followed by your goals and the lanes
-serving them. It reads the files or GitHub sources you declare. Only a browser on the Compass
-computer can open it. With complete reads, it shows how many of a goal's measured lanes are
-done. A GitHub milestone can show its due date. [Set up the plan board](how-to/05-plan-board.md).
+serving them. It reads the sources you declare, from files, GitHub or a second tracker through
+its own CLI. Waiting on you can include open GitHub issues assigned to you that match a label
+you chose. Only a browser on the Compass computer can open Plan. With complete reads, Plan
+counts how many of a goal's measured lanes are done. Dates come from the source. [Set up the plan board](how-to/05-plan-board.md).
 
 If you already run a Claude Code status line, `spacedock-compass --footer` can add how many other
 sessions are waiting on you. It counts by the same rule as the board's Needs you queue and

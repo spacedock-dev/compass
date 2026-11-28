@@ -77,6 +77,15 @@ function PlanSection({
   );
 }
 
+const datePrefixes = {
+  changed: 'Changed ',
+  proposed: '',
+  due: 'Due ',
+  target: `${PLAN_WORDS.target} `,
+  updated: `${PLAN_WORDS.updated} `,
+  completed: `${PLAN_WORDS.completed} `,
+} satisfies Record<PlanRepoDate['kind'], string>;
+
 function RepoDate({ date }: { readonly date: PlanRepoDate }) {
   const parsed = date.at ? new Date(date.at) : null;
   const hasDate = parsed !== null && !Number.isNaN(parsed.getTime());
@@ -87,8 +96,7 @@ function RepoDate({ date }: { readonly date: PlanRepoDate }) {
       {date.kind === 'proposed' && <span>Proposed, not merged</span>}
       {hasDate && (
         <time dateTime={date.at ?? undefined}>
-          {date.kind === 'changed' && 'Changed '}
-          {date.kind === 'due' && 'Due '}
+          {datePrefixes[date.kind]}
           {parsed.toLocaleDateString(undefined, {
             dateStyle: 'medium',
             ...(/^\d{4}-\d{2}-\d{2}$/.test(date.at ?? '') ? { timeZone: 'UTC' } : {}),
@@ -330,13 +338,7 @@ function notCountedNote(dropped: boolean, unknown: boolean) {
     : 'Lanes without a known status are not counted.';
 }
 
-function GoalCard({
-  goal,
-  trackerIncomplete,
-}: {
-  readonly goal: PlanGoal;
-  readonly trackerIncomplete: boolean;
-}) {
+function GoalCard({ goal }: { readonly goal: PlanGoal }) {
   const headingId = useId();
   const groups = laneGroups
     .map(({ state, label }) => ({
@@ -360,6 +362,9 @@ function GoalCard({
         {goal.title}
       </h3>
       {goal.date && <RepoDate date={goal.date} />}
+      {goal.additionalDates?.map((date) => (
+        <RepoDate key={date.kind} date={date} />
+      ))}
       {goal.proposal && <p className="m-0 text-label text-muted-foreground">{goal.proposal}</p>}
       <dl className="m-0 grid gap-1">
         <dt className="text-label font-semibold text-muted-foreground">Done when</dt>
@@ -371,12 +376,10 @@ function GoalCard({
         </dd>
       </dl>
       {groups.length === 0 ? (
-        !trackerIncomplete && (
-          <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
-        )
+        <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
       ) : (
         <>
-          {trackerIncomplete ? null : total === 0 ? (
+          {total === 0 ? (
             <p className="m-0 text-muted-foreground">
               {unknown ? 'Lane progress is not measured.' : notCountedNote(dropped, false)}
             </p>
@@ -400,7 +403,7 @@ function GoalCard({
               >
                 <h4 className="m-0 text-label font-semibold text-muted-foreground">{label}</h4>
                 <ul role="list" aria-label={label} className="m-0 list-none p-0">
-                  {lanes.map(({ id, title, sessions }) => (
+                  {lanes.map(({ id, title, sessions, additionalDates }) => (
                     <li
                       key={id}
                       className={cn(
@@ -408,15 +411,17 @@ function GoalCard({
                         'border-0 border-solid border-[var(--rule)] py-3 first:pt-0 last:pb-0 not-first:border-t',
                       )}
                     >
-                      <span
+                      <div
                         className={cn(
                           'min-w-0 flex-1 text-body',
                           !!sessions?.length && 'sm:mt-2.5',
                         )}
-                        data-authored
                       >
-                        {title}
-                      </span>
+                        <span data-authored>{title}</span>
+                        {additionalDates?.map((date) => (
+                          <RepoDate key={date.kind} date={date} />
+                        ))}
+                      </div>
                       <SessionReferences sessions={sessions} />
                     </li>
                   ))}
@@ -514,7 +519,7 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
                       PLAN_WORDS.noLanesFound
                     ) : (
                       <>
-                        {PLAN_WORDS.notMeasured}. <span>{SOURCE_REFUSALS[source.reason]}</span>
+                        {PLAN_WORDS.notMeasured}. <span>{source.detail}</span>
                       </>
                     )}
                   </span>
@@ -548,6 +553,8 @@ const pageLayout =
 export function RefusedPlanPage({ reason }: { readonly reason: string }) {
   const detail: Readonly<Record<string, string>> = {
     'malformed settings': 'The Plan settings did not have the expected format.',
+    "Tracker asks aren't supported for this tracker yet.":
+      "Tracker asks aren't supported for this tracker yet.",
     'could not identify a private root':
       'Compass could not identify a private root in the Plan settings.',
     'settings are inside a repository': 'Keep the Plan settings outside a Git repository.',
@@ -595,6 +602,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
   // A note the decision log has not marked decided never sits under Product decisions.
   const decided = model.design.filter((note) => note.decided !== false);
   const undecided = model.design.filter((note) => note.decided === false);
+  const goalOccurrences = new Map<string, number>();
   return (
     <div className={pageLayout} data-next-view-body="plan">
       <section aria-labelledby={headingId} className="grid gap-8">
@@ -607,21 +615,18 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
           trackerAsks={model.trackerAsks}
         />
         <PlanSection title="Goals">
-          {model.trackerIncomplete && (
-            <p className="m-0 text-muted-foreground">Lane progress is not measured.</p>
+          {model.goals.length === 0 ? (
+            <p className="m-0 text-muted-foreground">
+              {model.trackerIncomplete ? 'Lane progress is not measured.' : 'No goals are listed.'}
+            </p>
+          ) : (
+            model.goals.map((goal) => {
+              // File goals can share an ID. Removing another source must keep this card mounted.
+              const occurrence = goalOccurrences.get(goal.id) ?? 0;
+              goalOccurrences.set(goal.id, occurrence + 1);
+              return <GoalCard key={`${goal.id}:${occurrence}`} goal={goal} />;
+            })
           )}
-          {model.goals.length === 0
-            ? !model.trackerIncomplete && (
-                <p className="m-0 text-muted-foreground">No goals are listed.</p>
-              )
-            : // Goal ids come from headings in the plan files, and two files may share one.
-              model.goals.map((goal, index) => (
-                <GoalCard
-                  key={`${goal.id}:${index}`}
-                  goal={goal}
-                  trackerIncomplete={model.trackerIncomplete}
-                />
-              ))}
         </PlanSection>
         {model.fileSections.design && (
           <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>

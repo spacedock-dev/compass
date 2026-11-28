@@ -1,0 +1,138 @@
+{
+  "id": "2ba6441b-3769-42e3-a84e-32003c40a001",
+  "name": "Lantern Field Guide",
+  "identifier": "GUIDE-4",
+  "slugId": "de70ba5e12e9",
+  "url": "https://linear.app/lantern-fieldwork/project/lantern-field-guide-de70ba5e12e9/overview",
+  "description": "An invented fieldwork project.",
+  "content": "Survey practice routes and index the guide.",
+  "color": "#9B723C",
+  "icon": "Compass",
+  "priority": 2,
+  "progress": 0.35,
+  "scope": 6,
+  "createdAt": "2024-03-19T14:32:09.003Z",
+  "updatedAt": "2024-03-22T16:52:47.128Z",
+  "targetDate": null,
+  "targetDateResolution": null,
+  "startDate": "2024-03-20",
+  "startDateResolution": null,
+  "startedAt": "2024-03-19T14:32:09.003Z",
+  "archivedAt": null,
+  "autoArchivedAt": null,
+  "canceledAt": null,
+  "completedAt": null,
+  "health": null,
+  "healthUpdatedAt": null,
+  "lastUpdate": null,
+  "creator": {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a006",
+    "name": "Aster Mora",
+    "displayName": "Aster"
+  },
+  "lead": {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a007",
+    "name": "Piper Vale",
+    "displayName": "Piper"
+  },
+  "members": [
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a006",
+      "name": "Aster Mora",
+      "displayName": "Aster"
+    },
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a007",
+      "name": "Piper Vale",
+      "displayName": "Piper"
+    }
+  ],
+  "teams": [
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a005",
+      "key": "LANT",
+      "name": "Lantern Surveyors"
+    }
+  ],
+  "status": {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a022",
+    "name": "Surveying",
+    "type": "started",
+    "color": "#41908A",
+    "position": 5
+  },
+  "attachments": [],
+  "documents": [],
+  "externalLinks": [],
+  "labels": [],
+  "relations": [],
+  "inverseRelations": [],
+  "initiatives": [
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a03d",
+      "name": "North Trail Mapping",
+      "url": "https://linear.app/lantern-fieldwork/initiative/north-trail-mapping"
+    }
+  ],
+  "projectMilestones": [
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a002",
+      "name": "Trail Markers",
+      "description": "An invented checkpoint.",
+      "progress": 0.23,
+      "status": "inProgress",
+      "sortOrder": 0,
+      "targetDate": "2024-04-11"
+    },
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a003",
+      "name": "Hill Survey",
+      "description": "An invented checkpoint.",
+      "progress": 0.23,
+      "status": "inProgress",
+      "sortOrder": 1,
+      "targetDate": null
+    },
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a004",
+      "name": "River Notes",
+      "description": "An invented checkpoint.",
+      "progress": 0.23,
+      "status": "inProgress",
+      "sortOrder": 2,
+      "targetDate": null
+    }
+  ],
+  "issues": [
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a033",
+      "identifier": "LANT-51",
+      "title": "Trace the ridge path",
+      "state": {
+        "id": "2ba6441b-3769-42e3-a84e-32003c40a01f",
+        "name": "Mapping",
+        "type": "started"
+      }
+    },
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a034",
+      "identifier": "LANT-52",
+      "title": "File the lantern map",
+      "state": {
+        "id": "2ba6441b-3769-42e3-a84e-32003c40a020",
+        "name": "Filed",
+        "type": "completed"
+      }
+    },
+    {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a035",
+      "identifier": "LANT-53",
+      "title": "Index the survey notes",
+      "state": {
+        "id": "2ba6441b-3769-42e3-a84e-32003c40a021",
+        "name": "Ready for Survey",
+        "type": "unstarted"
+      }
+    }
+  ]
+}

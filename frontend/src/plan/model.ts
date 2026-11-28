@@ -1,5 +1,6 @@
 import {
   isTrackerSource,
+  trackerProvider,
   type PlanGroup,
   type PublishedLaneState,
   type PublishedPlanDate,
@@ -46,10 +47,12 @@ export interface PlanGoal {
   readonly doneWhen: string | null;
   readonly proposal?: 'Proposed, not merged';
   readonly date?: PlanRepoDate | undefined;
+  readonly additionalDates?: readonly PlanRepoDate[];
   readonly lanes: readonly {
     readonly id: string;
     readonly title: string;
     readonly state: PlanLaneState;
+    readonly additionalDates?: readonly PlanRepoDate[];
     readonly sessions: readonly PlanSessionReference[] | null;
   }[];
 }
@@ -74,7 +77,7 @@ interface PlanWaitingSession {
 }
 
 export type PlanRepoDate = {
-  readonly kind: 'changed' | 'proposed' | 'due';
+  readonly kind: 'changed' | 'proposed' | 'due' | 'target' | 'updated' | 'completed';
   readonly at: string | null;
 };
 
@@ -132,6 +135,8 @@ export const SOURCE_REFUSALS = {
   'unreadable-output': 'The GitHub reply could not be read.',
   'limit-exceeded': 'The source has more items than Compass reads.',
   'cli-failed': 'The GitHub CLI could not read the source.',
+  'unknown-workspace': 'Sign in to the declared workspace with your tracker CLI.',
+  'missing-team-scope': 'Set a default team in your tracker CLI.',
   expired: 'The last read is out of date.',
   'plan-read-unavailable': 'Compass could not refresh the plan.',
   refreshing: PLAN_WORDS.readingGitHub,
@@ -139,6 +144,17 @@ export const SOURCE_REFUSALS = {
 } as const;
 
 export type PlanRefusalReason = keyof typeof SOURCE_REFUSALS;
+
+const LINEAR_SOURCE_DETAILS: Partial<Record<PlanRefusalReason, string>> = {
+  'cli-missing': 'The Linear CLI is unavailable.',
+  'signed-out': 'Sign in to Linear with your Linear CLI.',
+  'rate-limited': 'Linear is limiting reads.',
+  timeout: 'Linear did not answer in time.',
+  'partial-result': 'Linear returned an incomplete read.',
+  'unreadable-output': 'The Linear reply could not be read.',
+  'cli-failed': 'The Linear CLI could not read the source.',
+  refreshing: PLAN_WORDS.readingLinear,
+};
 
 export type PlanSource = {
   readonly id: string;
@@ -153,7 +169,7 @@ export type PlanSource = {
   | {
       readonly status: 'tracker';
       readonly state: ReadyPlan['sources'][number]['state'];
-      readonly reason: PlanRefusalReason;
+      readonly detail: string;
     }
 );
 
@@ -191,9 +207,16 @@ const sessionStates = {
 
 function repoDate(date: PublishedPlanDate | null): PlanRepoDate | undefined {
   if (date?.label === 'Due') return { kind: 'due', at: date.at };
+  if (date?.label === 'Target') return { kind: 'target', at: date.at };
+  if (date?.label === 'Updated') return { kind: 'updated', at: date.at };
+  if (date?.label === 'Completed') return { kind: 'completed', at: date.at };
   if (date?.label === 'Changed') return { kind: 'changed', at: date.at };
   if (date?.label === 'Proposed, not merged') return { kind: 'proposed', at: date.at };
   return undefined;
+}
+
+function repoDates(dates: readonly PublishedPlanDate[] | undefined) {
+  return (dates ?? []).flatMap((date) => repoDate(date) ?? []);
 }
 
 function sourceRefusal(reason: string | null): PlanRefusalReason {
@@ -246,13 +269,17 @@ function planSources(published: readonly PublishedSource[]): PlanSource[] {
   published.forEach((source, index) => {
     const id = String(index);
     const { label, kind } = source;
-    if (isTrackerSource(source)) {
+    const provider = trackerProvider(source);
+    if (provider) {
+      const reason = sourceRefusal(source.reason);
       rows.push({
         id,
         name: source.position === null ? label : `${label} ${source.position}`,
         status: 'tracker',
         state: source.state,
-        reason: sourceRefusal(source.reason),
+        detail:
+          (provider === 'linear' ? LINEAR_SOURCE_DETAILS[reason] : undefined) ??
+          SOURCE_REFUSALS[reason],
       });
       return;
     }
@@ -346,6 +373,7 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
       id: lane.id,
       title: lane.title,
       state: laneState(lane.state),
+      additionalDates: repoDates(lane.additionalDates),
       sessions,
     });
   }
@@ -365,7 +393,11 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
       id: goal.id,
       title: goal.title,
       doneWhen: goal.doneWhen,
-      date: goal.date?.label === 'Due' ? repoDate(goal.date) : undefined,
+      date:
+        goal.date?.label === 'Due' || goal.date?.label === 'Target'
+          ? repoDate(goal.date)
+          : undefined,
+      additionalDates: repoDates(goal.additionalDates),
       ...(goal.proposal ? { proposal: goal.proposal } : {}),
       lanes: [...new Set(goal.lanes)].flatMap((id) => lanes.get(id) ?? []),
     })),

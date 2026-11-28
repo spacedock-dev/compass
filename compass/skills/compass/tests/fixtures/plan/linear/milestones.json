@@ -1,0 +1,32 @@
+[
+  {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a002",
+    "name": "Trail Markers",
+    "targetDate": "2024-04-11",
+    "sortOrder": 0,
+    "project": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a001",
+      "name": "Lantern Field Guide"
+    }
+  },
+  {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a003",
+    "name": "Hill Survey",
+    "targetDate": null,
+    "sortOrder": 1,
+    "project": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a001",
+      "name": "Lantern Field Guide"
+    }
+  },
+  {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a004",
+    "name": "River Notes",
+    "targetDate": null,
+    "sortOrder": 2,
+    "project": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a001",
+      "name": "Lantern Field Guide"
+    }
+  }
+]

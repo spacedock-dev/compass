@@ -74,6 +74,7 @@ describe('the first-layer glossary', () => {
     ).toEqual([
       'An open ask with no text',
       'Blocked',
+      'Completed',
       'Done',
       'Dropped',
       'In progress',
@@ -85,9 +86,12 @@ describe('the first-layer glossary', () => {
       'Planned',
       'Product decisions',
       'Reading GitHub…',
+      'Reading Linear…',
       'Status not recognised',
+      'Target',
       'Tracker asks',
       'Tracker asks are not measured.',
+      'Updated',
       'Waiting',
     ]);
     expect(GLOSSARY).toHaveProperty('planInProgress.distinctFrom', 'Working, a session state');

@@ -1,0 +1,161 @@
+[
+  {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a033",
+    "identifier": "LANT-51",
+    "title": "Trace the ridge path",
+    "url": "https://linear.app/lantern-fieldwork/issue/LANT-51/trace-the-ridge-path",
+    "createdAt": "2024-03-19T14:32:09.003Z",
+    "updatedAt": "2024-03-22T16:52:47.128Z",
+    "state": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a01f",
+      "name": "Mapping",
+      "type": "started",
+      "color": "#97338A",
+      "position": 3
+    },
+    "team": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a005",
+      "key": "LANT",
+      "name": "Lantern Surveyors",
+      "cyclesEnabled": true,
+      "activeCycle": {
+        "number": 8
+      }
+    },
+    "project": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a001",
+      "name": "Lantern Field Guide"
+    },
+    "projectMilestone": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a002",
+      "name": "Trail Markers"
+    },
+    "assignee": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a007",
+      "name": "Piper Vale",
+      "displayName": "Piper",
+      "initials": "PV"
+    },
+    "cycle": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a008",
+      "isActive": true,
+      "isFuture": false,
+      "isNext": false,
+      "isPast": false,
+      "isPrevious": false,
+      "name": "March field notes",
+      "number": 8
+    },
+    "estimate": 1,
+    "priority": 2,
+    "priorityLabel": "Elevated",
+    "labels": [
+      {
+        "id": "2ba6441b-3769-42e3-a84e-32003c40a02a",
+        "name": "Cartography",
+        "color": "#658F3C"
+      }
+    ],
+    "inverseRelations": [
+      {
+        "id": "2ba6441b-3769-42e3-a84e-32003c40a03b",
+        "type": "blocks",
+        "issue": {
+          "id": "2ba6441b-3769-42e3-a84e-32003c40a034",
+          "identifier": "LANT-52",
+          "state": {
+            "id": "2ba6441b-3769-42e3-a84e-32003c40a020",
+            "name": "Filed",
+            "type": "completed",
+            "color": "#287C66",
+            "position": 4
+          }
+        }
+      }
+    ]
+  },
+  {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a034",
+    "identifier": "LANT-52",
+    "title": "File the lantern map",
+    "url": "https://linear.app/lantern-fieldwork/issue/LANT-52/file-the-lantern-map",
+    "createdAt": "2024-03-19T14:32:09.003Z",
+    "updatedAt": "2024-03-22T16:52:47.128Z",
+    "state": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a020",
+      "name": "Filed",
+      "type": "completed",
+      "color": "#287C66",
+      "position": 4
+    },
+    "team": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a005",
+      "key": "LANT",
+      "name": "Lantern Surveyors",
+      "cyclesEnabled": true,
+      "activeCycle": {
+        "number": 8
+      }
+    },
+    "project": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a001",
+      "name": "Lantern Field Guide"
+    },
+    "projectMilestone": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a002",
+      "name": "Trail Markers"
+    },
+    "assignee": null,
+    "cycle": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a008",
+      "isActive": true,
+      "isFuture": false,
+      "isNext": false,
+      "isPast": false,
+      "isPrevious": false,
+      "name": "March field notes",
+      "number": 8
+    },
+    "estimate": 2,
+    "priority": 2,
+    "priorityLabel": "Elevated",
+    "labels": [],
+    "inverseRelations": []
+  },
+  {
+    "id": "2ba6441b-3769-42e3-a84e-32003c40a035",
+    "identifier": "LANT-53",
+    "title": "Index the survey notes",
+    "url": "https://linear.app/lantern-fieldwork/issue/LANT-53/index-the-survey-notes",
+    "createdAt": "2024-03-19T14:32:09.003Z",
+    "updatedAt": "2024-03-22T16:52:47.128Z",
+    "state": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a021",
+      "name": "Ready for Survey",
+      "type": "unstarted",
+      "color": "#348731",
+      "position": 2
+    },
+    "team": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a005",
+      "key": "LANT",
+      "name": "Lantern Surveyors",
+      "cyclesEnabled": true,
+      "activeCycle": {
+        "number": 8
+      }
+    },
+    "project": {
+      "id": "2ba6441b-3769-42e3-a84e-32003c40a001",
+      "name": "Lantern Field Guide"
+    },
+    "projectMilestone": null,
+    "assignee": null,
+    "cycle": null,
+    "estimate": 3,
+    "priority": 2,
+    "priorityLabel": "Elevated",
+    "labels": [],
+    "inverseRelations": []
+  }
+]
