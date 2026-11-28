@@ -9,30 +9,23 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
-from . import tracker_cli
+from . import model, tracker_cli, tracker_github
 
 if TYPE_CHECKING:
     import subprocess
     from collections.abc import Callable, Mapping
 
-    from . import model
-    from .tracker_source import Declaration
+    from .tracker_source import Declaration, SourceKey
 
 REFRESH_SECONDS = 8.0
 FRESH_SECONDS = 30.0
 ERROR_BACKOFF_SECONDS = 5.0
 MAX_WORKERS = 4
 
+TrackerData = model.TrackerData
+
 type Adapter = Callable[[Declaration, tracker_cli.TrackerCLI], TrackerData]
-type SourceKey = tuple[str, str, str, int]
-
-
-@dataclass(frozen=True)
-class TrackerData:
-    """An adapter returns these rows only after proving complete membership."""
-
-    goals: tuple[model.Goal, ...]
-    lanes: tuple[model.Lane, ...]
+_ADAPTERS: Mapping[str, Adapter] = MappingProxyType({"github": tracker_github.read})
 
 
 @dataclass(frozen=True)
@@ -57,7 +50,7 @@ class TrackerRefresh:
         environ: Mapping[str, str] | None = None,
         runner: Callable[..., subprocess.CompletedProcess[Any]] | None = None,
     ) -> None:
-        self._adapters = MappingProxyType(dict(adapters or {}))
+        self._adapters = _ADAPTERS if adapters is None else MappingProxyType(dict(adapters))
         self._clock = clock
         self._environment = tracker_cli.environment(os.environ if environ is None else environ)
         self._runner = runner

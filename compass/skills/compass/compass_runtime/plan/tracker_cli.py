@@ -37,6 +37,7 @@ class Reason(StrEnum):
     RATE_LIMITED = "rate-limited"
     TIMEOUT = "timeout"
     NOT_FOUND = "not-found-or-inaccessible"
+    PARTIAL = "partial-result"
     UNREADABLE_OUTPUT = "unreadable-output"
     LIMIT_EXCEEDED = "limit-exceeded"
     CLI_FAILED = "cli-failed"
@@ -95,6 +96,27 @@ def _json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 def _non_json_constant(_word: str) -> object:
     raise ValueError("non-JSON constant")
+
+
+def _response(code: int, stdout: bytes, stderr: bytes, *, graphql: bool) -> object:
+    if code == 4:
+        raise TrackerError(Reason.SIGNED_OUT)
+    if code != 0 and not graphql:
+        raise TrackerError(_exit_reason(stderr))
+    try:
+        value = json.loads(
+            stdout.decode("utf-8"),
+            object_pairs_hook=_json_object,
+            parse_constant=_non_json_constant,
+        )
+    except (ValueError, RecursionError):
+        raise TrackerError(_exit_reason(stderr) if code else Reason.UNREADABLE_OUTPUT) from None
+    # gh can print a GraphQL response with partial data before reporting errors on stderr.
+    if code != 0:
+        if isinstance(value, dict) and value.get("errors") and value.get("data") is not None:
+            raise TrackerError(Reason.PARTIAL)
+        raise TrackerError(_exit_reason(stderr))
+    return value
 
 
 class TrackerCLI:
@@ -180,13 +202,4 @@ class TrackerCLI:
         self._bytes += len(stdout) + len(stderr)
         if len(stdout) > STDOUT_LIMIT or len(stderr) > STDERR_LIMIT or self._bytes > REFRESH_BYTES:
             raise TrackerError(Reason.LIMIT_EXCEEDED)
-        if code != 0:
-            raise TrackerError(_exit_reason(stderr))
-        try:
-            return json.loads(
-                stdout.decode("utf-8"),
-                object_pairs_hook=_json_object,
-                parse_constant=_non_json_constant,
-            )
-        except (ValueError, RecursionError):
-            raise TrackerError(Reason.UNREADABLE_OUTPUT) from None
+        return _response(code, stdout, stderr, graphql=arguments[:2] == ("api", "graphql"))

@@ -51,6 +51,7 @@ class FakeAdapter:
     def __call__(
         self, source: tracker_source.Declaration, child: tracker_cli.TrackerCLI
     ) -> tracker_refresh.TrackerData:
+        assert isinstance(source, tracker_source.RepositoryDeclaration)
         result = child.read_json(
             ("fake-read", "--repo", f"github.com/{source.repo}", "--number", str(source.number))
         )
@@ -593,15 +594,6 @@ class TrackerEntryPointTest(TrackerTestCase):
                 "", publish.session_summary(str(self.root), lane=None, cwd=str(self.root))
             )
         launch.assert_not_called()
-
-    def test_production_has_no_tracker_adapter_in_this_layer(self) -> None:
-        self.declare()
-        app = self.application()
-        app.state.plan_trackers = tracker_refresh.TrackerRefresh(
-            clock=self.clock, runner=self.runner, environ=self.environ
-        )
-        self.assertEqual(200, request(app)[0])
-        self.runner.assert_not_called()
 
 
 def tracker_source_digest(root: Path) -> str:

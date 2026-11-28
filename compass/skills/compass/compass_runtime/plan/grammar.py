@@ -157,7 +157,7 @@ def is_goal_id(text: str) -> bool:
     )
 
 
-def _timestamp(text: str, forms: tuple[str, ...]) -> bool:
+def is_timestamp(text: str, forms: tuple[str, ...] = TIMESTAMP_FORMS) -> bool:
     matched = _TIMESTAMP.fullmatch(text)
     if matched is None:
         return False
@@ -190,7 +190,7 @@ class Field:
         if self.kind == "enum":
             return part in self.values
         if self.kind == "timestamp":
-            return _timestamp(part, timestamps)
+            return is_timestamp(part, timestamps)
         return _FIELD_PATTERNS[self.kind].fullmatch(part) is not None
 
 

@@ -4,25 +4,33 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Literal
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Literal
 
-from . import grammar
+from . import grammar, model
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 _OWNER = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}")
 _REPO = re.compile(r"[A-Za-z0-9._-]{1,100}")
+_NODE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_=/+:-]{0,255}")
 MAX_SOURCES = 32
 MAX_NUMBER = 10_000_000
 
+type SourceKey = tuple[str, str, str, int]
+type Declaration = RepositoryDeclaration | ProjectDeclaration
+
 
 @dataclass(frozen=True)
-class Declaration:
+class RepositoryDeclaration:
     provider: Literal["github"]
-    kind: Literal["milestone"]
+    kind: Literal["milestone", "parent-issue"]
     repo: str
     number: int
 
     @property
-    def key(self) -> tuple[str, str, str, int]:
+    def key(self) -> SourceKey:
         return self.provider, self.kind, self.repo, self.number
 
     @property
@@ -30,17 +38,64 @@ class Declaration:
         return "gh"
 
 
-def declaration(value: object) -> Declaration:
-    raw = grammar.keys(value, "provider kind repo number")
-    if raw["provider"] != "github" or raw["kind"] != "milestone":
-        raise grammar.SettingsError
-    owner, _, repo = grammar.string(raw["repo"], 140).partition("/")
+@dataclass(frozen=True)
+class ProjectDeclaration:
+    provider: Literal["github"]
+    kind: Literal["project"]
+    owner: str
+    number: int
+    status_field: str
+    words: Mapping[str, str]
+
+    @property
+    def key(self) -> SourceKey:
+        return self.provider, self.kind, self.owner, self.number
+
+    @property
+    def executable(self) -> str:
+        return "gh"
+
+
+def repository(value: object) -> str:
+    owner, _, repo = grammar.string(value, 140).partition("/")
     if not (_OWNER.fullmatch(owner) and _REPO.fullmatch(repo)):
         raise grammar.SettingsError
     if not repo.strip(".") or repo.lower().endswith(".git"):
         raise grammar.SettingsError
-    number = grammar.integer(raw["number"], MAX_NUMBER)
-    return Declaration("github", "milestone", f"{owner.lower()}/{repo.lower()}", number)
+    return f"{owner.lower()}/{repo.lower()}"
+
+
+def node_id(value: object) -> str:
+    identity = grammar.string(value, 256)
+    if not _NODE_ID.fullmatch(identity):
+        raise grammar.SettingsError
+    return identity
+
+
+def declaration(value: object) -> Declaration:
+    raw = grammar.dictionary(value)
+    if raw.get("provider") != "github":
+        raise grammar.SettingsError
+    number = grammar.integer(raw.get("number"), MAX_NUMBER)
+    kind = raw.get("kind")
+    if kind == "project":
+        raw = grammar.keys(raw, "provider kind owner number status_field words")
+        owner = grammar.string(raw["owner"], 39)
+        if not _OWNER.fullmatch(owner):
+            raise grammar.SettingsError
+        words = grammar.word_map(raw["words"], model.BOARD_GROUPS, grammar.folded)
+        return ProjectDeclaration(
+            "github",
+            "project",
+            owner.lower(),
+            number,
+            node_id(raw["status_field"]),
+            MappingProxyType(words),
+        )
+    if kind in ("milestone", "parent-issue"):
+        raw = grammar.keys(raw, "provider kind repo number")
+        return RepositoryDeclaration("github", kind, repository(raw["repo"]), number)
+    raise grammar.SettingsError
 
 
 def declarations(value: object) -> tuple[Declaration, ...]:

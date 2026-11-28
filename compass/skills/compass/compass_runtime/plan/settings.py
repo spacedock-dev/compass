@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from compass_runtime import io
 
-from . import grammar, sources, tracker_source
+from . import grammar, model, sources, tracker_source
 from .grammar import SettingsError, array, boolean, choice, integer, keys, string, strings
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ NOT_CONFIGURED = "no settings file"
 DISABLED = "plan is off"
 MALFORMED = "malformed settings"
 PRIVATE_UNREADABLE = "could not identify a private root"
-BOARD_GROUPS = ("not_started", "running", "waiting", "blocked", "done", "dropped")
+BOARD_GROUPS = model.BOARD_GROUPS
 BUILD_GROUPS = ("built", "partial", "not_built")
 EMPHASIS = ("**", "*", "_")
 CASE_MODES = ("exact", "fold")

@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+BOARD_GROUPS = ("not_started", "running", "waiting", "blocked", "done", "dropped")
+
 
 @dataclass(frozen=True)
 class ItemDate:
-    label: Literal["Changed", "Proposed, not merged", "from the log"]
+    label: Literal["Changed", "Proposed, not merged", "from the log", "Due", "Updated"]
     value: str | None
 
 
@@ -95,6 +97,16 @@ class Lane:
     date: ItemDate | None = None
     # None means not measured, never a default group (AGENTS.md "Measured Invariants").
     state: str | None = None
+
+
+@dataclass(frozen=True)
+class TrackerData:
+    """An adapter returns these rows only after proving complete membership."""
+
+    goals: tuple[Goal, ...]
+    lanes: tuple[Lane, ...]
+    # Preserves authority when the same issue serves multiple configured goals.
+    project_status_lanes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
