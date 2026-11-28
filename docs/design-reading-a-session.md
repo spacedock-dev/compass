@@ -427,9 +427,24 @@ Compass still writes nothing else into a session. A correction stays copy-only
 ([DEC-25](#dec-25-a-correction-stays-yours-to-copy) is unchanged), and the steer box still holds a
 note in the reader's browser rather than sending one.
 
-The [plan board plan](plans/plan-board-shape.md#the-agent-summary) records the delivery shape.
-[SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists the fields, their destinations and
-the off switch.
+Both harnesses accept the hook's `hookSpecificOutput.additionalContext` field. The
+[Claude Code capture](captures/claude/session-start-context-2.1.332-macos.jsonl) and
+[Codex capture](captures/codex/session-start-context-0.172.0-macos.jsonl) recorded this on
+2026-11-27. Claude Code injected up to 10,000 characters whole and used a 2 KB saved-file
+preview beyond that. Codex injected up to 10,000 bytes whole and cut longer output in the
+middle. Compass's 1,500-byte cap fits within both. The harness waits for the hook before its
+first model request. A hook killed at its timeout injects nothing. The captures covered
+manually registered hooks and left the installed plugin path and default timeouts unmeasured.
+
+Both harnesses save the added context. In the Codex capture, the model acted on it after
+declining to repeat it. Codex `exec` silently skips an untrusted hook, and the trust belongs
+to the hook definition. A changed definition needs to be trusted again. The hook runs at
+session start. A later subagent dispatch does not get this summary.
+
+The hook opens no socket and launches no program. It uses the selected file-based lane's
+evidence and the board's saved file-based states. This lets it work with the board down.
+[SECURITY.md](../SECURITY.md#what-can-reach-into-a-session) lists the fields, their destinations
+and the off switch.
 
 ## DEC-17: the shape contract
 

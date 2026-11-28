@@ -1,9 +1,8 @@
 # Set up the plan board
 
 The Plan page shows your goals, the lanes of work serving each one, and the questions waiting on
-you. Compass reads declared tracker sources through their installed CLIs and reads plan files
-you already keep in Git. A tracker project or milestone can supply a target date. Compass
-shows a completion date when the source supplies one.
+you. Use plan files, GitHub, or a second tracker through its own CLI. A GitHub milestone can
+show its due date. The second tracker can supply target, update and completion dates.
 
 You write one settings file, `compass-plan.json`. Most people have their coding agent write it.
 
@@ -21,7 +20,8 @@ Please set up the Compass plan board for me.
    sources I gave you.
 3. Show me the compass-plan.json you plan to write before saving it. It is the only file you may
    create or change. Don't edit, move or commit my plan files or anything in my repositories.
-4. Run --diagnose and fix the settings until nothing I expect is refused.
+4. Run --diagnose to check the declarations and whether Compass can find the CLI.
+   Open Plan and check Sources to see whether the tracker read succeeded.
 5. Ask me to open Plan on the dashboard and tell you whether it looks right.
 6. Explain the optional session summary, including what it sends. Turn it on only if I say yes.
 
@@ -30,16 +30,15 @@ When you're done, tell me what you set up and anything Compass refused.
 
 ## Set up a GitHub plan
 
-1. **Check your login.** Install the GitHub CLI and run `gh auth status --hostname github.com`.
+1. Install the GitHub CLI and run `gh auth status --hostname github.com`.
    Sign in to GitHub.com with `gh auth login --hostname github.com` if needed.
-2. **Choose your goals.** Copy an example below into `compass-plan.json` in your Compass home
+2. Copy an example below into `compass-plan.json` in your Compass home
    (`~/.compass` unless you set `COMPASS_HOME`). Replace the example names and numbers.
-3. **Check the settings.** Run `spacedock-compass --diagnose` and check **Plan settings**.
-   Diagnosis checks the declaration and whether Compass can find the CLI. For a plugin install,
+3. Run `spacedock-compass --diagnose` and check Plan settings. Diagnosis checks the declaration
+   and whether Compass can find the CLI. For a plugin install,
    [find the launcher](../../HOW_TO_USE.md#find-the-copy-your-commands-will-run).
-4. **Open Plan.** On the Compass computer, choose **Plan** from the page links or from **Menu**
-   on a narrow screen. Check **Sources** for the read state and wait for the next refresh if
-   Compass is still reading GitHub.
+4. On the Compass computer, choose Plan from the page links or from Menu on a narrow screen.
+   Check Sources for the read state and wait for the next refresh if Compass is still reading GitHub.
 
 A milestone uses the number in its URL. Its issues become lanes and its due date appears on
 the goal when set.
@@ -63,7 +62,7 @@ A parent issue uses its issue number. Its direct sub-issues become lanes.
 }
 ```
 
-A GitHub project uses its project number. Run
+A Projects v2 source uses its project number. Only issues become lanes. Run
 `gh project field-list <n> --owner <owner> --format json` and copy the `id` for the **Status**
 field into `status_field`. Match the option names your project uses in `words`.
 
@@ -81,25 +80,36 @@ field into `status_field`. Match the option names your project uses in `words`.
 }
 ```
 
-- You can put several sources in `trackers` or add it to existing file settings. An issue can
+- You can put up to 32 sources in `trackers` or add it to existing file settings. An issue can
   serve several goals.
 - Add `"ask_labels": ["needs-me"]` to a GitHub source to show its open issues in **Waiting on you**
   when they have a listed label and are assigned to your signed-in GitHub account. Label matching
   is case-sensitive. Use the exact spelling shown in GitHub. Omit `ask_labels` to leave asks off
-  for that source.
+  for that source. Each matching issue appears once even if several sources include it.
 - For a project, your stored login needs access to that project and the scope described in
   `gh project --help`.
 - Compass uses your stored GitHub CLI login. See
   [what the tracker read sends](../../SECURITY.md#plan-reads-from-github).
-- A read with no matching issues says **No lanes found**. When a source is unavailable,
-  progress reads **not measured**. If a source with `ask_labels` has an incomplete read,
-  tracker asks read **not measured**. Waiting on you still shows the asks and waiting
-  sessions Compass has from local records.
-- Start Compass with `--no-plan-trackers` to stop these reads for the run. For a plan with just
-  GitHub and an event log, use the flag so the local log stays available. Remove `trackers`
-  and any top-level `lane_folders` only if the remaining
-  settings are valid as a standalone file plan. If the settings contain only GitHub
-  sources, remove the settings file to turn off Plan.
+- A complete read with no issues says No lanes found. If a tracker read is incomplete,
+  progress is unmeasured. If the sources with `ask_labels` cannot establish a complete set
+  of matches, Waiting on you says "Tracker asks are not measured." The log asks and waiting
+  sessions remain available.
+
+## Read a workspace project
+
+A second tracker can supply a project or a milestone within a project through its own CLI.
+It needs a stored login for the declared workspace. Its issues become lanes, with status and
+dates from the source. Use GitHub sources for `ask_labels`.
+[How workspace tracker reads work](../../SECURITY.md#plan-reads-from-a-workspace-tracker).
+
+## Pause tracker reads
+
+- Start Compass with `--no-plan-trackers` to stop tracker CLI reads for the run. For a plan
+  with just a tracker and an event log, use the flag so the local log stays available. Remove
+  the last tracker declaration and any top-level `lane_folders` only if the remaining settings
+  are valid as a standalone file plan.
+- Use `--no-plan` to turn off the whole Plan page for the run. For a tracker-only plan you can
+  remove the settings file to turn off Plan.
 
 ## Set it up yourself
 
@@ -131,7 +141,7 @@ With the standalone program it is `spacedock-compass --diagnose`.
 
 - Put `compass-plan.json` in your Compass home, outside every Git repository.
 - Save it as a regular file you own.
-- For a file plan without GitHub, keep every top-level section from the file example.
+- For a file-only plan, keep every top-level section from the file example.
 - It must be plain JSON. Comments and unknown keys are refused.
 
 ### Files to read
@@ -175,7 +185,7 @@ none of your declared headers is ignored.
 
 ### Linking sessions to lanes
 
-For GitHub lanes, put `lane_folders` at the top level. Ask your agent to read the lane's
+For lanes from a tracker CLI, put `lane_folders` at the top level. Ask your agent to read the lane's
 stable `id` from the local Plan response (`GET /api/plan`) and use it as the key. The ID stays
 the same when the issue title changes.
 
@@ -219,8 +229,8 @@ the checkout, so Compass can check them.
 
 ## Optional: give each new session its lane summary
 
-The summary uses file-based plan data. With the summary on, a Claude Code or Codex session started in a lane's folder begins with that
-lane's goal, state and progress in its context.
+With the summary on, a Claude Code or Codex session started in a file-based lane's folder begins
+with that lane's goal, state and progress in its context.
 
 That text goes to the session's model provider and is saved in the harness's session files. Read
 [what the hook sends](../../SECURITY.md#what-can-reach-into-a-session) before turning it on.

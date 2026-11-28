@@ -183,10 +183,8 @@ already write, never changes them, and serves one dashboard at `http://127.0.0.1
 Six kinds of traffic can leave your machine, and you can switch off each one. The quota reading
 is on by default: it sends your login token to your vendor, and no session content. Model calls, CI
 check reads and counts-only reach nudges start from something you do. Declaring a Plan tracker
-source enables reads through its installed CLI, such as the GitHub CLI. Run with
-`--no-plan-trackers` to stop those reads.
-The daily release lookup
-is also on by default; turn off **Look for new versions once a day** in Settings or run with
+source enables automatic reads through its installed CLI. Run with `--no-plan-trackers` to stop
+those reads. The daily release lookup is also on by default. Turn off **Look for new versions once a day** in Settings or run with
 `--no-update-check` to stop it. It requests the plain release URL with no query string and sends only a
 `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers,
 with no identifier or session content. The route counts the lookup itself from its headers.
@@ -200,10 +198,11 @@ exposes it to your network with no password, so read that section before you use
 what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a
 completed check on the board, choose See an example above the Sessions list or in Help.
 
-The Plan page shows goals and lanes from declared GitHub sources and files beside the sessions
-doing the work. It shows only the host name of each link and opens only in a browser on the
-Compass computer. Open Plan from the dashboard's menu or
-page links after you [set up the plan board](docs/how-to/05-plan-board.md).
+The Plan page puts goals and lanes from your files, GitHub and a second tracker beside the
+sessions doing the work. Each tracker uses its own CLI. Waiting on you can also show open GitHub
+issues assigned to you that have a label you chose. Plan shows only the host name of each link
+and opens only in a browser on the Compass computer.
+[Set up the plan board](docs/how-to/05-plan-board.md).
 
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.
 Its bundled references cover [data sources and session states](compass/skills/compass/reference/dashboard.md),

@@ -75,7 +75,7 @@ runs the newest-CPython leg on Linux.
 | Terminal raise from the gate queue | yes (tmux, one attached client) | not yet | not yet | not yet |
 | Claude quota token read (the usage fetch) | Keychain via `security`; the first read can prompt | credential file | credential file | credential file (Linux-side home) |
 | Cursor quota token read (the usage fetch) | Keychain via `security`, service `cursor-access-token` | no (see below) | no (see below) | no (see below) |
-| Plan board (reads of the files `compass-plan.json` names) | yes | yes | no (refused: guarded plan reads are unavailable) | yes (Linux-side files) |
+| Plan board (declared files and trackers) | yes | yes | no (guarded plan reads are unavailable) | yes (Linux-side files and CLIs) |
 
 Exactly one layer delivers a given popup: the server where it has a native backend, the page otherwise. `/api/data` reports which as `native_notify`. The split covers an arriving `ask_operator` question as well as a needs-input transition, which is why the ask rows above read the same way. It covers a session going quiet too, with one asymmetry the rows record and the sentence cannot: the native layer fires off Claude's own idle hook and so reaches only Claude, while the page has no hook and fires on any harness's row when it stops looking busy. Those are near the same moment and not the same event, so the wording differs by layer. Both layers are harness-independent: the server decides once per collected row, whatever harness produced it, so a Codex gate is delivered on macOS exactly as a Claude one is. That is new. The server used to fire only from Claude's collector, which left a gate on any other harness with no popup on macOS at all while the page stood down for it.
 
@@ -111,8 +111,8 @@ bounded regular-file read compares the server generation without trusting any ca
 The plan board is unsupported on native Windows too. Its reads walk held POSIX directory
 descriptors and refuse symlinks and hard links, and Windows has no equivalent in this build. A
 `compass-plan.json` there is refused with the reason "guarded plan reads are unavailable on this
-platform", which `--diagnose` reports, and no plan file is read. The rest of the dashboard is
-unaffected.
+platform", which `--diagnose` reports. Settings admission comes before any file or tracker CLI
+read.
 [Plan settings and source admission](SECURITY.md#plan-settings-and-source-admission) owns the
 read rules.
 
@@ -172,6 +172,13 @@ Long analysis keeps the existing CI switch and binding rules, but unresolved req
 refuses before evidence calls instead of silently proceeding without it. Verified inputs with no
 applicable pull-request binding permit a reading without claiming CI was read. This differs from
 the fallback for Check progress described above.
+
+A GitHub Plan source requires `gh` on a PATH of absolute entries and an existing login for
+GitHub.com. Projects v2 also requires access to the project and the CLI's `project` scope.
+A second tracker uses its own CLI on that PATH and a stored login for the declared workspace.
+In WSL, the CLI and its login must be available to the Linux-side dashboard process. File-based
+sources can still be read without either tracker CLI.
+[Set up the plan board](docs/how-to/05-plan-board.md).
 
 ### Standalone binary
 
