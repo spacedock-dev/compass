@@ -1,11 +1,10 @@
 # Plan: the plan board shape
 
-Status: the board is built; the agent summary is not. The owner ruled every decision below on
-2026-11-27, so they are decisions and not proposals. The Plan page, its settings, readers, dates and
-the loopback-only `/api/plan` route have shipped, and their rules now live in `SECURITY.md`,
-`MANUAL.md`, `HOW_TO_USE.md` and the design records. What remains is
-[the agent summary](#the-agent-summary) and its SessionStart hook. Delete this file once that ships
-and its contents have moved to the same owners.
+Status: the board and the opt-in agent summary are built. The owner ruled every decision below,
+so they are decisions and not proposals. Their rules now live in `SECURITY.md`, `MANUAL.md`, the
+[setup guide](../how-to/05-plan-board.md) and the design records. What remains is
+[tracker sources](#tracker-sources): reading the plan from the person's project tracker. Delete this
+file once tracker sources ship and their rules have moved to the same owners.
 
 The questions are in three GitHub issues: [what the board reads](https://github.com/spacedock-dev/compass/issues/1103),
 [how a new session gets its slice](https://github.com/spacedock-dev/compass/issues/1104) and
@@ -39,6 +38,49 @@ Decided in [#1103](https://github.com/spacedock-dev/compass/issues/1103), owner 
   launcher supports a separate folder per account profile, so the build checks the customer's
   profile `env` from her setup. If her profiles use separate folders, a follow-up issue adds an
   explicit opt-in for extra folders, and that issue carries the privacy cost.
+
+## Tracker sources
+
+Decided in [#1149](https://github.com/spacedock-dev/compass/issues/1149), owner rulings, 2026-11-28.
+The parent issue is [#1148](https://github.com/spacedock-dev/compass/issues/1148).
+
+Most people keep their plan in a project tracker, not in files (owner, 2026-11-28). So the tracker
+becomes a plan source beside committed files.
+
+- **Who reads it.** Asked to choose between the person's agent writing a snapshot, Compass running
+  the person's own CLI, and Compass calling tracker APIs, the owner chose "Compass runs your own
+  CLI". Compass runs the person's installed CLI, the way the pull request CI read runs their `gh`.
+  It holds no tracker credentials and calls no tracker API itself. The CLI reaches the network on
+  the person's behalf, so the read has a SECURITY.md outbound row and an off switch.
+- **Which trackers.** The owner chose "GitHub + Linear": GitHub through `gh` first, then Linear
+  through the community `schpet/linear-cli`. Jira through Atlassian's `acli` is filed for later
+  ([#1156](https://github.com/spacedock-dev/compass/issues/1156)).
+- **Waiting on you.** The owner chose "Label + assigned to you". An open tracker issue is an ask only
+  if it carries a label named in the settings and is assigned to the person's own account.
+  Assignment alone, a status named Waiting, or a mention does not count. An incomplete read makes
+  tracker asks read "not measured".
+
+The owner accepted these, which the coordinator recommended from the plan-stage analysis:
+
+- Declaring a tracker in `compass-plan.json` enables its reads. A file holding only `version` and
+  `trackers` is valid. `--no-plan-trackers` stops every tracker read, `--no-plan` stops them too, and
+  `--no-git` keeps its meaning. `--diagnose` and SessionStart never start a tracker read.
+- GitHub reads go to `github.com` only, with the person's stored `gh` login. An inherited
+  `GITHUB_TOKEN` or `GITHUB_ENTERPRISE_TOKEN` is dropped, so the dashboard cannot read as another
+  account.
+- Reads run off the HTTP request thread under one bounded deadline. Complete results are cached in
+  memory for 30 seconds. A failed, expired, partial or overflowing read shows "not measured", never
+  zero.
+- Links stay host-only, titles pass the existing redaction, and one issue may serve several goals.
+- Lanes link to sessions only through declared folders. The session summary stays local-only in
+  this release.
+
+The build is [#1150](https://github.com/spacedock-dev/compass/issues/1150) (framework),
+[#1151](https://github.com/spacedock-dev/compass/issues/1151) (GitHub),
+[#1152](https://github.com/spacedock-dev/compass/issues/1152) (Plan page and docs),
+[#1153](https://github.com/spacedock-dev/compass/issues/1153) (tracker asks) and
+[#1154](https://github.com/spacedock-dev/compass/issues/1154) (Linear), verified last by
+[#1155](https://github.com/spacedock-dev/compass/issues/1155).
 
 ## Status words and dates
 
@@ -239,6 +281,7 @@ her confirm the source list on the page.
 ## Out of scope
 
 - Any completion forecast, bar or percentage.
+- Jira and other trackers beyond GitHub and Linear, until [#1156](https://github.com/spacedock-dev/compass/issues/1156) is built.
 - Reading more than one Claude Code folder or Codex home per board process, until the follow-up
   issue is ruled.
 - Reading history content, other repos or any file outside the allow list.
