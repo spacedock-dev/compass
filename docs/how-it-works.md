@@ -131,8 +131,9 @@ flowchart LR
 The server reads your agents' session records (transcripts, task files and SQLite databases) without
 changing them, and serves the dashboard to your browser. Everything the page loads ships with
 Compass, so opening it fetches nothing from the internet. If you set up the plan board, the server
-reads the sources your settings name. It uses local Git for committed files and your own GitHub
-CLI for GitHub plans. Only a browser on the Compass computer can open Plan. The server listens only on `127.0.0.1`.
+reads the sources your settings name. It uses local Git for committed files and the installed
+tracker CLI for declared tracker sources. Only a browser on the Compass computer can open Plan.
+The server listens only on `127.0.0.1`.
 `--host 0.0.0.0` exposes it on every network interface with no password; read
 [SECURITY.md](../SECURITY.md#scope) first, and prefer an SSH tunnel.
 
@@ -144,7 +145,7 @@ configure or use.
 | Quota reading | On by default | Your login token to your vendor, so the page can show quota windows. No session content. The Anthropic login covers any harness signed in to the same Claude subscription; Cursor is read on macOS only. | The switch in the page, or `--no-usage` |
 | Model calls | When you press a button that needs one, open a finished Claude Code session, or turn on the Live monitor | Session content, through the Claude Code or Codex CLI already on your machine, signed in as you | Pause all AI use, or `--no-observer-model` |
 | CI checks | When you press Check progress on a session tied to a pull request (or a GitLab merge request your goal names by its URL, on a host `glab` already knows), in a session whose folder is known | The repository and the pull request number, or the branch name, through your own `gh` or `glab`. The checks it reads go on to the reading model. Where GitHub names the required checks, only those count. | Switch off Read pull request status in Settings, run with `--no-ci-read`, or stop model calls |
-| Plan tracker reads | When Compass refreshes a declared GitHub plan | Your own GitHub CLI reads the milestone, parent issue or project under your stored GitHub login. [What the read sends](../SECURITY.md#plan-reads-from-github). | `--no-plan-trackers`, `--no-plan`, or remove the declaration |
+| Plan tracker reads | When Compass refreshes a declared tracker source | The installed tracker CLI reads the selected source using its stored login. [What the reads send](../SECURITY.md#outbound-requests-and-program-launches). | `--no-plan-trackers`, `--no-plan`, or remove the declaration |
 | Release lookup | On by default; after server start and at most once per UTC day per Compass home | Only a `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers to spacedock.md, with no query string. The route counts the lookup itself from its headers. The site counts checks in PostHog without an IP and in Plausible with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and derives approximate location from the address. No identifier or session content. | Switch off Look for new versions once a day in Settings, or run with `--no-update-check` |
 | Reach nudges | Only after you set an endpoint URL | Counts only, such as how many sessions are waiting on you, to the endpoint you set | Leave the URL unset, or `--no-reach` |
 

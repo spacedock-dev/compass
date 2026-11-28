@@ -354,3 +354,52 @@ export function githubAsksPlan(state: 'present' | 'none' | 'not measured') {
           : null,
   } as const;
 }
+
+export const linearPlan = {
+  ...githubPlan('ok'),
+  goals: [
+    {
+      id: 'linear-project-orchard',
+      title: 'Survey the orchard',
+      doneWhen: null,
+      proposal: null,
+      lanes: ['linear-issue-plot'],
+      date: { label: 'Target', at: '2026-11-06' },
+      additionalDates: [{ label: 'Completed', at: '2026-11-05T16:00:00Z' }],
+    },
+    {
+      id: 'linear-milestone-north',
+      title: 'Finish the north plot',
+      doneWhen: null,
+      proposal: null,
+      lanes: ['linear-issue-plot'],
+      date: { label: 'Target', at: '2026-11-04' },
+      additionalDates: [],
+    },
+  ],
+  lanes: [
+    {
+      id: 'linear-issue-plot',
+      title: 'Map the old apple trees',
+      doneWhen: null,
+      state: 'done',
+      date: { label: 'Updated', at: '2026-11-04T16:00:00Z' },
+      additionalDates: [{ label: 'Completed', at: '2026-11-03T16:00:00Z' }],
+      sessions: ['session:["codex","shelf:review"]'],
+    },
+  ],
+  sources: [
+    wireSource('Linear project', 'linear project'),
+    wireSource('Linear project milestone', 'linear milestone'),
+  ],
+  trackerRead: { freshForMs: 20_000, localGoals: [], localLanes: [] },
+} as const;
+
+const githubAsks = githubAsksPlan('present');
+export const mixedTrackerPlan = {
+  ...githubAsks,
+  goals: [...linearPlan.goals, ...githubAsks.goals],
+  lanes: [...linearPlan.lanes, ...githubAsks.lanes],
+  sources: [...linearPlan.sources, ...githubAsks.sources],
+  trackerRead: linearPlan.trackerRead,
+};

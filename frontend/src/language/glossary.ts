@@ -142,6 +142,7 @@ export const ACTIVITY_LOG_FILTER_LABELS = {
 export const PLAN_WORDS = {
   askWithoutText: 'An open ask with no text',
   blocked: 'Blocked',
+  completed: 'Completed',
   done: 'Done',
   dropped: 'Dropped',
   inProgress: 'In progress',
@@ -153,9 +154,12 @@ export const PLAN_WORDS = {
   planned: 'Planned',
   productDecisions: 'Product decisions',
   readingGitHub: 'Reading GitHub…',
+  readingLinear: 'Reading Linear…',
   statusNotRecognised: 'Status not recognised',
+  target: 'Target',
   trackerAsks: 'Tracker asks',
   trackerAsksNotMeasured: 'Tracker asks are not measured.',
+  updated: 'Updated',
   waiting: 'Waiting',
 } as const;
 
@@ -1088,6 +1092,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'A session waiting for a reply',
       'Plan lane and tracker group',
     ]),
+    planCompleted: kept([
+      PLAN_WORDS.completed,
+      'New label',
+      'When the tracker recorded completion',
+      'Target, a planned date',
+      'Plan goal and lane dates',
+    ]),
     planDone: kept([
       PLAN_WORDS.done,
       'New label',
@@ -1165,12 +1176,26 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'A complete empty read',
       'Tracker source on Plan',
     ]),
+    planReadingLinear: kept([
+      PLAN_WORDS.readingLinear,
+      'New label',
+      'A Linear read is queued or running',
+      'A complete empty read',
+      'Tracker source on Plan',
+    ]),
     planStatusNotRecognised: kept([
       PLAN_WORDS.statusNotRecognised,
       'New label',
       'A tracker status word the settings do not list, never echoed',
       'Not measured',
       'Plan lane group and tracker row',
+    ]),
+    planTarget: kept([
+      PLAN_WORDS.target,
+      'New label',
+      'The tracker’s planned date for a goal',
+      'Completed, a recorded outcome',
+      'Plan goal dates',
     ]),
     planTrackerAsks: kept([
       PLAN_WORDS.trackerAsks,
@@ -1185,6 +1210,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'An opted-in source lacks a complete ask read',
       'No tracker asks.',
       'Waiting on you on Plan',
+    ]),
+    planUpdated: kept([
+      PLAN_WORDS.updated,
+      'New label',
+      'When the tracker last changed a goal',
+      'Completed, a recorded outcome',
+      'Plan goal dates',
     ]),
     planWaiting: kept([
       PLAN_WORDS.waiting,

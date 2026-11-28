@@ -26,13 +26,21 @@ GITHUB_SOURCE_LABELS = MappingProxyType(
         "project": "GitHub project",
     }
 )
+LINEAR_SOURCE_LABELS = MappingProxyType(
+    {"project": "Linear project", "milestone": "Linear project milestone"}
+)
 
 type SourceKey = tuple[str, str, str, int] | tuple[str, str, str, str, str | None]
-type Declaration = RepositoryDeclaration | ProjectDeclaration | LinearDeclaration
+type GitHubDeclaration = RepositoryDeclaration | ProjectDeclaration
+type Declaration = GitHubDeclaration | LinearDeclaration
 
 
 class InvalidAskLabels(grammar.SettingsError):
     """Report the refused field without exposing its values."""
+
+
+class UnsupportedTrackerAsks(grammar.SettingsError):
+    """The declaration names ask labels for a provider that cannot measure asks."""
 
 
 @dataclass(frozen=True)
@@ -104,6 +112,8 @@ def _ask_labels(raw: dict[str, object]) -> tuple[str, ...]:
 def declaration(value: object) -> Declaration:
     raw = grammar.dictionary(value)
     if raw.get("provider") == "linear":
+        if "ask_labels" in raw:
+            raise UnsupportedTrackerAsks
         return _linear_declaration(raw)
     if raw.get("provider") != "github":
         raise grammar.SettingsError

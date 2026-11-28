@@ -217,7 +217,9 @@ def _read(source: tracker_source.LinearDeclaration, child: TrackerCLI) -> model.
     if len(set(slugs)) != len(slugs):
         raise TrackerError(Reason.PARTIAL)
     origin = model.Origin(
-        model.Source(f"linear {source.kind}", f"Linear {source.kind}", _WEB),
+        model.Source(
+            f"linear {source.kind}", tracker_source.LINEAR_SOURCE_LABELS[source.kind], _WEB
+        ),
         date=target,
         additional_dates=additional_dates,
     )

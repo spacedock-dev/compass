@@ -108,11 +108,10 @@ The posture rests on two invariants:
    Six kinds of outbound request are implemented, and they are named apart rather than counted
    together because they are not the same
    exposure. The quota poll carries a vendor token out and quota numbers back, and no session
-   content whatever. Tracker reads use the operator's installed CLI. The pull request and merge request CI read
+   content whatever. The pull request and merge request CI read
    starts your own `gh` when you press Check progress and sends GitHub a repository and a pull request number
    or a pushed branch name. For GitLab, `glab` sends the project and merge request number to the host you
-   signed in to. A declared Plan tracker source uses the workspace's stored CLI login for project and milestone
-   reads. These reads carry no session text. `--no-plan-trackers` stops Plan tracker reads.
+   signed in to. These reads carry no session text.
    A harness invocation, described in Light harness usage below, can carry
    session-derived text: it is the one pathway by which the operator's own words may leave this
    machine. A nudge to an endpoint the operator supplies, described in Off-machine nudges below,
@@ -123,9 +122,10 @@ The posture rests on two invariants:
    each for its own path and no other. The fifth kind is the daily release lookup to
    spacedock.md, described in [Daily update checks](#daily-update-checks). It is on by default;
    `--no-update-check` or turning off Look for new versions once a day in Settings stops it.
-   The sixth is the Plan read through your own GitHub CLI for sources you declare.
-   `--no-plan-trackers` stops these reads. [Plan reads from GitHub](#plan-reads-from-github)
-   describes the data and retention.
+   The sixth is the Plan read through the installed tracker CLI for a source you declare.
+   It uses the CLI's stored login and carries no session text. `--no-plan-trackers` stops
+   these reads. [Outbound requests and program launches](#outbound-requests-and-program-launches)
+   lists the tracker reads and their data and retention.
    [What launches and what sends](#what-launches-and-what-sends) tables every switch against the
    test that fails when it leaks.
    Nothing else Compass does reaches the network. One further pathway is written down and reaches
@@ -1370,10 +1370,10 @@ A configured reply has `state: ready` and the following fields.
 
 | Field | Published contents |
 |---|---|
-| `goals` | `id`, `title`, `doneWhen`, `lanes` (stable lane IDs), `proposal` (`Proposed, not merged` for draft-only goals, null otherwise) and `date` (a milestone due date or null). |
-| `lanes` | `id` (the stable issue ID derived by Compass or the admitted brief slug), `title`, `doneWhen`, `state`, `date` and `sessions` (board session keys or null). `state` is one of the six board groups or `Status not recognised`, taken from a completed GitHub read or the one file tracker row that names the lane. Conflicting explicit states yield null. For file tracker rows it is null when the settings declare no lane column, no row or more than one row names the lane, the only row is on a draft branch, or a declared primary tracker file could not be read. |
+| `goals` | `id`, `title`, `doneWhen`, `lanes` (stable lane IDs), `proposal` (`Proposed, not merged` for draft-only goals, null otherwise), `date` (a tracker due or target date, or null) and `additionalDates` (available tracker update and completion dates). |
+| `lanes` | `id` (the stable issue ID derived by Compass or the admitted brief slug), `title`, `doneWhen`, `state`, `date`, `additionalDates` (available tracker due and completion dates) and `sessions` (board session keys or null). `state` is one of the six board groups or `Status not recognised`, taken from a complete tracker read or the one file tracker row that names the lane. Conflicting explicit states yield null. For file tracker rows it is null when the settings declare no lane column, no row or more than one row names the lane, the only row is on a draft branch, or a declared primary tracker file could not be read. |
 | `asks` | `id`, `text`, `at` (the log time or null), `timeLabel` (`from the log` when timestamped, otherwise null), `source` and `lane` (its `id` and `title`, or null). |
-| `trackerAsksEnabled` | Whether any source declares `ask_labels`. |
+| `trackerAsksEnabled` | Whether any GitHub source declares `ask_labels`. |
 | `trackerAsks` | Null when no source declares `ask_labels`, any such source lacks a complete ask read, signed-in accounts differ or issue observations conflict about whether a rule matches. Otherwise one row per matching open issue, with `title`, `linkHost` (`github.com`), `source` (the source label), `lane` (published lane ID) and `goals` (published goal IDs). An empty list means a complete read found no matches. |
 | `trackerAsksFreshForMs` | Null when tracker asks are unmeasured. Otherwise the remaining lifetime in milliseconds of the earliest-expiring source with `ask_labels`, including when the measured list is empty. |
 | `design` | `title`, `summary` (always null), `decided`, `source` and `date`. |
@@ -1384,7 +1384,8 @@ A configured reply has `state: ready` and the following fields.
 | `logRejected` | The count of rejected log lines, or null if the log could not be read. |
 | `limits` | Compass cannot detect health information or confidential text typed into these sources. |
 
-A date contains `label` and `at`. Unavailable dates are null. Compass applies its credential
+A date contains `label` and `at`. A missing primary date is null. The additional dates list
+includes only dates the tracker supplied. Compass applies its credential
 redaction to source text and replaces link candidates with their host before capping text. It masks
 the rest of each link token through the next whitespace, including tails attached to Markdown links,
 and drops destinations with no usable host. A host with a non-ASCII letter or combining mark, or

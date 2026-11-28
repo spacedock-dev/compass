@@ -914,6 +914,37 @@ class TrackerEntryPointTest(TrackerTestCase):
                 self.assertNotIn(canary, lines)
                 self.runner.assert_not_called()
 
+    def test_workspace_tracker_asks_are_refused_before_any_read(self) -> None:
+        canary = "synthetic-privately-named-label"
+        reason = "Tracker asks aren't supported for this tracker yet."
+        for kind, selector in (("project", {}), ("milestone", {"milestone": "Spring survey"})):
+            for labels in ([canary], [], None):
+                with self.subTest(kind=kind, labels=labels):
+                    source = {
+                        "provider": "linear",
+                        "kind": kind,
+                        "workspace": "orchard-labs",
+                        "project": "Orchard inventory",
+                        "ask_labels": labels,
+                        **selector,
+                    }
+                    (self.root / settings.FILENAME).write_text(
+                        json.dumps({"version": 1, "trackers": [DECLARATION, source]}),
+                        encoding="utf-8",
+                    )
+                    app = self.application()
+                    with mock.patch.object(threading.Thread, "start") as starts:
+                        report = diagnostics._plan_report(app.state)
+                        status, _, body = request(app)
+                    starts.assert_not_called()
+                    self.runner.assert_not_called()
+                    self.assertEqual([], report["trackers"])
+                    lines = "\n".join(diagnostics._plan_lines(report))
+                    self.assertIn(reason, lines)
+                    self.assertNotIn(canary, lines)
+                    self.assertEqual(200, status)
+                    self.assertEqual({"state": "refused", "reason": reason}, json.loads(body))
+
 
 def tracker_source_digest(root: Path) -> str:
     plan = settings.load(str(root)).settings

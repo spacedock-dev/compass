@@ -77,6 +77,15 @@ function PlanSection({
   );
 }
 
+const datePrefixes = {
+  changed: 'Changed ',
+  proposed: '',
+  due: 'Due ',
+  target: `${PLAN_WORDS.target} `,
+  updated: `${PLAN_WORDS.updated} `,
+  completed: `${PLAN_WORDS.completed} `,
+} satisfies Record<PlanRepoDate['kind'], string>;
+
 function RepoDate({ date }: { readonly date: PlanRepoDate }) {
   const parsed = date.at ? new Date(date.at) : null;
   const hasDate = parsed !== null && !Number.isNaN(parsed.getTime());
@@ -87,8 +96,7 @@ function RepoDate({ date }: { readonly date: PlanRepoDate }) {
       {date.kind === 'proposed' && <span>Proposed, not merged</span>}
       {hasDate && (
         <time dateTime={date.at ?? undefined}>
-          {date.kind === 'changed' && 'Changed '}
-          {date.kind === 'due' && 'Due '}
+          {datePrefixes[date.kind]}
           {parsed.toLocaleDateString(undefined, {
             dateStyle: 'medium',
             ...(/^\d{4}-\d{2}-\d{2}$/.test(date.at ?? '') ? { timeZone: 'UTC' } : {}),
@@ -360,6 +368,9 @@ function GoalCard({
         {goal.title}
       </h3>
       {goal.date && <RepoDate date={goal.date} />}
+      {goal.additionalDates?.map((date) => (
+        <RepoDate key={date.kind} date={date} />
+      ))}
       {goal.proposal && <p className="m-0 text-label text-muted-foreground">{goal.proposal}</p>}
       <dl className="m-0 grid gap-1">
         <dt className="text-label font-semibold text-muted-foreground">Done when</dt>
@@ -400,7 +411,7 @@ function GoalCard({
               >
                 <h4 className="m-0 text-label font-semibold text-muted-foreground">{label}</h4>
                 <ul role="list" aria-label={label} className="m-0 list-none p-0">
-                  {lanes.map(({ id, title, sessions }) => (
+                  {lanes.map(({ id, title, sessions, additionalDates }) => (
                     <li
                       key={id}
                       className={cn(
@@ -408,15 +419,17 @@ function GoalCard({
                         'border-0 border-solid border-[var(--rule)] py-3 first:pt-0 last:pb-0 not-first:border-t',
                       )}
                     >
-                      <span
+                      <div
                         className={cn(
                           'min-w-0 flex-1 text-body',
                           !!sessions?.length && 'sm:mt-2.5',
                         )}
-                        data-authored
                       >
-                        {title}
-                      </span>
+                        <span data-authored>{title}</span>
+                        {additionalDates?.map((date) => (
+                          <RepoDate key={date.kind} date={date} />
+                        ))}
+                      </div>
                       <SessionReferences sessions={sessions} />
                     </li>
                   ))}
@@ -514,7 +527,7 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
                       PLAN_WORDS.noLanesFound
                     ) : (
                       <>
-                        {PLAN_WORDS.notMeasured}. <span>{SOURCE_REFUSALS[source.reason]}</span>
+                        {PLAN_WORDS.notMeasured}. <span>{source.detail}</span>
                       </>
                     )}
                   </span>
@@ -548,6 +561,8 @@ const pageLayout =
 export function RefusedPlanPage({ reason }: { readonly reason: string }) {
   const detail: Readonly<Record<string, string>> = {
     'malformed settings': 'The Plan settings did not have the expected format.',
+    "Tracker asks aren't supported for this tracker yet.":
+      "Tracker asks aren't supported for this tracker yet.",
     'could not identify a private root':
       'Compass could not identify a private root in the Plan settings.',
     'settings are inside a repository': 'Keep the Plan settings outside a Git repository.',

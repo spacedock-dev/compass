@@ -8,6 +8,8 @@ import {
   githubPlan,
   githubPlanWithLog,
   hostileDiagramBody,
+  linearPlan,
+  mixedTrackerPlan,
   planBoard,
   planWaiting,
   readyPlan,
@@ -518,6 +520,62 @@ describe('the Plan destination follows the published plan', () => {
 });
 
 describe('tracker plans on Plan', () => {
+  it('shows Linear source states and keeps target and completion dates distinct', async () => {
+    const page = mountPlan(linearPlan);
+    await page.settle();
+    const sources = within(screen.getByRole('region', { name: 'Sources' }));
+    expect(sources.getAllByRole('listitem').map((row) => row.textContent)).toEqual([
+      'Linear projectRead',
+      'Linear project milestoneRead',
+    ]);
+    const project = within(screen.getByRole('article', { name: 'Survey the orchard' }));
+    expect(project.getByText(/^Target /)).toHaveAttribute('datetime', '2026-11-06');
+    expect(
+      project.getAllByText(/^Completed /).map((date) => date.getAttribute('datetime')),
+    ).toEqual(['2026-11-05T16:00:00Z', '2026-11-03T16:00:00Z']);
+    const milestone = within(screen.getByRole('article', { name: 'Finish the north plot' }));
+    expect(milestone.getByText(/^Target /)).toHaveAttribute('datetime', '2026-11-04');
+    expect(milestone.getByText(/^Completed /)).toHaveAttribute('datetime', '2026-11-03T16:00:00Z');
+    expect(milestone.getByRole('link', { name: /Review the shelf layout/ })).toBeVisible();
+    expect(screen.queryByText('Tracker asks are not measured.')).toBeNull();
+    expect(screen.queryByText('No tracker asks.')).toBeNull();
+  });
+
+  it('withdraws lanes and source states when the mixed plan expires and keeps fresh asks', async () => {
+    const page = mountPlan(mixedTrackerPlan);
+    await page.settle();
+    const sources = within(screen.getByRole('region', { name: 'Sources' }));
+    const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+    expect(sources.getAllByText('Read')).toHaveLength(3);
+    page.getResponses['/api/plan'] = () => new Promise<Response>(() => undefined);
+    await act(async () => page.clock.advance(20_000));
+    expect(sources.getAllByText('The last read is out of date.')).toHaveLength(3);
+    expect(screen.queryByText('Map the old apple trees')).toBeNull();
+    expect(screen.queryByRole('article', { name: 'Open the new library' })).toBeNull();
+    expect(waiting.getByRole('link', { name: 'Approve the sign lettering' })).toBeVisible();
+    await act(async () => page.clock.advance(10_000));
+    expect(waiting.queryByRole('link', { name: 'Approve the sign lettering' })).toBeNull();
+    expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+  });
+
+  it.each([
+    ['empty', null, 'No lanes found'],
+    ['refreshing', 'refreshing', 'Reading Linear…'],
+    ['refused', 'signed-out', 'Sign in to Linear with your Linear CLI.'],
+    ['refused', 'partial-result', 'Linear returned an incomplete read.'],
+  ] as const)('shows the Linear source state %s (%s)', async (state, reason, message) => {
+    const page = mountPlan({
+      ...linearPlan,
+      sources: [{ ...linearPlan.sources[0], state, reason }],
+    });
+    await page.settle();
+    const source = within(screen.getByRole('region', { name: 'Sources' }));
+    expect(source.getByText(message)).toBeVisible();
+    if (state !== 'empty') {
+      expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
+    }
+  });
+
   it.each([
     [null, null],
     ['decisions', 'Design'],

@@ -182,8 +182,9 @@ already write, never changes them, and serves one dashboard at `http://127.0.0.1
 
 Six kinds of traffic can leave your machine, and you can switch off each one. The quota reading
 is on by default: it sends your login token to your vendor, and no session content. Model calls, CI
-check reads and counts-only reach nudges start from something you do. Declaring a GitHub plan
-source enables reads through your own GitHub CLI. Run with `--no-plan-trackers` to stop those reads.
+check reads and counts-only reach nudges start from something you do. Declaring a Plan tracker
+source enables reads through its installed CLI, such as the GitHub CLI. Run with
+`--no-plan-trackers` to stop those reads.
 The daily release lookup
 is also on by default; turn off **Look for new versions once a day** in Settings or run with
 `--no-update-check` to stop it. It requests the plain release URL with no query string and sends only a

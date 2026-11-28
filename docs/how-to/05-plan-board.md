@@ -1,8 +1,9 @@
 # Set up the plan board
 
 The Plan page shows your goals, the lanes of work serving each one, and the questions waiting on
-you. Compass reads them from GitHub, or from plan files you already keep in Git. Support for more
-trackers is coming in a later release.
+you. Compass reads declared tracker sources through their installed CLIs and reads plan files
+you already keep in Git. A tracker project or milestone can supply a target date. Compass
+shows a completion date when the source supplies one.
 
 You write one settings file, `compass-plan.json`. Most people have their coding agent write it.
 
@@ -82,7 +83,7 @@ field into `status_field`. Match the option names your project uses in `words`.
 
 - You can put several sources in `trackers` or add it to existing file settings. An issue can
   serve several goals.
-- Add `"ask_labels": ["needs-me"]` to any source to show its open issues in **Waiting on you**
+- Add `"ask_labels": ["needs-me"]` to a GitHub source to show its open issues in **Waiting on you**
   when they have a listed label and are assigned to your signed-in GitHub account. Label matching
   is case-sensitive. Use the exact spelling shown in GitHub. Omit `ask_labels` to leave asks off
   for that source.

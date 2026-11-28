@@ -34,10 +34,12 @@ from compass_runtime.plan import (
     sources,
     tracker_cli,
     tracker_github,
+    tracker_linear,
     tracker_refresh,
     tracker_source,
 )
 
+from . import test_plan_linear as linear
 from .support import make_config
 from .test_history import stub_application
 from .test_plan_readers import LANE_TRACKER, STAND_IN, VARIANT, PlanRepoTestCase
@@ -195,6 +197,123 @@ class PlanPublicationTest(PlanRepoTestCase):
             self.assertEqual(set(payload[key][0]), publish.PLAN_ITEM_FIELDS[key])
         self.assertEqual(set(payload["trackerRead"]), publish.PLAN_ITEM_FIELDS["trackerRead"])
         self.assertNotIn(os.fsencode(self.hull), body)
+
+    def read_linear_plan(self, declaration: dict[str, Any]) -> model.TrackerData:
+        child = mock.Mock()
+        project = {**linear.PROJECT_ROW, "completedAt": linear.COMPLETED}
+        issue = {**linear.issue(kind="completed"), "completedAt": linear.COMPLETED}
+        child.read_json.side_effect = (
+            (project, linear.MILESTONES, [issue])
+            if declaration["kind"] == "milestone"
+            else (project, [issue])
+        )
+        return tracker_linear.read(tracker_source.declaration(declaration), child)
+
+    def test_a_linear_only_plan_shows_both_sources_and_joins_their_shared_lane(self) -> None:
+        project = linear.DECLARATION
+        milestone = {**project, "kind": "milestone", "milestone": linear.MILESTONE}
+        data = (self.read_linear_plan(project), self.read_linear_plan(milestone))
+        lane_id = data[0].lanes[0].slug
+        self.tracker_plan(trackers=[project, milestone], lane_folders={lane_id: str(self.hull)})
+        app = self.application()
+        app.snapshot.publish(
+            (app.config.window_hours, False),
+            b"{}",
+            folders=(("claude", "public", str(self.hull)),),
+        )
+        observations = tuple(tracker_refresh.Observation(read, observed_at=100.0) for read in data)
+        with (
+            mock.patch.object(app.state.plan_trackers, "observe", return_value=observations),
+            mock.patch.object(app.state.plan_trackers, "_clock", return_value=101.0),
+        ):
+            payload, body = self.payload(app)
+        self.assertEqual(
+            [
+                (row["kind"], row["label"], row["state"], row["position"])
+                for row in payload["sources"]
+            ],
+            [
+                ("linear project", "Linear project", "ok", None),
+                ("linear milestone", "Linear project milestone", "ok", None),
+            ],
+        )
+        project_goal, milestone_goal = payload["goals"]
+        self.assertEqual("Orchard Inventory", project_goal["title"])
+        self.assertEqual("Spring Survey", milestone_goal["title"])
+        self.assertEqual({"label": "Target", "at": linear.TARGET}, project_goal["date"])
+        self.assertIn(
+            {"label": "Completed", "at": linear.COMPLETED}, project_goal["additionalDates"]
+        )
+        self.assertEqual({"label": "Target", "at": "2024-04-30"}, milestone_goal["date"])
+        self.assertEqual([], milestone_goal["additionalDates"])
+        self.assertEqual([[lane_id], [lane_id]], [goal["lanes"] for goal in payload["goals"]])
+        self.assertEqual(1, len(payload["lanes"]))
+        lane = payload["lanes"][0]
+        self.assertEqual("done", lane["state"])
+        self.assertEqual({"label": "Updated", "at": linear.UPDATED}, lane["date"])
+        self.assertEqual([{"label": "Completed", "at": linear.COMPLETED}], lane["additionalDates"])
+        self.assertEqual(['session:["claude","public"]'], lane["sessions"])
+        self.assertEqual(
+            {"freshForMs": 29_000, "localGoals": [], "localLanes": []}, payload["trackerRead"]
+        )
+        self.assertFalse(payload["trackerAsksEnabled"])
+        self.assertIsNone(payload["trackerAsks"])
+        self.assertIsNone(payload["trackerAsksFreshForMs"])
+        self.assertNotIn(os.fsencode(self.hull), body)
+
+    def test_a_mixed_tracker_plan_expires_linear_rows_without_affecting_github_asks(self) -> None:
+        github = {
+            "provider": "github",
+            "kind": "project",
+            "owner": "owner",
+            "number": 1,
+            "status_field": "PVT_status",
+            "words": {"Planned": "not_started"},
+            "ask_labels": ["needs-material-review"],
+        }
+        linear_data = self.read_linear_plan(linear.DECLARATION)
+        self.tracker_plan(
+            trackers=[linear.DECLARATION, github],
+            lane_folders={linear_data.lanes[0].slug: str(self.hull)},
+        )
+        app = self.application()
+        app.snapshot.publish(
+            (app.config.window_hours, False),
+            b"{}",
+            folders=(("claude", "public", str(self.hull)),),
+        )
+        github_data = self.measured_tracker_data()
+        observations = (
+            tracker_refresh.Observation(linear_data, observed_at=100.0),
+            tracker_refresh.Observation(github_data, observed_at=110.0),
+        )
+        with (
+            mock.patch.object(app.state.plan_trackers, "observe", return_value=observations),
+            mock.patch.object(app.state.plan_trackers, "_clock", return_value=129.0) as clock,
+        ):
+            fresh, _ = self.payload(app)
+            clock.return_value = 130.0
+            expired, _ = self.payload(app)
+        self.assertEqual(
+            [("Linear project", None, "ok"), ("GitHub project", None, "ok")],
+            [(row["label"], row["position"], row["state"]) for row in fresh["sources"]],
+        )
+        self.assertEqual(
+            ["Orchard Inventory", "Finish the model"], [g["title"] for g in fresh["goals"]]
+        )
+        self.assertEqual(['session:["claude","public"]'], fresh["lanes"][0]["sessions"])
+        self.assertEqual(1_000, fresh["trackerRead"]["freshForMs"])
+        self.assertEqual(11_000, fresh["trackerAsksFreshForMs"])
+        self.assertEqual(["Build the hull"], [ask["title"] for ask in fresh["trackerAsks"]])
+        self.assertEqual(
+            [("Linear project", "expired"), ("GitHub project", "ok")],
+            [(row["label"], row["state"]) for row in expired["sources"]],
+        )
+        self.assertEqual(["Finish the model"], [g["title"] for g in expired["goals"]])
+        self.assertEqual(["hull"], [lane["id"] for lane in expired["lanes"]])
+        self.assertEqual(10_000, expired["trackerRead"]["freshForMs"])
+        self.assertEqual(fresh["trackerAsks"], expired["trackerAsks"])
+        self.assertEqual(10_000, expired["trackerAsksFreshForMs"])
 
     def test_missing_tracker_lane_folder_is_reported_without_a_path_or_a_diagnostic_read(
         self,
@@ -665,8 +784,8 @@ class PlanPublicationTest(PlanRepoTestCase):
 
     def test_every_published_row_has_exactly_its_documented_keys(self) -> None:
         expected = {
-            "goals": {"id", "title", "doneWhen", "lanes", "proposal", "date"},
-            "lanes": {"id", "title", "doneWhen", "state", "date", "sessions"},
+            "goals": {"id", "title", "doneWhen", "lanes", "proposal", "date", "additionalDates"},
+            "lanes": {"id", "title", "doneWhen", "state", "date", "additionalDates", "sessions"},
             "asks": {"id", "text", "at", "timeLabel", "source", "lane"},
             "asks.lane": {"id", "title"},
             "trackerAsks": {"title", "linkHost", "source", "lane", "goals"},

@@ -26,6 +26,7 @@ MAX_LOG_BYTES = 1024 * 1024
 NOT_CONFIGURED = "no settings file"
 DISABLED = "plan is off"
 MALFORMED = "malformed settings"
+UNSUPPORTED_TRACKER_ASKS = "Tracker asks aren't supported for this tracker yet."
 PRIVATE_UNREADABLE = "could not identify a private root"
 BOARD_GROUPS = model.BOARD_GROUPS
 BUILD_GROUPS = ("built", "partial", "not_built")
@@ -797,6 +798,8 @@ def load(home: str, *, enabled: bool = True, git_enabled: bool = True) -> Loaded
         )
     try:
         declared = _declarations(data)
+    except tracker_source.UnsupportedTrackerAsks:
+        return Loaded(path, reason=UNSUPPORTED_TRACKER_ASKS)
     except tracker_source.InvalidAskLabels:
         return Loaded(path, reason=MALFORMED, detail="invalid tracker ask_labels")
     except (ValueError, RecursionError):

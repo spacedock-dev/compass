@@ -70,6 +70,7 @@ class TrackerPlanGuideTest(unittest.TestCase):
         )
         self.assertIn("gh project field-list <n> --owner <owner> --format json", tracker_setup)
         milestone = tracker_source.declarations(examples[0]["trackers"])[0]
+        assert milestone.provider == "github"
         self.assertEqual(("needs-me",), milestone.ask_labels)
         self.assertIn("Label matching is case-sensitive.", " ".join(tracker_setup.split()))
         security = (root / "SECURITY.md").read_text(encoding="utf-8")

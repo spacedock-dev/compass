@@ -14,6 +14,8 @@ import {
   githubPlan,
   githubPlanWithLog,
   hostileDiagramBody,
+  linearPlan,
+  mixedTrackerPlan,
   planBoard,
   planWaiting,
   readyPlan,
@@ -413,6 +415,49 @@ export const GitHubMilestone: Story = {
       await expect(report.page).toBeLessThanOrEqual(report.client);
       await expect(report.wide).toEqual([]);
     }),
+};
+
+export const LinearOnlyPlan: Story = {
+  args: { plan: linearPlan },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const sources = within(await canvas.findByRole('region', { name: 'Sources' }));
+    await expect(sources.getAllByRole('listitem').map((row) => row.textContent)).toEqual([
+      'Linear projectRead',
+      'Linear project milestoneRead',
+    ]);
+    const project = within(canvas.getByRole('article', { name: 'Survey the orchard' }));
+    await expect(project.getByText(/^Target /)).toHaveAttribute('datetime', '2026-11-06');
+    await expect(
+      project.getAllByText(/^Completed /).map((date) => date.getAttribute('datetime')),
+    ).toEqual(['2026-11-05T16:00:00Z', '2026-11-03T16:00:00Z']);
+    const milestone = within(canvas.getByRole('article', { name: 'Finish the north plot' }));
+    await expect(milestone.getByText('1 of 1 lane is done')).toBeVisible();
+    await expect(milestone.getByText('Map the old apple trees')).toBeVisible();
+    await expect(milestone.getByRole('link', { name: /Review the shelf layout/ })).toBeVisible();
+    await expect(canvas.queryByText('Tracker asks are not measured.')).toBeNull();
+    await expect(canvas.queryByText('No tracker asks.')).toBeNull();
+  },
+};
+
+export const MixedGitHubAndLinearPlan: Story = {
+  args: { plan: mixedTrackerPlan },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const sources = within(await canvas.findByRole('region', { name: 'Sources' }));
+    await expect(sources.getAllByRole('listitem').map((row) => row.textContent)).toEqual([
+      'Linear projectRead',
+      'Linear project milestoneRead',
+      'GitHub milestoneRead',
+    ]);
+    const github = within(canvas.getByRole('article', { name: 'Open the new library' }));
+    await expect(github.getByText(/^Due /)).toHaveAttribute('datetime', '2026-12-08');
+    const linear = within(canvas.getByRole('article', { name: 'Finish the north plot' }));
+    await expect(linear.getByText(/^Target /)).toHaveAttribute('datetime', '2026-11-04');
+    const waiting = within(canvas.getByRole('region', { name: 'Waiting on you' }));
+    await expect(waiting.getByRole('link', { name: 'Approve the sign lettering' })).toBeVisible();
+    await expect(waiting.getByText('GitHub milestone · github.com')).toBeVisible();
+  },
 };
 
 export const EmptyGitHubMilestone: Story = {

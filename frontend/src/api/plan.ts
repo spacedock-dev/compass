@@ -3,7 +3,14 @@ export type PlanGroup = 'not_started' | 'running' | 'waiting' | 'blocked' | 'don
 export type PublishedLaneState = PlanGroup | 'Status not recognised' | null;
 
 export interface PublishedPlanDate {
-  readonly label: 'Changed' | 'Proposed, not merged' | 'from the log' | 'Due' | 'Updated';
+  readonly label:
+    | 'Changed'
+    | 'Proposed, not merged'
+    | 'from the log'
+    | 'Due'
+    | 'Updated'
+    | 'Target'
+    | 'Completed';
   readonly at: string | null;
 }
 
@@ -41,6 +48,7 @@ export interface ReadyPlan {
     readonly lanes: readonly string[];
     readonly proposal: 'Proposed, not merged' | null;
     readonly date: PublishedPlanDate | null;
+    readonly additionalDates?: readonly PublishedPlanDate[];
   }[];
   readonly lanes: readonly {
     readonly id: string;
@@ -48,6 +56,7 @@ export interface ReadyPlan {
     readonly doneWhen: string | null;
     readonly state: PublishedLaneState;
     readonly date: PublishedPlanDate | null;
+    readonly additionalDates?: readonly PublishedPlanDate[];
     readonly sessions: readonly string[] | null;
   }[];
   readonly asks: readonly {
@@ -123,10 +132,14 @@ const dateLabels: readonly unknown[] = [
   'from the log',
   'Due',
   'Updated',
+  'Target',
+  'Completed',
 ];
-const planDate = (value: unknown) =>
-  value === null ||
-  (isRecord(value) && dateLabels.includes(value['label']) && textOrNull(value['at']));
+const dateFields = (value: unknown) =>
+  isRecord(value) && dateLabels.includes(value['label']) && textOrNull(value['at']);
+const planDate = (value: unknown) => value === null || dateFields(value);
+const additionalDates = (value: unknown) =>
+  value === undefined || (Array.isArray(value) && value.every(dateFields));
 const place = (value: unknown) =>
   value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 1);
 const dated = (item: Fields) =>
@@ -142,6 +155,7 @@ const ITEM_CHECKS = {
     textOrNull(goal['doneWhen']) &&
     texts(goal['lanes']) &&
     planDate(goal['date']) &&
+    additionalDates(goal['additionalDates']) &&
     (goal['proposal'] === null || goal['proposal'] === 'Proposed, not merged'),
   lanes: (lane: Fields) =>
     text(lane['id']) &&
@@ -149,6 +163,7 @@ const ITEM_CHECKS = {
     textOrNull(lane['doneWhen']) &&
     textOrNull(lane['state']) &&
     planDate(lane['date']) &&
+    additionalDates(lane['additionalDates']) &&
     (lane['sessions'] === null || texts(lane['sessions'])),
   // A log verb the settings declare with its text forbidden publishes an ask with no words.
   asks: (ask: Fields) =>
@@ -173,8 +188,14 @@ const ITEM_CHECKS = {
     textOrNull(source['reason']),
 } as const;
 
+export function trackerProvider({ kind }: Pick<PublishedPlanSource, 'kind'>) {
+  if (kind.startsWith('github ')) return 'github';
+  if (kind === 'linear project' || kind === 'linear milestone') return 'linear';
+  return null;
+}
+
 export const isTrackerSource = (source: Pick<PublishedPlanSource, 'kind'>) =>
-  source.kind.startsWith('github ');
+  trackerProvider(source) !== null;
 
 const completeList = (value: unknown, check: (item: Fields) => boolean) =>
   Array.isArray(value) && value.every((item) => isRecord(item) && check(item));

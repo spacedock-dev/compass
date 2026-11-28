@@ -52,8 +52,12 @@ PLAN_FIELDS: Final = (
 # Published plan fields in SECURITY.md own these wire shapes.
 PLAN_ITEM_FIELDS: Final = MappingProxyType(
     {
-        "goals": frozenset({"id", "title", "doneWhen", "lanes", "proposal", "date"}),
-        "lanes": frozenset({"id", "title", "doneWhen", "state", "date", "sessions"}),
+        "goals": frozenset(
+            {"id", "title", "doneWhen", "lanes", "proposal", "date", "additionalDates"}
+        ),
+        "lanes": frozenset(
+            {"id", "title", "doneWhen", "state", "date", "additionalDates", "sessions"}
+        ),
         "asks": frozenset({"id", "text", "at", "timeLabel", "source", "lane"}),
         "asks.lane": frozenset({"id", "title"}),
         "trackerAsks": frozenset({"title", "linkHost", "source", "lane", "goals"}),
@@ -185,8 +189,9 @@ def _goals(goals: tuple[model.Goal, ...]) -> list[dict[str, Any]]:
             "lanes": [slug for slug in goal.lanes if grammar.is_safe_lane_id(slug)],
             "proposal": "Proposed, not merged" if goal.origin.source.draft else None,
             "date": _date(goal.origin.date)
-            if goal.origin.date and goal.origin.date.label == "Due"
+            if goal.origin.date and goal.origin.date.label in ("Due", "Target")
             else None,
+            "additionalDates": [_date(date) for date in goal.origin.additional_dates],
         }
         for goal in goals
     ]
@@ -200,6 +205,7 @@ def _lanes(lanes: tuple[model.Lane, ...], matched: dict[str, list[str]]) -> list
             "doneWhen": _text(lane.done),
             "state": lane.state if lane.state in LANE_STATES else None,
             "date": _date(lane.date),
+            "additionalDates": [_date(date) for date in lane.additional_dates],
             "sessions": matched.get(lane.slug),
         }
         for lane in lanes
@@ -266,10 +272,15 @@ def _merge_tracker_rows(
         for lane in read.lanes:
             remote_slugs.add(lane.slug)
             current = lanes.setdefault(lane.slug, lane)
+            date_labels = {date.label for date in current.additional_dates}
             lanes[lane.slug] = replace(
                 current,
                 serves=tuple(dict.fromkeys((*current.serves, *lane.serves))),
                 date=current.date or lane.date,
+                additional_dates=(
+                    *current.additional_dates,
+                    *(date for date in lane.additional_dates if date.label not in date_labels),
+                ),
             )
             if lane.slug in read.project_status_lanes:
                 explicit.setdefault(lane.slug, set()).add(lane.state)
@@ -304,21 +315,23 @@ def _merge_tracker_rows(
 def _tracker_projection(
     observations: tuple[Observation, ...], settings: settings.Settings, refresh: TrackerRefresh
 ) -> tuple[list[dict[str, Any]], list[model.TrackerData], int | None, int | None]:
-    kinds = Counter(source.kind for source in settings.trackers)
-    positions: Counter[str] = Counter()
+    kinds = Counter((source.provider, source.kind) for source in settings.trackers)
+    positions: Counter[tuple[str, str]] = Counter()
     sources = []
     data = []
     lifetimes = []
     ask_lifetimes = []
     for declaration, observation in zip(settings.trackers, observations, strict=True):
         kind = declaration.kind
-        positions[kind] += 1
+        provider = declaration.provider
+        group = (provider, kind)
+        positions[group] += 1
         lifetime = refresh.remaining_ms(observation)
         reason: str | None = observation.reason or tracker_cli.Reason.CLI_FAILED
         if observation.data is not None and lifetime:
             data.append(observation.data)
             lifetimes.append(lifetime)
-            if declaration.ask_labels:
+            if declaration.provider == "github" and declaration.ask_labels:
                 ask_lifetimes.append(lifetime)
             status = "ok" if observation.data.lanes else "empty"
             reason = None
@@ -326,12 +339,17 @@ def _tracker_projection(
             status, reason = "expired", "expired"
         else:
             status = "refreshing" if reason == tracker_cli.Reason.REFRESHING else "refused"
+        labels = (
+            tracker_source.GITHUB_SOURCE_LABELS
+            if provider == "github"
+            else tracker_source.LINEAR_SOURCE_LABELS
+        )
         sources.append(
             {
-                "label": tracker_source.GITHUB_SOURCE_LABELS[kind],
-                "kind": f"github {kind}",
+                "label": labels[kind],
+                "kind": f"{provider} {kind}",
                 "fileLabel": None,
-                "position": positions[kind] if kinds[kind] > 1 else None,
+                "position": positions[group] if kinds[group] > 1 else None,
                 "state": status,
                 "reason": reason,
             }
@@ -355,7 +373,7 @@ def _tracker_asks(
     by_issue: dict[str, list[tuple[model.TrackerAskIssue, tuple[str, ...]]]] = defaultdict(list)
     viewer = None
     for declaration, observation, source in zip(declarations, observations, sources, strict=True):
-        if not declaration.ask_labels:
+        if declaration.provider != "github" or not declaration.ask_labels:
             continue
         read = observation.data.ask_read if observation.data is not None else None
         if (
@@ -434,7 +452,9 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
                 config.state_home, projected, now=time.time(), settings=loaded.settings.digest
             )
     tracker_sources, data, _, _ = _tracker_projection(observations, loaded.settings, trackers)
-    asks_enabled = any(source.ask_labels for source in loaded.settings.trackers)
+    asks_enabled = any(
+        source.provider == "github" and source.ask_labels for source in loaded.settings.trackers
+    )
     projected["trackerAsksEnabled"] = asks_enabled
     while data:
         merged = _merge_tracker_rows(plan, data, loaded.settings)

@@ -286,7 +286,7 @@ def _viewer(data: Record) -> str | None:
     return login.lower() if isinstance(login, str) and _LOGIN.fullmatch(login) else None
 
 
-def _ask_variables(source: tracker_source.Declaration) -> tuple[str, str]:
+def _ask_variables(source: tracker_source.GitHubDeclaration) -> tuple[str, str]:
     # GitHub rejects an omitted non-null variable even when the query declares a default.
     value = "true" if source.ask_labels else "false"
     return "-F", f"variables[readAsks]={value}"
