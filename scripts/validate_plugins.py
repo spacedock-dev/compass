@@ -594,6 +594,7 @@ COMPASS_RUNTIME_FILES = (
     "skills/compass/compass_runtime/plan/tracker_cli.py",
     "skills/compass/compass_runtime/plan/tracker_github.py",
     "skills/compass/compass_runtime/plan/tracker_refresh.py",
+    "skills/compass/compass_runtime/plan/tracker_linear.py",
     "skills/compass/compass_runtime/plan/tracker_source.py",
     "skills/compass/compass_runtime/collectors/__init__.py",
     "skills/compass/compass_runtime/collectors/claude.py",

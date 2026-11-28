@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from compass_runtime import supervise
 
-from . import model, tracker_cli, tracker_github
+from . import model, tracker_cli, tracker_github, tracker_linear
 
 if TYPE_CHECKING:
     import subprocess
@@ -27,7 +27,9 @@ MAX_WORKERS = 4
 TrackerData = model.TrackerData
 
 type Adapter = Callable[[Declaration, tracker_cli.TrackerCLI], TrackerData]
-_ADAPTERS: Mapping[str, Adapter] = MappingProxyType({"github": tracker_github.read})
+_ADAPTERS: Mapping[str, Adapter] = MappingProxyType(
+    {"github": tracker_github.read, "linear": tracker_linear.read}
+)
 
 
 @dataclass(frozen=True)

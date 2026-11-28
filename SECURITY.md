@@ -108,9 +108,12 @@ The posture rests on two invariants:
    Six kinds of outbound request are implemented, and they are named apart rather than counted
    together because they are not the same
    exposure. The quota poll carries a vendor token out and quota numbers back, and no session
-   content whatever. The pull request and merge request CI read, described in Pull request CI reads below, starts
-   your own `gh` when you press Check progress and sends GitHub a repository and a pull request number (or a pushed branch's name, where that bound
-   it), or your own `glab` and sends a GitLab host you have signed in to a project and a merge request number; it carries no session text. A harness invocation, described in Light harness usage below, can carry
+   content whatever. Tracker reads use the operator's installed CLI. The pull request and merge request CI read
+   starts your own `gh` when you press Check progress and sends GitHub a repository and a pull request number
+   or a pushed branch name. For GitLab, `glab` sends the project and merge request number to the host you
+   signed in to. A declared Plan tracker source uses the workspace's stored CLI login for project and milestone
+   reads. These reads carry no session text. `--no-plan-trackers` stops Plan tracker reads.
+   A harness invocation, described in Light harness usage below, can carry
    session-derived text: it is the one pathway by which the operator's own words may leave this
    machine. A nudge to an endpoint the operator supplies, described in Off-machine nudges below,
    carries two counts and nothing that names a session. The observer model and reader-requested
@@ -586,6 +589,7 @@ longer resolves, so a renamed pin cannot leave this table citing nothing.
 
 | Path | What it can carry | Stopped by | Fails if it leaks |
 |---|---|---|---|
+| A workspace tracker source declared in `compass-plan.json` | An admitted Plan fetch can start your installed tracker CLI, including on automatic refresh. It uses the stored credential for the declared workspace and sends the project selector and optional milestone ID to the provider. Compass strips inherited CLI overrides, masks any global API key from the CLI configuration, and disables dotenv loading. An empty config file in the private working directory stops the CLI from reading ancestor configuration. The read requires a credential stored for the declared workspace, and returned project and issue URLs must name that workspace. The CLI reads project or milestone metadata and queries issues across all teams within that selection. Compass keeps complete measurements in memory for 30 seconds. They include redacted titles, workflow groups, stable lane IDs and available target, due, update and completion dates. Links keep only their host. Diagnosis and SessionStart start no tracker process. [Workspace tracker transport](docs/design-runtime-architecture.md#plan-workspace-tracker) names the endpoint and commands. | Remove the declaration or run with `--no-plan-trackers` or `--no-plan` | `test_plan_trackers.TrackerLauncherTest.test_workspace_cli_ignores_global_key_and_ancestor_config` and `test_plan_trackers.TrackerEntryPointTest.test_run_wide_off_switches_start_zero_tracker_processes` |
 | Vendor quota poll, with the credential read before it | A vendor token out, quota numbers back, no session content. On until the reader turns it off in the page. | `--no-usage` | `test_contracts.ApplicationIsolationTest.test_no_usage_leaves_every_network_row_without_a_provider`; pushed quota: `test_http_api.UsageReceiptOptOutTest.test_pushed_quota_is_discarded_when_usage_is_disabled` |
 | Daily release lookup | Only a descriptive User-Agent to spacedock.md beyond urllib's standard headers; the route counts the lookup itself. On by default. No session content. [Daily update checks](#daily-update-checks) names the fields and onward counting. | `--no-update-check` or switch off Look for new versions once a day in Settings | `test_update_check.DailyCheckTest.test_either_off_switch_sends_nothing`, `test_update_check.LocalTransportTest.test_a_redirect_is_never_followed` |
 | Reach nudge | Two counts, to an endpoint you configure. Nothing is sent without one. | `--no-reach` | `test_reach.ReachNudgeTest.test_no_reach_flag_never_attempts_post`, `test_reach.ReachNudgeTest.test_no_reach_switch_disables_url_resolution` |

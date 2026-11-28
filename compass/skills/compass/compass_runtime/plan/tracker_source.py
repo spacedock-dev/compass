@@ -27,8 +27,8 @@ GITHUB_SOURCE_LABELS = MappingProxyType(
     }
 )
 
-type SourceKey = tuple[str, str, str, int]
-type Declaration = RepositoryDeclaration | ProjectDeclaration
+type SourceKey = tuple[str, str, str, int] | tuple[str, str, str, str, str | None]
+type Declaration = RepositoryDeclaration | ProjectDeclaration | LinearDeclaration
 
 
 class InvalidAskLabels(grammar.SettingsError):
@@ -103,6 +103,8 @@ def _ask_labels(raw: dict[str, object]) -> tuple[str, ...]:
 
 def declaration(value: object) -> Declaration:
     raw = grammar.dictionary(value)
+    if raw.get("provider") == "linear":
+        return _linear_declaration(raw)
     if raw.get("provider") != "github":
         raise grammar.SettingsError
     number = grammar.integer(raw.get("number"), MAX_NUMBER)
@@ -137,3 +139,66 @@ def declarations(value: object) -> tuple[Declaration, ...]:
     if len({item.key for item in declared}) != len(declared):
         raise grammar.SettingsError
     return declared
+
+
+_WORKSPACE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
+_LINEAR_ID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class LinearDeclaration:
+    provider: Literal["linear"]
+    kind: Literal["project", "milestone"]
+    workspace: str
+    project: str
+    milestone: str | None
+    words: Mapping[str, str]
+
+    @property
+    def key(self) -> SourceKey:
+        milestone = grammar.folded(self.milestone) if self.milestone is not None else None
+        return self.provider, self.kind, self.workspace, self.project, milestone
+
+    @property
+    def executable(self) -> str:
+        return "linear"
+
+
+def is_linear_id(value: str) -> bool:
+    return _LINEAR_ID.fullmatch(value) is not None
+
+
+def linear_id(value: object) -> str:
+    identity = grammar.string(value, 36)
+    if not is_linear_id(identity):
+        raise grammar.SettingsError
+    return identity.lower()
+
+
+def _linear_selector(value: object) -> str:
+    text = grammar.string(value, 160)
+    if text != text.strip() or text.startswith("-"):
+        raise grammar.SettingsError
+    return text.lower() if is_linear_id(text) else text
+
+
+def _linear_declaration(value: object) -> LinearDeclaration:
+    raw = grammar.keys(value, "provider kind workspace project", optional="milestone words")
+    workspace = grammar.string(raw["workspace"], 63)
+    if _WORKSPACE.fullmatch(workspace) is None:
+        raise grammar.SettingsError
+    milestone = _linear_selector(raw["milestone"]) if "milestone" in raw else None
+    kind: Literal["project", "milestone"] = "project" if milestone is None else "milestone"
+    if raw["kind"] != kind:
+        raise grammar.SettingsError
+    words = (
+        grammar.word_map(raw["words"], model.BOARD_GROUPS, grammar.folded) if "words" in raw else {}
+    )
+    return LinearDeclaration(
+        "linear",
+        kind,
+        workspace,
+        _linear_selector(raw["project"]),
+        milestone,
+        MappingProxyType(words),
+    )

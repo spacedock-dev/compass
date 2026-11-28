@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -130,6 +131,7 @@ class TrackerLauncherTest(TrackerTestCase):
                 "gh_telemetry": "1",
                 "DEBUG": "1",
                 "dEbUg": "1",
+                "lInEaR_ApI_KeY": "synthetic-only",
                 "gh_config_dir": "alt-config",
                 "GITHUB_TOKEN": "wrong-github",
                 "GITHUB_ENTERPRISE_TOKEN": "wrong-enterprise",
@@ -170,6 +172,7 @@ class TrackerLauncherTest(TrackerTestCase):
                     "gh_telemetry",
                     "DEBUG",
                     "dEbUg",
+                    "lInEaR_ApI_KeY",
                     "gh_config_dir",
                     "GITHUB_TOKEN",
                     "GITHUB_ENTERPRISE_TOKEN",
@@ -192,6 +195,83 @@ class TrackerLauncherTest(TrackerTestCase):
         self.runner.side_effect = inspect
         self.assertEqual("goal", FakeAdapter()(SOURCE, self.child()).goals[0].id)
         self.assertFalse(workspaces[0].exists())
+
+    def test_workspace_cli_ignores_global_key_and_ancestor_config(self) -> None:
+        executable = shutil.which("linear")
+        if executable is None:
+            self.skipTest("Requires Linear CLI 3.1.0")
+        isolated = {"PATH": str(self.root), "HOME": str(self.root)}
+        version = subprocess.run(
+            [executable, "--version"], env=isolated, capture_output=True, timeout=3, check=True
+        )
+        if version.stdout.strip() != b"linear 3.1.0":
+            self.skipTest("Requires Linear CLI 3.1.0")
+
+        shutil.copyfile(executable, self.root / ("linear.exe" if os.name == "nt" else "linear"))
+        (self.root / ("linear.exe" if os.name == "nt" else "linear")).chmod(0o700)
+        config = self.root / "config" / "linear"
+        config.mkdir(parents=True)
+        (config / "linear.toml").write_text('api_key = "synthetic-global"\n', encoding="utf-8")
+        stored = config / "credentials.toml"
+        stored.write_text('default = "other"\nother = "synthetic-other"\n', encoding="utf-8")
+        isolated["XDG_CONFIG_HOME"] = str(config.parent)
+        repository = self.root / "repo"
+        (repository / ".git").mkdir(parents=True)
+        local_errors = []
+
+        def run_cli(argv: list[str], **options: Any) -> subprocess.CompletedProcess[bytes]:
+            result = subprocess.run(
+                argv,
+                cwd=options["cwd"],
+                env=options["env"],
+                input=options["input"],
+                capture_output=True,
+                timeout=3,
+                check=False,
+            )
+            options["stdout"].write(result.stdout)
+            options["stderr"].write(result.stderr)
+            error = result.stderr.lower()
+            local_errors.append(b"project url" in error or b"an issue" in error)
+            return result
+
+        source = tracker_source.declaration(
+            {"provider": "linear", "kind": "project", "workspace": "chosen", "project": "Example"}
+        )
+        # This reference fails locally after account selection, before the CLI can query anything.
+        arguments = (
+            "--workspace",
+            "chosen",
+            "--no-input",
+            "project",
+            "view",
+            "https://linear.app/chosen/issue/TEST-1/sample",
+            "--json",
+            "--no-pager",
+        )
+
+        def read() -> tracker_cli.Reason:
+            child = tracker_cli.TrackerCLI(
+                source,
+                deadline=self.clock() + 8.0,
+                clock=self.clock,
+                environ=isolated,
+                runner=run_cli,
+            )
+            with self.assertRaises(tracker_cli.TrackerError) as raised:
+                child.read_json(arguments)
+            return raised.exception.reason
+
+        with mock.patch.object(tempfile, "tempdir", str(repository)):
+            self.assertEqual(tracker_cli.Reason.UNKNOWN_WORKSPACE, read())
+            (repository / ".linear.toml").write_text("invalid = [toml\n", encoding="utf-8")
+            self.assertEqual(tracker_cli.Reason.UNKNOWN_WORKSPACE, read())
+            stored.write_text(
+                'default = "other"\nother = "synthetic-other"\nchosen = "synthetic-chosen"\n',
+                encoding="utf-8",
+            )
+            read()
+        self.assertEqual([False, False, True], local_errors)
 
     def test_missing_rooted_cli_starts_nothing(self) -> None:
         self.environ["PATH"] = "."
@@ -283,6 +363,7 @@ class TrackerRealChildTest(TrackerTestCase):
         program = """
 import fcntl
 import os
+import shutil
 import sys
 import time
 
