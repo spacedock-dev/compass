@@ -3121,15 +3121,30 @@ class HandOffRequestContractDocumentationTest(unittest.TestCase):
         self.assertIn("the tool cannot answer a native permission prompt", self.FLAT)
 
     def test_the_scope_invariant_counts_the_outbound_kinds_it_now_enumerates(self) -> None:
-        # Nothing pinned this count before, and a third documented pathway
-        # falsifies both the old number and the closing clause (DRC-4434).
-        self.assertNotIn("Two kinds of outbound request are in scope", self.FLAT)
-        self.assertIn(
-            "Five kinds of outbound request are implemented",
-            self.FLAT,
-        )
+        scope = self.FLAT.split("## Scope ", 1)[1].split("## ", 1)[0]
         readme = (self.ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("for all five", re.sub(r"\s+", " ", readme))
+        overview = readme.split("## 3. How it works", 1)[1].split("\n## ", 1)[0]
+        for text, count in (
+            (scope, "Six kinds of outbound request are implemented"),
+            (overview, "Six kinds of traffic can leave your machine"),
+        ):
+            with self.subTest(count=count):
+                self.assertIn(count, text)
+                self.assertIn("GitHub", text)
+                self.assertIn("`--no-plan-trackers`", text)
+
+    def test_tracker_outbound_disclosure_describes_capture_and_freshness(self) -> None:
+        row = next(
+            line for line in self.SECURITY.splitlines() if line.startswith("| Plan tracker reads |")
+        )
+        details = self.FLAT.split("### Plan reads from GitHub ", 1)[1].split("### ", 1)[0]
+        for disclosure in (row, details):
+            with self.subTest(disclosure=disclosure[:35]):
+                self.assertIn("temporary stdout and stderr files", disclosure)
+                self.assertIn("30 seconds", disclosure)
+                self.assertIn("fresh", disclosure)
+        self.assertIn("removed when capture finishes", details)
+        self.assertIn("evicted on a later observation or settings invalidation", details)
 
 
 class FocusCommandContractDocumentationTest(unittest.TestCase):

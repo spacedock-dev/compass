@@ -120,11 +120,23 @@ def _plan_report(state: RuntimeState) -> dict[str, Any]:
         loaded.settings, git_timeout_sec=config.git_probe_timeout_sec, state=state
     )
     positions = {source: index for index, source in enumerate(result.model.sources, 1)}
+    sources = [
+        {"kind": source.display_kind, "reason": source.reason} for source in result.model.sources
+    ]
+    if loaded.settings.trackers:
+        checked = {
+            lane.slug
+            for lane in result.model.lanes
+            if lane.folder is not None or lane.folder_reason is not None
+        }
+        for slug, folder in loaded.settings.tracker_lane_folders().items():
+            if slug in checked:
+                continue
+            _, folder_reason = loaded.settings.sources.lane_folder(folder)
+            if folder_reason is not None:
+                sources.append({"kind": "lane folder", "reason": folder_reason})
     report.update(
-        sources=[
-            {"kind": source.display_kind, "reason": source.reason}
-            for source in result.model.sources
-        ],
+        sources=sources,
         log_rejected=result.model.log_rejected,
         goal_lane_mismatches=result.diagnostics.goal_lane_mismatches,
         unknown_statuses=[

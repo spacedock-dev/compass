@@ -335,7 +335,16 @@ export const GitHubMilestone: Story = {
       const goal = within(await canvas.findByRole('article', { name: 'Open the new library' }));
       await expect(goal.getByText(/Due /)).toHaveAttribute('datetime', '2026-12-08');
       await expect(goal.getByText('1 of 1 lane is done')).toBeVisible();
+      await expect(goal.getByRole('heading', { name: 'Done', level: 4 })).toBeVisible();
+      await expect(
+        within(goal.getByRole('list', { name: 'Done' })).getByText('Put up the welcome sign'),
+      ).toBeVisible();
       await expect(goal.getByRole('link', { name: /Review the shelf layout/ })).toBeVisible();
+      await expect(
+        canvas.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+      ).toEqual(['Waiting on you', 'Goals', 'Sources', "What Compass can't see"]);
+      const waiting = within(canvas.getByRole('region', { name: 'Waiting on you' }));
+      await expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
       const sources = within(canvas.getByRole('region', { name: 'Sources' }));
       await expect(sources.getByText('GitHub milestone')).toBeVisible();
       await expect(sources.getByText('Read', { exact: true })).toBeVisible();
@@ -352,6 +361,8 @@ export const EmptyGitHubMilestone: Story = {
     await expect(await canvas.findByText('No lanes serve this goal yet')).toBeVisible();
     await expect(canvas.getByText('No lanes found')).toBeVisible();
     await expect(canvas.queryByText('Lane progress is not measured.')).toBeNull();
+    const waiting = within(canvas.getByRole('region', { name: 'Waiting on you' }));
+    await expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
   },
 };
 
@@ -361,8 +372,10 @@ function unmeasuredGitHub(state: 'refused' | 'refreshing' | 'expired', reason: s
     play: async ({ canvasElement }) => {
       const canvas = within(canvasElement);
       const sources = within(await canvas.findByRole('region', { name: 'Sources' }));
-      await expect(sources.getByText('GitHub milestone')).toBeVisible();
-      await expect(sources.getByText(reason)).toBeVisible();
+      const row = within(sources.getByRole('listitem'));
+      await expect(row.getByText('GitHub milestone')).toBeVisible();
+      await expect(row.getByText('Not measured.')).toBeVisible();
+      await expect(row.getByText(reason)).toBeVisible();
       await expect(canvas.getByText('Lane progress is not measured.')).toBeVisible();
       await expect(canvas.queryByText('No lanes found')).toBeNull();
       await expect(canvas.queryByText('Open the new library')).toBeNull();

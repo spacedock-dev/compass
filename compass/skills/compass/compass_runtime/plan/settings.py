@@ -711,6 +711,10 @@ class Settings:
     trackers: tuple[tracker_source.Declaration, ...] = ()
     lane_folders: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
 
+    def tracker_lane_folders(self) -> dict[str, str]:
+        brief_folders = self.briefs.lane_folders if self.briefs is not None else {}
+        return {**brief_folders, **self.lane_folders}
+
 
 @dataclass(frozen=True)
 class Loaded:

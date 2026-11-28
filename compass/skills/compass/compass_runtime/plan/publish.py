@@ -237,8 +237,9 @@ def _merge_tracker_rows(
 ) -> model.PlanModel:
     goals = list(local.goals)
     lanes = {lane.slug: lane for lane in local.lanes}
+    sources = list(local.sources)
     explicit: dict[str, set[str | None]] = {
-        lane.slug: {lane.state} for lane in local.lanes if lane.state is not None
+        slug: {state} for slug, state in local.file_lane_states.items()
     }
     ordinary: dict[str, set[str | None]] = defaultdict(set)
     remote_slugs: set[str] = set()
@@ -254,17 +255,19 @@ def _merge_tracker_rows(
             )
             if lane.slug in read.project_status_lanes:
                 explicit.setdefault(lane.slug, set()).add(lane.state)
-            elif lane.state is not None:
+            else:
                 ordinary[lane.slug].add(lane.state)
 
-    brief_folders = config.briefs.lane_folders if config.briefs is not None else {}
+    lane_folders = config.tracker_lane_folders()
     for slug in sorted(remote_slugs):
         lane = lanes[slug]
         states = explicit.get(slug) or ordinary[slug]
-        folder = config.lane_folders.get(slug) or brief_folders.get(slug)
+        folder = lane_folders.get(slug)
         if folder is not None and lane.folder is None and lane.folder_reason is None:
             identity, reason = config.sources.lane_folder(folder)
             lane = replace(lane, folder=identity, folder_reason=reason)
+            if reason is not None:
+                sources.append(model.Source("lane folder", slug, "", reason=reason))
         lanes[slug] = replace(lane, state=next(iter(states)) if len(states) == 1 else None)
 
     # Both row types carry membership. Preserve local rows with duplicate goal IDs, which
@@ -277,7 +280,7 @@ def _merge_tracker_rows(
         replace(goal, lanes=tuple(dict.fromkeys((*goal.lanes, *members[goal.id]))))
         for goal in goals
     ]
-    return replace(local, goals=tuple(goals), lanes=tuple(lanes.values()))
+    return replace(local, goals=tuple(goals), lanes=tuple(lanes.values()), sources=tuple(sources))
 
 
 _TRACKER_LABELS: Final = MappingProxyType(
@@ -377,6 +380,9 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
             observations, loaded.settings, trackers
         )
         if len(still_fresh) == len(data):
+            tracker_sources.extend(
+                _source(source) for source in merged.sources[len(plan.sources) :]
+            )
             projected.update(
                 goals=goals,
                 lanes=lanes,

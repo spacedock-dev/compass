@@ -157,16 +157,16 @@ function SessionReferences({
 function WaitingOnYou({
   asks,
   waitingSessions,
-  trackerIncomplete,
-}: Pick<PlanModel, 'asks' | 'waitingSessions' | 'trackerIncomplete'>) {
+  trackerAsksUnmeasured,
+}: Pick<PlanModel, 'asks' | 'waitingSessions' | 'trackerAsksUnmeasured'>) {
   const waitingId = useId();
   return (
     <PlanSection title={SESSION_ROW_WORDS.waitingOnYou}>
-      {trackerIncomplete && (
+      {trackerAsksUnmeasured && (
         <p className="m-0 text-muted-foreground">Tracker asks are not measured.</p>
       )}
       {asks.length === 0 && waitingSessions.length === 0 ? (
-        !trackerIncomplete && (
+        !trackerAsksUnmeasured && (
           <p className="m-0 text-muted-foreground">
             No open asks or sessions waiting for a reply are listed.
           </p>
@@ -570,7 +570,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
         <WaitingOnYou
           asks={model.asks}
           waitingSessions={model.waitingSessions}
-          trackerIncomplete={model.trackerIncomplete}
+          trackerAsksUnmeasured={model.trackerAsksUnmeasured}
         />
         <PlanSection title="Goals">
           {model.trackerIncomplete && (

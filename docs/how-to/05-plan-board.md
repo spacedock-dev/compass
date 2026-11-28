@@ -86,8 +86,10 @@ field into `status_field`. Match the option names your project uses in `words`.
 - A read with no matching issues says **No lanes found**. When a source is unavailable,
   progress reads **not measured**. Waiting on you still shows the asks and waiting sessions
   Compass has from local records.
-- Start Compass with `--no-plan-trackers` to stop these reads for the run, or remove `trackers`
-  and any top-level `lane_folders` from the settings. If the settings contain only GitHub
+- Start Compass with `--no-plan-trackers` to stop these reads for the run. For a plan with just
+  GitHub and an event log, use the flag so the local log stays available. Remove `trackers`
+  and any top-level `lane_folders` only if the remaining
+  settings are valid as a standalone file plan. If the settings contain only GitHub
   sources, remove the settings file to turn off Plan.
 
 ## Set it up yourself

@@ -445,6 +445,9 @@ GitHub plans package at 2,527,047 bytes on Node 26.12.1 and pnpm 12.19.0, up 4,4
 The page adds tracker source states, due dates and expiration of tracker rows in the browser.
 The page bound follows the measured package, and the fixture bound stays at 250,000 bytes.
 
+The GitHub plan review fixes package at 2,527,827 bytes on the same toolchain, up 780 bytes.
+The bound follows the measured package.
+
 ## View only
 
 Two layers hold it, and either alone is enough.

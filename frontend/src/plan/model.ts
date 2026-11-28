@@ -22,6 +22,7 @@ export interface PlanModel {
   readonly sources: readonly PlanSource[];
   readonly limits: string;
   readonly trackerIncomplete: boolean;
+  readonly trackerAsksUnmeasured: boolean;
   readonly trackerOnly: boolean;
 }
 
@@ -128,6 +129,7 @@ export const SOURCE_REFUSALS = {
   'limit-exceeded': 'The source has more items than Compass reads.',
   'cli-failed': 'The GitHub CLI could not read the source.',
   expired: 'The last read is out of date.',
+  'plan-read-unavailable': 'Compass could not refresh the plan.',
   refreshing: PLAN_WORDS.readingGitHub,
   'unsafe lane identifier': 'The lane name has characters Compass does not accept.',
 } as const;
@@ -347,7 +349,11 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
   const trackerSources = plan.sources.filter(isTrackerSource);
   return {
     trackerIncomplete: trackerSources.some(({ state }) => state !== 'ok' && state !== 'empty'),
-    trackerOnly: trackerSources.length > 0 && trackerSources.length === plan.sources.length,
+    // The tracker reads cover goals and lanes only.
+    trackerAsksUnmeasured: trackerSources.length > 0,
+    trackerOnly:
+      trackerSources.length > 0 &&
+      plan.sources.every((source) => isTrackerSource(source) || source.kind === 'lane folder'),
     waitingSessions,
     goals: plan.goals.map((goal) => ({
       id: goal.id,

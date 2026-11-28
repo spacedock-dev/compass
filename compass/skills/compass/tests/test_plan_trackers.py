@@ -28,6 +28,7 @@ from compass_runtime.plan import (
     tracker_source,
 )
 
+from .support import SERVER_PATH
 from .test_plan_publish import request
 
 if TYPE_CHECKING:
@@ -732,6 +733,34 @@ class TrackerEntryPointTest(TrackerTestCase):
                     self.assertEqual(status, request(self.application(flag))[0])
                     starts.assert_not_called()
                 self.runner.assert_not_called()
+
+    def test_the_guide_keeps_a_sparse_mixed_plans_local_log_available(self) -> None:
+        guide = (SERVER_PATH.parents[3] / "docs/how-to/05-plan-board.md").read_text(
+            encoding="utf-8"
+        )
+        stopping = " ".join(guide.split("- Start Compass with ", 1)[1].split("\n\n", 1)[0].split())
+        flag = stopping.split("`")[1]
+        fixture = Path(__file__).parent / "fixtures/plan/stand-in.json"
+        log = json.loads(fixture.read_bytes())["log"]
+        event_log = self.root / "events.log"
+        event_log.write_text("ask a1 Sample question?\n", encoding="utf-8")
+        document = {"version": 1, "log": {**log, "path": str(event_log)}, "trackers": [DECLARATION]}
+        path = self.root / settings.FILENAME
+        path.write_text(json.dumps(document), encoding="utf-8")
+        app = self.application(flag)
+        body = json.loads(request(app)[2])
+        self.assertEqual(body["state"], "ready")
+        self.assertEqual([ask["text"] for ask in body["asks"]], ["Sample question?"])
+        self.runner.assert_not_called()
+        del document["trackers"]
+        path.write_text(json.dumps(document), encoding="utf-8")
+        self.assertEqual(
+            json.loads(request(app)[2]), {"state": "refused", "reason": "malformed settings"}
+        )
+        self.assertIn("use the flag so the local log stays available", stopping)
+        self.assertIn(
+            "only if the remaining settings are valid as a standalone file plan", stopping
+        )
 
     def test_diagnose_reports_each_declaration_and_rooted_cli_without_running_it(self) -> None:
         self.declare()

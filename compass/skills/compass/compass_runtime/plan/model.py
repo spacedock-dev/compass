@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 BOARD_GROUPS = ("not_started", "running", "waiting", "blocked", "done", "dropped")
 
@@ -133,6 +136,8 @@ class PlanModel:
     asks: tuple[Ask, ...]
     sources: tuple[Source, ...]
     log_rejected: int | None
+    # File tracker rows can name a lane even when it has no local brief.
+    file_lane_states: Mapping[str, str | None] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

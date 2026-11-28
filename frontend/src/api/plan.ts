@@ -183,6 +183,21 @@ export function expireTrackerRead(plan: ReadyPlan): ReadyPlan {
   };
 }
 
+export function failTrackerRead(plan: ReadyPlan): ReadyPlan {
+  const local = expireTrackerRead(plan);
+  if (!local.sources.some((source) => isTrackerSource(source) && source.state === 'refreshing')) {
+    return local;
+  }
+  return {
+    ...local,
+    sources: local.sources.map((source) =>
+      isTrackerSource(source) && source.state === 'refreshing'
+        ? { ...source, state: 'refused', reason: 'plan-read-unavailable' }
+        : source,
+    ),
+  };
+}
+
 /** The reply as the page may read it, or null when it is not a usable plan reply. */
 export function usablePlan(body: unknown): ConfiguredPlan | null {
   if (!isRecord(body)) return null;
