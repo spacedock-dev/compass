@@ -135,6 +135,8 @@ export const SOURCE_REFUSALS = {
   'unreadable-output': 'The GitHub reply could not be read.',
   'limit-exceeded': 'The source has more items than Compass reads.',
   'cli-failed': 'The GitHub CLI could not read the source.',
+  'unknown-workspace': 'Sign in to the declared workspace with your tracker CLI.',
+  'missing-team-scope': 'Set a default team in your tracker CLI.',
   expired: 'The last read is out of date.',
   'plan-read-unavailable': 'Compass could not refresh the plan.',
   refreshing: PLAN_WORDS.readingGitHub,

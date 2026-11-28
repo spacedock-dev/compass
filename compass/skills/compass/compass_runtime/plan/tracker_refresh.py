@@ -105,10 +105,14 @@ class TrackerRefresh:
             self._start_waiting()
             return result
 
-    def remaining_ms(self, observation: Observation) -> int:
-        if observation.observed_at is None:
-            return 0
-        return max(0, int((observation.observed_at + FRESH_SECONDS - self._clock()) * 1000))
+    def remaining_ms(self, observations: tuple[Observation, ...]) -> tuple[int, ...]:
+        now = self._clock()
+        return tuple(
+            0
+            if observation.observed_at is None
+            else max(0, int((observation.observed_at + FRESH_SECONDS - now) * 1000))
+            for observation in observations
+        )
 
     def _observe_source(self, source: Declaration, enabled: bool, now: float) -> Observation:
         if not enabled or source.provider not in self._adapters:

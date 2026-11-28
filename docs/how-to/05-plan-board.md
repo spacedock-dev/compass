@@ -14,10 +14,11 @@ Paste this into a Claude Code or Codex session:
 Please set up the Compass plan board for me.
 
 1. Read https://raw.githubusercontent.com/spacedock-dev/compass/main/docs/how-to/05-plan-board.md
-   and follow the steps for GitHub or plan files.
-2. Ask me which GitHub milestone, parent issue or project to read. If I use files, ask where
-   they live and read them to learn their formats. Ask about anything you cannot tell from the
-   sources I gave you.
+   and follow the steps for plan files, GitHub or a workspace tracker.
+2. Ask which sources I use. For GitHub, ask which milestone, parent issue or project to read.
+   For a workspace tracker, ask for its workspace, project and any project milestone. Check which
+   settings the installed Compass version supports for that tracker. For files, ask where they live
+   and read them to learn their formats. Ask about anything you cannot tell from the sources I gave you.
 3. Show me the compass-plan.json you plan to write before saving it. It is the only file you may
    create or change. Don't edit, move or commit my plan files or anything in my repositories.
 4. Run --diagnose to check the declarations and whether Compass can find the CLI.
@@ -90,8 +91,8 @@ field into `status_field`. Match the option names your project uses in `words`.
   `gh project --help`.
 - Compass uses your stored GitHub CLI login. See
   [what the tracker read sends](../../SECURITY.md#plan-reads-from-github).
-- A complete read with no issues says No lanes found. If a tracker read is incomplete,
-  progress is unmeasured. If the sources with `ask_labels` cannot establish a complete set
+- A complete read with no issues says No lanes found. An incomplete read supplies no goals or lane
+  progress of its own. If the sources with `ask_labels` cannot establish a complete set
   of matches, Waiting on you says "Tracker asks are not measured." The log asks and waiting
   sessions remain available.
 
@@ -213,10 +214,13 @@ Sessions started in that folder then appear under the lane.
 ### When --diagnose refuses something
 
 The **Plan settings** section of `--diagnose` names each refused source, its kind and the reason.
-For file plans, it includes missing or unreadable draft sources and refused lane folders.
+In diagnosis, `Tracker 2` identifies the second entry in the `trackers` list. On Plan, source
+numbers count entries of the same provider and kind. For file plans, diagnosis includes missing
+or unreadable draft sources and refused lane folders.
 
 | Refusal | Fix |
 |---|---|
+| Tracker asks aren't supported for this tracker yet. | Remove `ask_labels` from that source. |
 | Invalid tracker `ask_labels` | Use 1 to 32 distinct, nonblank labels of up to 128 characters each, or omit the setting. |
 | A file entry or label breaks a rule above | Fix the entry in `files`. |
 | A tracker table lacks your declared lane, title or status column, or misspells one, such as `Statuz` | Fix the header so the table has all three. |

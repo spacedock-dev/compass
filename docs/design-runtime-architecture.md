@@ -383,10 +383,14 @@ completion timestamp. A milestone target belongs to its goal. When either list r
 the result is unmeasured. The CLI's ordinary archive filter applies to issue membership.
 
 Plan publishes Linear projects and project milestones as distinct source kinds. A project
-and its milestone can share a lane through the issue's stable ID. Plan withdraws cached
-tracker rows at the earliest source expiry while GitHub asks use the lifetime of the
-GitHub sources that declared ask labels. Plan settings refuse `ask_labels` on Linear
-declarations before any tracker read can start.
+and its milestone can share a lane through the issue's stable ID. At each source deadline,
+the browser applies row changes the publisher computed from the complete reads still fresh.
+This resolves shared lane state, membership and session matches with the same rules as a
+fresh API read. Selectors that resolve to one remote goal take their membership from the
+freshest complete read. Shared issue dates follow the latest issue revision, with disputed
+dates withheld when revisions tie. GitHub asks use a separate deadline set by the GitHub
+sources that declared ask labels. Plan settings refuse `ask_labels` on Linear declarations
+before any tracker read can start.
 
 ## Terminal output
 

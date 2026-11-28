@@ -198,14 +198,17 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(set(payload["trackerRead"]), publish.PLAN_ITEM_FIELDS["trackerRead"])
         self.assertNotIn(os.fsencode(self.hull), body)
 
-    def read_linear_plan(self, declaration: dict[str, Any]) -> model.TrackerData:
+    def read_linear_plan(
+        self, declaration: dict[str, Any], issues: list[dict[str, Any]] | None = None
+    ) -> model.TrackerData:
         child = mock.Mock()
         project = {**linear.PROJECT_ROW, "completedAt": linear.COMPLETED}
-        issue = {**linear.issue(kind="completed"), "completedAt": linear.COMPLETED}
+        if issues is None:
+            issues = [{**linear.issue(kind="completed"), "completedAt": linear.COMPLETED}]
         child.read_json.side_effect = (
-            (project, linear.MILESTONES, [issue])
+            (project, linear.MILESTONES, issues)
             if declaration["kind"] == "milestone"
-            else (project, [issue])
+            else (project, issues)
         )
         return tracker_linear.read(tracker_source.declaration(declaration), child)
 
@@ -254,12 +257,106 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual([{"label": "Completed", "at": linear.COMPLETED}], lane["additionalDates"])
         self.assertEqual(['session:["claude","public"]'], lane["sessions"])
         self.assertEqual(
-            {"freshForMs": 29_000, "localGoals": [], "localLanes": []}, payload["trackerRead"]
+            {
+                "freshForMs": 29_000,
+                "localGoals": [],
+                "localLanes": [],
+                "localSources": [
+                    {**source, "state": "expired", "reason": "expired"}
+                    for source in payload["sources"]
+                ],
+                "updates": [],
+            },
+            payload["trackerRead"],
         )
         self.assertFalse(payload["trackerAsksEnabled"])
         self.assertIsNone(payload["trackerAsks"])
         self.assertIsNone(payload["trackerAsksFreshForMs"])
         self.assertNotIn(os.fsencode(self.hull), body)
+
+    def test_selectors_for_the_same_project_keep_the_freshest_complete_membership(self) -> None:
+        by_name = linear.DECLARATION
+        by_id = {**by_name, "project": linear.PROJECT}
+        older = self.read_linear_plan(by_name)
+        newer = self.read_linear_plan(by_id, [])
+        reads = (
+            (by_name, tracker_refresh.Observation(older, observed_at=100.0)),
+            (by_id, tracker_refresh.Observation(newer, observed_at=110.0)),
+        )
+        for order in (reads, reads[::-1]):
+            with self.subTest(order=order[0][0]["project"]):
+                self.tracker_plan(trackers=[declaration for declaration, _ in order])
+                app = self.application()
+                with (
+                    mock.patch.object(
+                        app.state.plan_trackers,
+                        "observe",
+                        return_value=tuple(observation for _, observation in order),
+                    ),
+                    mock.patch.object(app.state.plan_trackers, "_clock", return_value=120.0),
+                ):
+                    payload, _ = self.payload(app)
+                self.assertEqual([[]], [goal["lanes"] for goal in payload["goals"]])
+                self.assertEqual([], payload["lanes"])
+                self.assertCountEqual(
+                    ["ok", "empty"], [source["state"] for source in payload["sources"]]
+                )
+                (update,) = payload["trackerRead"]["updates"]
+                self.assertEqual({"remove": [], "upsert": []}, update["lanes"])
+
+    def test_shared_issue_dates_use_the_latest_revision_and_withhold_disputed_ties(self) -> None:
+        project = linear.DECLARATION
+        milestone = {**project, "kind": "milestone", "milestone": linear.MILESTONE}
+        first = {
+            **linear.issue(kind="completed"),
+            "dueDate": "2024-04-20",
+            "completedAt": linear.COMPLETED,
+        }
+        newer_update = "2024-04-10T10:00:00Z"
+        older = self.read_linear_plan(project, [first])
+        for updated, due, completed, expected in (
+            (newer_update, "2024-05-04", None, [{"label": "Due", "at": "2024-05-04"}]),
+            (newer_update, None, None, []),
+            (
+                linear.UPDATED,
+                "2024-05-04",
+                linear.COMPLETED,
+                [{"label": "Completed", "at": linear.COMPLETED}],
+            ),
+            (linear.UPDATED, None, None, []),
+        ):
+            other = self.read_linear_plan(
+                milestone,
+                [
+                    {
+                        **linear.issue(kind="started"),
+                        "updatedAt": updated,
+                        "dueDate": due,
+                        "completedAt": completed,
+                    }
+                ],
+            )
+            reads = (
+                (project, tracker_refresh.Observation(older, observed_at=110.0)),
+                (milestone, tracker_refresh.Observation(other, observed_at=100.0)),
+            )
+            for order in (reads, reads[::-1]):
+                with self.subTest(updated=updated, due=due, order=order[0][0]["kind"]):
+                    self.tracker_plan(trackers=[declaration for declaration, _ in order])
+                    app = self.application()
+                    with (
+                        mock.patch.object(
+                            app.state.plan_trackers,
+                            "observe",
+                            return_value=tuple(observation for _, observation in order),
+                        ),
+                        mock.patch.object(app.state.plan_trackers, "_clock", return_value=120.0),
+                    ):
+                        payload, _ = self.payload(app)
+                    (lane,) = payload["lanes"]
+                    self.assertEqual({"label": "Updated", "at": updated}, lane["date"])
+                    self.assertEqual(expected, lane["additionalDates"])
+                    self.assertIsNone(lane["state"])
 
     def test_a_mixed_tracker_plan_expires_linear_rows_without_affecting_github_asks(self) -> None:
         github = {
@@ -303,6 +400,14 @@ class PlanPublicationTest(PlanRepoTestCase):
         )
         self.assertEqual(['session:["claude","public"]'], fresh["lanes"][0]["sessions"])
         self.assertEqual(1_000, fresh["trackerRead"]["freshForMs"])
+        (update,) = fresh["trackerRead"]["updates"]
+        self.assertEqual(set(update), publish.PLAN_ITEM_FIELDS["trackerRead.update"])
+        for key in ("goals", "lanes"):
+            self.assertEqual(set(update[key]), publish.PLAN_ITEM_FIELDS["trackerRead.changes"])
+        self.assertEqual(11_000, update["freshForMs"])
+        self.assertEqual([fresh["goals"][0]["id"]], update["goals"]["remove"])
+        self.assertEqual([fresh["lanes"][0]["id"]], update["lanes"]["remove"])
+        self.assertEqual(["expired", "ok"], [row["state"] for row in update["sources"]])
         self.assertEqual(11_000, fresh["trackerAsksFreshForMs"])
         self.assertEqual(["Build the hull"], [ask["title"] for ask in fresh["trackerAsks"]])
         self.assertEqual(
@@ -314,6 +419,28 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertEqual(10_000, expired["trackerRead"]["freshForMs"])
         self.assertEqual(fresh["trackerAsks"], expired["trackerAsks"])
         self.assertEqual(10_000, expired["trackerAsksFreshForMs"])
+
+    def test_expiring_one_github_read_recomputes_the_shared_lane(self) -> None:
+        self.tracker_plan(count=2)
+        app = self.application()
+        observations = (
+            tracker_refresh.Observation(self.tracker_data("remote-a"), observed_at=100.0),
+            tracker_refresh.Observation(
+                self.tracker_data("remote-b", state="running"), observed_at=110.0
+            ),
+        )
+        with (
+            mock.patch.object(app.state.plan_trackers, "observe", return_value=observations),
+            mock.patch.object(app.state.plan_trackers, "_clock", return_value=129.0),
+        ):
+            payload, _ = self.payload(app)
+        self.assertIsNone(payload["lanes"][0]["state"])
+        (update,) = payload["trackerRead"]["updates"]
+        self.assertEqual({"remove": ["remote-a"], "upsert": []}, update["goals"])
+        self.assertEqual([], update["lanes"]["remove"])
+        self.assertEqual(
+            [("hull", "running")], [(row["id"], row["state"]) for row in update["lanes"]["upsert"]]
+        )
 
     def test_missing_tracker_lane_folder_is_reported_without_a_path_or_a_diagnostic_read(
         self,
@@ -794,7 +921,9 @@ class PlanPublicationTest(PlanRepoTestCase):
             "inventory": {"title", "group", "source", "date"},
             "diagrams": {"title", "caption", "kind", "source", "date", "linkHosts", "body"},
             "date": {"label", "at"},
-            "trackerRead": {"freshForMs", "localGoals", "localLanes"},
+            "trackerRead": {"freshForMs", "localGoals", "localLanes", "localSources", "updates"},
+            "trackerRead.update": {"freshForMs", "goals", "lanes", "sources"},
+            "trackerRead.changes": {"remove", "upsert"},
             "sources": {"label", "kind", "fileLabel", "position", "state", "reason"},
         }
         self.assertEqual(publish.PLAN_ITEM_FIELDS, expected)
@@ -814,7 +943,11 @@ class PlanPublicationTest(PlanRepoTestCase):
                 (self.briefs / brief).write_text(brief_text, encoding="utf-8")
                 self.log.write_text(log, encoding="utf-8")
                 plan, _ = self.payload()
-                rows = {name: plan[name] for name in expected.keys() - {"asks.lane", "date"}}
+                rows = {
+                    name: plan[name]
+                    for name in expected.keys()
+                    - {"asks.lane", "date", "trackerRead.update", "trackerRead.changes"}
+                }
                 rows["asks.lane"] = [ask["lane"] for ask in plan["asks"]]
                 rows["date"] = [
                     row["date"]
@@ -824,12 +957,48 @@ class PlanPublicationTest(PlanRepoTestCase):
                 ]
                 for name, fields in expected.items():
                     with self.subTest(row=name):
+                        if name in ("trackerRead.update", "trackerRead.changes"):
+                            continue
                         if name in ("trackerRead", "trackerAsks"):
                             self.assertIsNone(rows[name])
                             continue
                         self.assertTrue(rows[name])
                         for row in rows[name]:
                             self.assertEqual(set(row), fields)
+
+    def test_tracker_goal_and_lane_dates_publish_only_the_documented_keys(self) -> None:
+        project = linear.DECLARATION
+        milestone = {**project, "kind": "milestone", "milestone": linear.MILESTONE}
+        issue = {
+            **linear.issue(kind="completed"),
+            "dueDate": "2024-05-04",
+            "completedAt": linear.COMPLETED,
+        }
+        reads = (
+            tracker_refresh.Observation(self.read_linear_plan(project, [issue]), observed_at=100.0),
+            tracker_refresh.Observation(
+                self.read_linear_plan(milestone, [issue]), observed_at=110.0
+            ),
+        )
+        self.tracker_plan(trackers=[project, milestone])
+        app = self.application()
+        with (
+            mock.patch.object(app.state.plan_trackers, "observe", return_value=reads),
+            mock.patch.object(app.state.plan_trackers, "_clock", return_value=129.0),
+        ):
+            payload, _ = self.payload(app)
+        for kind, primary, extra in (
+            ("goals", ["Target", "Target"], ["Updated", "Completed"]),
+            ("lanes", ["Updated"], ["Due", "Completed"]),
+        ):
+            with self.subTest(kind=kind):
+                rows = payload[kind]
+                dates = [row["date"] for row in rows if row["date"] is not None]
+                additional = [date for row in rows for date in row["additionalDates"]]
+                self.assertCountEqual(primary, [date["label"] for date in dates])
+                self.assertCountEqual(extra, [date["label"] for date in additional])
+                for date in [*dates, *additional]:
+                    self.assertEqual({"label", "at"}, set(date))
 
     def test_sources_tell_files_of_one_kind_apart_without_paths(self) -> None:
         self.write_sources(STAND_IN)

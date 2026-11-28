@@ -541,21 +541,119 @@ describe('tracker plans on Plan', () => {
     expect(screen.queryByText('No tracker asks.')).toBeNull();
   });
 
-  it('withdraws lanes and source states when the mixed plan expires and keeps fresh asks', async () => {
-    const page = mountPlan(mixedTrackerPlan);
+  it.each(['mixed', 'reverse mixed'] as const)(
+    'withdraws only the expired tracker while a refresh is pending (%s)',
+    async (scenario) => {
+      const github = githubAsksPlan('present');
+      const linearFirst = scenario === 'mixed';
+      const [first, second] = linearFirst ? [linearPlan, github] : [github, linearPlan];
+      const firstTitle = first.goals[0].title;
+      const secondTitle = second.goals[0].title;
+      const nextSources = [
+        ...first.sources.map((source) => ({ ...source, state: 'expired', reason: 'expired' })),
+        ...second.sources,
+      ];
+      const page = mountPlan({
+        ...mixedTrackerPlan,
+        goals: [...first.goals, ...second.goals],
+        lanes: [...first.lanes, ...second.lanes],
+        sources: [...first.sources, ...second.sources],
+        trackerAsksFreshForMs: linearFirst ? 30_000 : 1_000,
+        trackerRead: {
+          freshForMs: 1_000,
+          localGoals: [],
+          localLanes: [],
+          updates: [
+            {
+              freshForMs: 30_000,
+              sources: nextSources,
+              goals: { remove: first.goals.map(({ id }) => id), upsert: [] },
+              lanes: { remove: first.lanes.map(({ id }) => id), upsert: [] },
+            },
+          ],
+        },
+      });
+      await page.settle();
+      expect(screen.getByRole('article', { name: firstTitle })).toBeVisible();
+      const survivingCard = screen.getByRole('article', { name: secondTitle });
+      expect(survivingCard).toBeVisible();
+      page.getResponses['/api/plan'] = () => new Promise<Response>(() => undefined);
+      await act(async () => page.clock.advance(1_000));
+      const sources = within(screen.getByRole('region', { name: 'Sources' }));
+      const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+      expect(sources.getAllByText('The last read is out of date.')).toHaveLength(
+        first.sources.length,
+      );
+      expect(sources.getAllByText('Read')).toHaveLength(second.sources.length);
+      expect(screen.queryByRole('article', { name: firstTitle })).toBeNull();
+      expect(screen.getByRole('article', { name: secondTitle })).toBe(survivingCard);
+      const ask = waiting.queryByRole('link', { name: 'Approve the sign lettering' });
+      if (linearFirst) expect(ask).toBeVisible();
+      else expect(ask).toBeNull();
+      await act(async () => page.clock.advance(29_000));
+      expect(screen.queryByRole('article', { name: secondTitle })).toBeNull();
+      expect(waiting.queryByRole('link', { name: 'Approve the sign lettering' })).toBeNull();
+      expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+    },
+  );
+
+  it('restores a shared GitHub lane from the remaining source when its sibling expires', async () => {
+    const github = githubAsksPlan('present');
+    const [firstGoal] = github.goals;
+    const [firstSource] = github.sources;
+    const [lane] = githubPlan('ok').lanes;
+    if (!firstGoal || !firstSource || !lane)
+      throw new Error('Expected a complete tracker fixture.');
+    const secondGoal = { ...firstGoal, id: 'github-project', title: 'Prepare the library opening' };
+    const secondSource = { ...firstSource, label: 'GitHub project', kind: 'github project' };
+    const page = mountPlan({
+      ...github,
+      goals: [firstGoal, secondGoal],
+      lanes: [{ ...lane, state: null }],
+      sources: [firstSource, secondSource],
+      trackerAsksFreshForMs: 1_000,
+      trackerRead: {
+        freshForMs: 1_000,
+        localGoals: [],
+        localLanes: [],
+        updates: [
+          {
+            freshForMs: 11_000,
+            goals: { remove: [firstGoal.id], upsert: [] },
+            lanes: { remove: [], upsert: [lane] },
+            sources: [{ ...firstSource, state: 'expired', reason: 'expired' }, secondSource],
+          },
+        ],
+      },
+    });
     await page.settle();
-    const sources = within(screen.getByRole('region', { name: 'Sources' }));
-    const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
-    expect(sources.getAllByText('Read')).toHaveLength(3);
+    const fresh = within(screen.getByRole('article', { name: secondGoal.title }));
+    expect(fresh.getByText('Lane progress is not measured.')).toBeVisible();
     page.getResponses['/api/plan'] = () => new Promise<Response>(() => undefined);
-    await act(async () => page.clock.advance(20_000));
-    expect(sources.getAllByText('The last read is out of date.')).toHaveLength(3);
-    expect(screen.queryByText('Map the old apple trees')).toBeNull();
-    expect(screen.queryByRole('article', { name: 'Open the new library' })).toBeNull();
-    expect(waiting.getByRole('link', { name: 'Approve the sign lettering' })).toBeVisible();
-    await act(async () => page.clock.advance(10_000));
-    expect(waiting.queryByRole('link', { name: 'Approve the sign lettering' })).toBeNull();
-    expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+    await act(async () => page.clock.advance(1_000));
+    expect(screen.queryByRole('article', { name: firstGoal.title })).toBeNull();
+    const survivingGoal = within(screen.getByRole('article', { name: secondGoal.title }));
+    expect(survivingGoal.getByText('1 of 1 lane is done')).toBeVisible();
+    expect(survivingGoal.getByText(lane.title)).toBeVisible();
+    expect(screen.getByText('Tracker asks are not measured.')).toBeVisible();
+  });
+
+  it.each([
+    ['unknown-workspace', 'Sign in to the declared workspace with your tracker CLI.'],
+    ['missing-team-scope', 'Set a default team in your tracker CLI.'],
+  ] as const)('explains the tracker refusal %s in Sources', async (reason, explanation) => {
+    const page = mountPlan({
+      ...linearPlan,
+      goals: [],
+      lanes: [],
+      trackerRead: null,
+      sources: [{ ...linearPlan.sources[0], state: 'refused', reason }],
+    });
+    await page.settle();
+    const row = within(
+      within(screen.getByRole('region', { name: 'Sources' })).getByRole('listitem'),
+    );
+    expect(row.getByText(explanation)).toBeVisible();
   });
 
   it.each([
@@ -566,11 +664,16 @@ describe('tracker plans on Plan', () => {
   ] as const)('shows the Linear source state %s (%s)', async (state, reason, message) => {
     const page = mountPlan({
       ...linearPlan,
+      goals: state === 'empty' ? [{ ...linearPlan.goals[0], lanes: [] }] : [],
+      lanes: [],
+      trackerRead: state === 'empty' ? linearPlan.trackerRead : null,
       sources: [{ ...linearPlan.sources[0], state, reason }],
     });
     await page.settle();
     const source = within(screen.getByRole('region', { name: 'Sources' }));
     expect(source.getByText(message)).toBeVisible();
+    expect(screen.queryAllByRole('article')).toHaveLength(state === 'empty' ? 1 : 0);
+    expect(screen.queryByText('Map the old apple trees')).toBeNull();
     if (state !== 'empty') {
       expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
     }
@@ -815,26 +918,53 @@ describe('tracker plans on Plan', () => {
     expect(screen.queryByText('No goals are listed.')).toBeNull();
   });
 
-  it('keeps measured rows visible without reporting a count during a partial read', async () => {
-    const remote = githubPlan('ok');
-    const page = mountPlan({
-      ...remote,
-      sources: [
-        ...remote.sources,
-        {
-          ...githubPlan('refused').sources[0],
-          kind: 'github project',
-          label: 'GitHub project',
-          reason: 'partial-result',
-        },
-      ],
-    });
-    await page.settle();
-    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
-    expect(screen.getByText('GitHub returned an incomplete read.')).toBeVisible();
-    expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
-    expect(screen.queryByText('1 of 1 lane is done')).toBeNull();
-  });
+  it.each([
+    ['refused', 'signed-out', 'Sign in to Linear with your Linear CLI.'],
+    ['refused', 'partial-result', 'Linear returned an incomplete read.'],
+    ['refreshing', 'refreshing', 'Reading Linear…'],
+    ['expired', 'expired', 'The last read is out of date.'],
+  ] as const)(
+    'keeps the GitHub count when Linear is %s (%s)',
+    async (state, reason, explanation) => {
+      const github = githubAsksPlan('present');
+      const page = mountPlan({
+        ...github,
+        sources: [...github.sources, { ...linearPlan.sources[0], state, reason }],
+      });
+      await page.settle();
+      const goal = within(screen.getByRole('article', { name: 'Open the new library' }));
+      expect(goal.getByText('0 of 1 lane is done')).toBeVisible();
+      const sources = within(screen.getByRole('region', { name: 'Sources' }));
+      expect(sources.getByText(explanation)).toBeVisible();
+      expect(sources.getByText('Not measured.')).toBeVisible();
+    },
+  );
+
+  it.each(['Linear', 'GitHub'] as const)(
+    'keeps the complete %s goal counts alongside a partial GitHub source',
+    async (provider) => {
+      const measured = provider === 'Linear' ? linearPlan : githubPlan('ok');
+      const page = mountPlan({
+        ...measured,
+        sources: [
+          ...measured.sources,
+          {
+            ...githubPlan('refused').sources[0],
+            kind: 'github project',
+            label: 'GitHub project',
+            reason: 'partial-result',
+          },
+        ],
+      });
+      await page.settle();
+      const sources = within(screen.getByRole('region', { name: 'Sources' }));
+      expect(sources.getByText('GitHub returned an incomplete read.')).toBeVisible();
+      for (const { title } of measured.goals) {
+        const goal = within(screen.getByRole('article', { name: title }));
+        expect(goal.getByText('1 of 1 lane is done')).toBeVisible();
+      }
+    },
+  );
 
   it('withdraws tracker rows and counts after a failed refresh while keeping local rows', async () => {
     const remote = githubPlan('ok');

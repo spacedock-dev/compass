@@ -39,6 +39,18 @@ interface PublishedTrackerAsk {
   readonly goals: readonly string[];
 }
 
+interface PlanRowChanges<Row> {
+  readonly remove: readonly string[];
+  readonly upsert: readonly Row[];
+}
+
+interface TrackerReadUpdate {
+  readonly freshForMs: number;
+  readonly goals: PlanRowChanges<ReadyPlan['goals'][number]>;
+  readonly lanes: PlanRowChanges<ReadyPlan['lanes'][number]>;
+  readonly sources: ReadyPlan['sources'];
+}
+
 export interface ReadyPlan {
   readonly state: 'ready';
   readonly goals: readonly {
@@ -92,6 +104,8 @@ export interface ReadyPlan {
     readonly freshForMs: number;
     readonly localGoals: ReadyPlan['goals'];
     readonly localLanes: ReadyPlan['lanes'];
+    readonly localSources?: ReadyPlan['sources'];
+    readonly updates?: readonly TrackerReadUpdate[];
   } | null;
   readonly logRejected: number | null;
   readonly limits: string;
@@ -210,27 +224,64 @@ const trackerAsk = (item: Fields) =>
 const freshness = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 30_000;
 
-function expireTrackerRead(plan: ReadyPlan): ReadyPlan {
-  if (!plan.trackerRead) return plan;
-  return {
-    ...plan,
-    goals: plan.trackerRead.localGoals,
-    lanes: plan.trackerRead.localLanes,
-    sources: plan.sources.map((source) =>
-      isTrackerSource(source) && (source.state === 'ok' || source.state === 'empty')
-        ? { ...source, state: 'expired', reason: 'expired' }
-        : source,
-    ),
-    trackerRead: null,
-  };
+function applyRowChanges<Row extends { readonly id: string }>(
+  rows: readonly Row[],
+  changes: PlanRowChanges<Row>,
+): readonly Row[] {
+  const removed = new Set(changes.remove);
+  const replacements = new Map<string, Row[]>();
+  for (const row of changes.upsert) {
+    const group = replacements.get(row.id);
+    if (group) group.push(row);
+    else replacements.set(row.id, [row]);
+  }
+  const replaced = new Set(replacements.keys());
+  const kept = rows.flatMap((row) => {
+    if (removed.has(row.id)) return [];
+    if (!replaced.has(row.id)) return [row];
+    const next = replacements.get(row.id) ?? [];
+    replacements.delete(row.id);
+    return next;
+  });
+  return [...kept, ...[...replacements.values()].flat()];
+}
+
+function expireTrackerRead(plan: ReadyPlan, elapsed: number): ReadyPlan {
+  let current = plan;
+  while (current.trackerRead && current.trackerRead.freshForMs <= elapsed) {
+    const read = current.trackerRead;
+    const [update, ...updates] = read.updates ?? [];
+    if (!update) {
+      return {
+        ...current,
+        goals: read.localGoals,
+        lanes: read.localLanes,
+        sources:
+          read.localSources ??
+          current.sources.map((source) =>
+            isTrackerSource(source) && (source.state === 'ok' || source.state === 'empty')
+              ? { ...source, state: 'expired', reason: 'expired' }
+              : source,
+          ),
+        trackerRead: null,
+      };
+    }
+    current = {
+      ...current,
+      goals: applyRowChanges(current.goals, update.goals),
+      lanes: applyRowChanges(current.lanes, update.lanes),
+      sources: update.sources,
+      trackerRead: { ...read, freshForMs: update.freshForMs, updates },
+    };
+  }
+  return current;
 }
 
 export function expirePlanReadings(plan: ReadyPlan, elapsed: number): ReadyPlan {
-  const local =
-    plan.trackerRead && plan.trackerRead.freshForMs <= elapsed ? expireTrackerRead(plan) : plan;
-  return local.trackerAsksFreshForMs !== null && local.trackerAsksFreshForMs <= elapsed
-    ? { ...local, trackerAsks: null, trackerAsksFreshForMs: null }
-    : local;
+  const current = expireTrackerRead(plan, elapsed);
+  return current.trackerAsksFreshForMs !== null && current.trackerAsksFreshForMs <= elapsed
+    ? { ...current, trackerAsks: null, trackerAsksFreshForMs: null }
+    : current;
 }
 
 export function failTrackerRead(plan: ReadyPlan): ReadyPlan {
@@ -248,6 +299,29 @@ export function failTrackerRead(plan: ReadyPlan): ReadyPlan {
   };
 }
 
+function rowChanges(value: unknown, check: (item: Fields) => boolean) {
+  return isRecord(value) && texts(value['remove']) && completeList(value['upsert'], check);
+}
+
+function validUpdates(updates: unknown, initial: number): boolean {
+  if (updates === undefined) return true;
+  if (!Array.isArray(updates) || updates.length > 31) return false;
+  let previous = initial;
+  for (const update of updates) {
+    if (
+      !isRecord(update) ||
+      !freshness(update['freshForMs']) ||
+      update['freshForMs'] < previous ||
+      !rowChanges(update['goals'], ITEM_CHECKS.goals) ||
+      !rowChanges(update['lanes'], ITEM_CHECKS.lanes) ||
+      !completeList(update['sources'], ITEM_CHECKS.sources)
+    )
+      return false;
+    previous = update['freshForMs'];
+  }
+  return true;
+}
+
 /** The reply as the page may read it, or null when it is not a usable plan reply. */
 export function usablePlan(body: unknown): ConfiguredPlan | null {
   if (!isRecord(body)) return null;
@@ -262,6 +336,9 @@ export function usablePlan(body: unknown): ConfiguredPlan | null {
       !freshness(trackerRead['freshForMs']) ||
       !completeList(trackerRead['localGoals'], ITEM_CHECKS.goals) ||
       !completeList(trackerRead['localLanes'], ITEM_CHECKS.lanes) ||
+      (trackerRead['localSources'] !== undefined &&
+        !completeList(trackerRead['localSources'], ITEM_CHECKS.sources)) ||
+      !validUpdates(trackerRead['updates'], trackerRead['freshForMs']) ||
       !completeList(body['goals'], ITEM_CHECKS.goals) ||
       !completeList(body['lanes'], ITEM_CHECKS.lanes) ||
       !completeList(body['sources'], ITEM_CHECKS.sources)

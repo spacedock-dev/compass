@@ -338,13 +338,7 @@ function notCountedNote(dropped: boolean, unknown: boolean) {
     : 'Lanes without a known status are not counted.';
 }
 
-function GoalCard({
-  goal,
-  trackerIncomplete,
-}: {
-  readonly goal: PlanGoal;
-  readonly trackerIncomplete: boolean;
-}) {
+function GoalCard({ goal }: { readonly goal: PlanGoal }) {
   const headingId = useId();
   const groups = laneGroups
     .map(({ state, label }) => ({
@@ -382,12 +376,10 @@ function GoalCard({
         </dd>
       </dl>
       {groups.length === 0 ? (
-        !trackerIncomplete && (
-          <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
-        )
+        <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
       ) : (
         <>
-          {trackerIncomplete ? null : total === 0 ? (
+          {total === 0 ? (
             <p className="m-0 text-muted-foreground">
               {unknown ? 'Lane progress is not measured.' : notCountedNote(dropped, false)}
             </p>
@@ -610,6 +602,7 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
   // A note the decision log has not marked decided never sits under Product decisions.
   const decided = model.design.filter((note) => note.decided !== false);
   const undecided = model.design.filter((note) => note.decided === false);
+  const goalOccurrences = new Map<string, number>();
   return (
     <div className={pageLayout} data-next-view-body="plan">
       <section aria-labelledby={headingId} className="grid gap-8">
@@ -622,21 +615,18 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
           trackerAsks={model.trackerAsks}
         />
         <PlanSection title="Goals">
-          {model.trackerIncomplete && (
-            <p className="m-0 text-muted-foreground">Lane progress is not measured.</p>
+          {model.goals.length === 0 ? (
+            <p className="m-0 text-muted-foreground">
+              {model.trackerIncomplete ? 'Lane progress is not measured.' : 'No goals are listed.'}
+            </p>
+          ) : (
+            model.goals.map((goal) => {
+              // File goals can share an ID. Removing another source must keep this card mounted.
+              const occurrence = goalOccurrences.get(goal.id) ?? 0;
+              goalOccurrences.set(goal.id, occurrence + 1);
+              return <GoalCard key={`${goal.id}:${occurrence}`} goal={goal} />;
+            })
           )}
-          {model.goals.length === 0
-            ? !model.trackerIncomplete && (
-                <p className="m-0 text-muted-foreground">No goals are listed.</p>
-              )
-            : // Goal ids come from headings in the plan files, and two files may share one.
-              model.goals.map((goal, index) => (
-                <GoalCard
-                  key={`${goal.id}:${index}`}
-                  goal={goal}
-                  trackerIncomplete={model.trackerIncomplete}
-                />
-              ))}
         </PlanSection>
         {model.fileSections.design && (
           <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>

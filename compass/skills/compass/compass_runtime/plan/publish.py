@@ -7,8 +7,10 @@ import json
 import os
 import time
 from collections import Counter, defaultdict
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from functools import cache
+from itertools import pairwise
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final
 
@@ -26,6 +28,8 @@ from . import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
 
@@ -65,7 +69,11 @@ PLAN_ITEM_FIELDS: Final = MappingProxyType(
         "tracker": frozenset({"title", "group", "source", "date"}),
         "inventory": frozenset({"title", "group", "source", "date"}),
         "diagrams": frozenset({"title", "caption", "kind", "source", "date", "linkHosts", "body"}),
-        "trackerRead": frozenset({"freshForMs", "localGoals", "localLanes"}),
+        "trackerRead": frozenset(
+            {"freshForMs", "localGoals", "localLanes", "localSources", "updates"}
+        ),
+        "trackerRead.update": frozenset({"freshForMs", "goals", "lanes", "sources"}),
+        "trackerRead.changes": frozenset({"remove", "upsert"}),
         "date": frozenset({"label", "at"}),
         "sources": frozenset({"label", "kind", "fileLabel", "position", "state", "reason"}),
     }
@@ -96,10 +104,15 @@ def _text(value: str | None) -> str | None:
     return _cap(text, _TEXT_CHARS)
 
 
-def _date(value: model.ItemDate | None) -> dict[str, str | None] | None:
+type _TextProjection = Callable[[str | None], str | None]
+
+
+def _date(
+    value: model.ItemDate | None, text: _TextProjection = _text
+) -> dict[str, str | None] | None:
     if value is None:
         return None
-    return {"label": value.label, "at": _text(value.value)}
+    return {"label": value.label, "at": text(value.value)}
 
 
 def _source(source: model.Source) -> dict[str, str | int | None]:
@@ -148,26 +161,21 @@ def _published_folders(
 
 def _lane_sessions(
     lanes: tuple[model.Lane, ...],
-    config: RuntimeConfig,
-    state: RuntimeState,
-    policy: io.PlanPathPolicy,
+    published: tuple[tuple[str, str, str], ...] | None,
+    ancestry: Callable[[str], frozenset[tuple[int, int]] | None],
 ) -> dict[str, list[str]]:
     folders: dict[tuple[int, int], list[str]] = defaultdict(list)
     for lane in lanes:
         if lane.folder is not None:
             folders[lane.folder.device, lane.folder.inode].append(lane.slug)
-    published = _published_folders(config, state)
     if published is None or not folders:
         return {}
 
     matched: dict[str, list[str]] = {slug: [] for slugs in folders.values() for slug in slugs}
-    ancestry: dict[str, frozenset[tuple[int, int]] | None] = {}
     for harness, sid, cwd in published:
         if _text(harness) != harness or _text(sid) != sid:
             continue
-        if cwd not in ancestry:
-            ancestry[cwd] = io.plan_session_ancestry(cwd, policy)
-        identities = ancestry[cwd]
+        identities = ancestry(cwd)
         if identities is None:
             # An unexamined folder could sit below any lane folder, so no lane's list is complete.
             return {}
@@ -180,32 +188,34 @@ def _lane_sessions(
     return matched
 
 
-def _goals(goals: tuple[model.Goal, ...]) -> list[dict[str, Any]]:
+def _goals(goals: tuple[model.Goal, ...], text: _TextProjection = _text) -> list[dict[str, Any]]:
     return [
         {
-            "id": _text(goal.id),
-            "title": _text(goal.title),
-            "doneWhen": _text(goal.done),
+            "id": text(goal.id),
+            "title": text(goal.title),
+            "doneWhen": text(goal.done),
             "lanes": [slug for slug in goal.lanes if grammar.is_safe_lane_id(slug)],
             "proposal": "Proposed, not merged" if goal.origin.source.draft else None,
-            "date": _date(goal.origin.date)
+            "date": _date(goal.origin.date, text)
             if goal.origin.date and goal.origin.date.label in ("Due", "Target")
             else None,
-            "additionalDates": [_date(date) for date in goal.origin.additional_dates],
+            "additionalDates": [_date(date, text) for date in goal.origin.additional_dates],
         }
         for goal in goals
     ]
 
 
-def _lanes(lanes: tuple[model.Lane, ...], matched: dict[str, list[str]]) -> list[dict[str, Any]]:
+def _lanes(
+    lanes: tuple[model.Lane, ...], matched: dict[str, list[str]], text: _TextProjection = _text
+) -> list[dict[str, Any]]:
     return [
         {
             "id": lane.slug,
-            "title": _text(lane.goal) or lane.slug,
-            "doneWhen": _text(lane.done),
+            "title": text(lane.goal) or lane.slug,
+            "doneWhen": text(lane.done),
             "state": lane.state if lane.state in LANE_STATES else None,
-            "date": _date(lane.date),
-            "additionalDates": [_date(date) for date in lane.additional_dates],
+            "date": _date(lane.date, text),
+            "additionalDates": [_date(date, text) for date in lane.additional_dates],
             "sessions": matched.get(lane.slug),
         }
         for lane in lanes
@@ -256,8 +266,42 @@ def _project(plan: model.PlanModel, matched: dict[str, list[str]]) -> dict[str, 
     }
 
 
+def _issue_revision(lane: model.Lane) -> tuple[datetime, str]:
+    if lane.date is None or lane.date.label != "Updated" or lane.date.value is None:
+        return datetime.min.replace(tzinfo=UTC), ""
+    stamp = lane.date.value
+    # datetime parses microseconds, while the tracker admits up to nine fractional digits.
+    zone_width = 1 if stamp.endswith("Z") else 6
+    fraction = stamp[:-zone_width].partition(".")[2]
+    return datetime.fromisoformat(stamp), fraction.ljust(9, "0")[6:]
+
+
+def _issue_dates(
+    copies: list[model.Lane],
+) -> tuple[model.ItemDate | None, tuple[model.ItemDate, ...]]:
+    revisions = [_issue_revision(lane) for lane in copies]
+    newest = max(revisions)
+    latest = [lane for lane, revision in zip(copies, revisions, strict=True) if revision == newest]
+    first = latest[0]
+    # A newer revision can clear a date. For equal revisions keep only dates every copy agrees on.
+    dates = tuple(
+        date
+        for date in first.additional_dates
+        if all(date in lane.additional_dates for lane in latest[1:])
+    )
+    primary = min(
+        (lane.date for lane in latest if lane.date is not None),
+        key=lambda date: date.value or "",
+        default=None,
+    )
+    return primary, dates
+
+
 def _merge_tracker_rows(
-    local: model.PlanModel, data: list[model.TrackerData], config: settings.Settings
+    local: model.PlanModel,
+    data: list[model.TrackerData],
+    lane_folders: dict[str, str],
+    lane_folder: Callable[[str], tuple[model.FolderIdentity | None, str | None]],
 ) -> model.PlanModel:
     goals = list(local.goals)
     lanes = {lane.slug: lane for lane in local.lanes}
@@ -266,38 +310,46 @@ def _merge_tracker_rows(
         slug: {state} for slug, state in local.file_lane_states.items()
     }
     ordinary: dict[str, set[str | None]] = defaultdict(set)
-    remote_slugs: set[str] = set()
+    remote: dict[str, list[model.Lane]] = defaultdict(list)
     for read in data:
         goals.extend(read.goals)
         for lane in read.lanes:
-            remote_slugs.add(lane.slug)
+            remote[lane.slug].append(lane)
             current = lanes.setdefault(lane.slug, lane)
-            date_labels = {date.label for date in current.additional_dates}
             lanes[lane.slug] = replace(
                 current,
                 serves=tuple(dict.fromkeys((*current.serves, *lane.serves))),
-                date=current.date or lane.date,
-                additional_dates=(
-                    *current.additional_dates,
-                    *(date for date in lane.additional_dates if date.label not in date_labels),
-                ),
             )
             if lane.slug in read.project_status_lanes:
                 explicit.setdefault(lane.slug, set()).add(lane.state)
             else:
                 ordinary[lane.slug].add(lane.state)
 
-    lane_folders = config.tracker_lane_folders()
-    for slug in sorted(remote_slugs):
+    local_lanes = {lane.slug: lane for lane in local.lanes}
+    for slug in sorted(remote):
         lane = lanes[slug]
+        primary, dates = _issue_dates(remote[slug])
+        local_lane = local_lanes.get(slug)
+        if local_lane is not None:
+            primary = local_lane.date or primary
+            local_labels = {date.label for date in local_lane.additional_dates}
+            dates = (
+                *local_lane.additional_dates,
+                *(date for date in dates if date.label not in local_labels),
+            )
         states = explicit.get(slug) or ordinary[slug]
         folder = lane_folders.get(slug)
         if folder is not None and lane.folder is None and lane.folder_reason is None:
-            identity, reason = config.sources.lane_folder(folder)
+            identity, reason = lane_folder(folder)
             lane = replace(lane, folder=identity, folder_reason=reason)
             if reason is not None:
                 sources.append(model.Source("lane folder", slug, "", reason=reason))
-        lanes[slug] = replace(lane, state=next(iter(states)) if len(states) == 1 else None)
+        lanes[slug] = replace(
+            lane,
+            date=primary,
+            additional_dates=dates,
+            state=next(iter(states)) if len(states) == 1 else None,
+        )
 
     # Both row types carry membership. Preserve local rows with duplicate goal IDs, which
     # deliberately have their own lane lists, and add any new edges explicitly named by lanes.
@@ -312,25 +364,44 @@ def _merge_tracker_rows(
     return replace(local, goals=tuple(goals), lanes=tuple(lanes.values()), sources=tuple(sources))
 
 
+@dataclass(frozen=True)
+class _FreshTrackerRead:
+    data: model.TrackerData
+    observed_at: float
+    fresh_for_ms: int
+
+
+def _freshest_goals(reads: dict[int, _FreshTrackerRead]) -> list[model.TrackerData]:
+    by_goal: dict[str, _FreshTrackerRead] = {}
+    for read in reads.values():
+        (goal,) = read.data.goals
+        previous = by_goal.get(goal.id)
+        if previous is None or read.observed_at > previous.observed_at:
+            by_goal[goal.id] = read
+    # An alias can report an empty goal. Its older membership must not enter the merge.
+    return [read.data for read in by_goal.values()]
+
+
 def _tracker_projection(
     observations: tuple[Observation, ...], settings: settings.Settings, refresh: TrackerRefresh
-) -> tuple[list[dict[str, Any]], list[model.TrackerData], int | None, int | None]:
+) -> tuple[list[dict[str, Any]], dict[int, _FreshTrackerRead], int | None]:
     kinds = Counter((source.provider, source.kind) for source in settings.trackers)
     positions: Counter[tuple[str, str]] = Counter()
     sources = []
-    data = []
-    lifetimes = []
+    data = {}
     ask_lifetimes = []
-    for declaration, observation in zip(settings.trackers, observations, strict=True):
+    remaining = refresh.remaining_ms(observations)
+    for index, (declaration, observation) in enumerate(
+        zip(settings.trackers, observations, strict=True)
+    ):
         kind = declaration.kind
         provider = declaration.provider
         group = (provider, kind)
         positions[group] += 1
-        lifetime = refresh.remaining_ms(observation)
+        lifetime = remaining[index]
         reason: str | None = observation.reason or tracker_cli.Reason.CLI_FAILED
-        if observation.data is not None and lifetime:
-            data.append(observation.data)
-            lifetimes.append(lifetime)
+        if observation.data is not None and observation.observed_at is not None and lifetime:
+            data[index] = _FreshTrackerRead(observation.data, observation.observed_at, lifetime)
             if declaration.provider == "github" and declaration.ask_labels:
                 ask_lifetimes.append(lifetime)
             status = "ok" if observation.data.lanes else "empty"
@@ -354,7 +425,63 @@ def _tracker_projection(
                 "reason": reason,
             }
         )
-    return sources, data, min(lifetimes, default=None), min(ask_lifetimes, default=None)
+    return sources, data, min(ask_lifetimes, default=None)
+
+
+def _row_changes(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> dict[str, Any]:
+    previous: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    current: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in before:
+        previous[row["id"]].append(row)
+    for row in after:
+        current[row["id"]].append(row)
+    return {
+        "remove": [key for key in previous if key not in current],
+        "upsert": [row for row in after if current[row["id"]] != previous.get(row["id"])],
+    }
+
+
+def _expired_sources(sources: list[dict[str, Any]], expired: set[int]) -> list[dict[str, Any]]:
+    return [
+        {**source, "state": "expired", "reason": "expired"} if index in expired else source
+        for index, source in enumerate(sources)
+    ]
+
+
+def _tracker_updates(
+    reads: dict[int, _FreshTrackerRead],
+    render: Callable[
+        [dict[int, _FreshTrackerRead]],
+        tuple[model.PlanModel, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]],
+    ],
+    goals: list[dict[str, Any]],
+    lanes: list[dict[str, Any]],
+    local_sources: list[dict[str, Any]],
+    tracker_sources: list[dict[str, Any]],
+) -> list[tuple[float, dict[str, Any]]]:
+    deadlines = sorted({read.observed_at for read in reads.values()})
+    updates = []
+    for at, next_at in pairwise(deadlines):
+        expired = {index for index, read in reads.items() if read.observed_at <= at}
+        _, next_goals, next_lanes, folder_sources = render(
+            {index: read for index, read in reads.items() if index not in expired}
+        )
+        updates.append(
+            (
+                next_at,
+                {
+                    "goals": _row_changes(goals, next_goals),
+                    "lanes": _row_changes(lanes, next_lanes),
+                    "sources": [
+                        *local_sources,
+                        *_expired_sources(tracker_sources, expired),
+                        *folder_sources,
+                    ],
+                },
+            )
+        )
+        goals, lanes = next_goals, next_lanes
+    return updates
 
 
 def _ask_revision(issue: model.TrackerAskIssue) -> tuple[datetime, str, str]:
@@ -436,9 +563,10 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
         state=state,
         git_deadline=time.monotonic() + timeout,
     ).model
-    projected = _project(
-        plan, _lane_sessions(plan.lanes, config, state, loaded.settings.sources.policy)
-    )
+    policy = loaded.settings.sources.policy
+    published = _published_folders(config, state)
+    ancestry = cache(lambda cwd: io.plan_session_ancestry(cwd, policy))
+    projected = _project(plan, _lane_sessions(plan.lanes, published, ancestry))
     if not loaded.settings.summary_enabled:
         # A file left from before the summary was turned off would describe a tracker no board
         # has read since; withdraw it so turning the summary on again starts unmeasured.
@@ -451,45 +579,78 @@ def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
             summary_states.save(
                 config.state_home, projected, now=time.time(), settings=loaded.settings.digest
             )
-    tracker_sources, data, _, _ = _tracker_projection(observations, loaded.settings, trackers)
+    return _with_tracker_reads(
+        projected, plan, loaded.settings, observations, trackers, published, ancestry
+    )
+
+
+def _with_tracker_reads(
+    projected: dict[str, Any],
+    plan: model.PlanModel,
+    settings: settings.Settings,
+    observations: tuple[Observation, ...],
+    trackers: TrackerRefresh,
+    published: tuple[tuple[str, str, str], ...] | None,
+    ancestry: Callable[[str], frozenset[tuple[int, int]] | None],
+) -> dict[str, Any]:
+    admitted_folder = cache(settings.sources.lane_folder)
+    # Shared text passes through the same redaction at every deadline in this reply.
+    text = cache(_text)
+    lane_folders = settings.tracker_lane_folders()
+
+    def render(
+        reads: dict[int, _FreshTrackerRead],
+    ) -> tuple[model.PlanModel, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        merged = _merge_tracker_rows(plan, _freshest_goals(reads), lane_folders, admitted_folder)
+        matched = _lane_sessions(merged.lanes, published, ancestry)
+        return (
+            merged,
+            _goals(merged.goals, text),
+            _lanes(merged.lanes, matched, text),
+            [_source(source) for source in merged.sources[len(plan.sources) :]],
+        )
+
     asks_enabled = any(
-        source.provider == "github" and source.ask_labels for source in loaded.settings.trackers
+        source.provider == "github" and source.ask_labels for source in settings.trackers
     )
     projected["trackerAsksEnabled"] = asks_enabled
-    while data:
-        merged = _merge_tracker_rows(plan, data, loaded.settings)
-        goals = _goals(merged.goals)
-        lanes = _lanes(
-            merged.lanes,
-            _lane_sessions(merged.lanes, config, state, loaded.settings.sources.policy),
+    tracker_sources, reads, _ = _tracker_projection(observations, settings, trackers)
+    local_sources = projected["sources"]
+    while reads:
+        merged, goals, lanes, folder_sources = render(reads)
+        updates = _tracker_updates(reads, render, goals, lanes, local_sources, tracker_sources)
+        # Folder admission and the session join can finish after a read's deadline.
+        # Rebuild without reads that expired while projecting the board.
+        next_sources, still_fresh, next_ask_lifetime = _tracker_projection(
+            observations, settings, trackers
         )
-        # Folder admission and the session join can finish after a read's deadline. Each retry
-        # drops at least one observation, so it cannot run again when the clock has caught up.
-        tracker_sources, still_fresh, lifetime, ask_lifetime = _tracker_projection(
-            observations, loaded.settings, trackers
-        )
-        if len(still_fresh) == len(data):
+        if still_fresh.keys() == reads.keys():
+            deadlines = {read.observed_at: read.fresh_for_ms for read in still_fresh.values()}
             projected.update(
                 goals=goals,
                 lanes=lanes,
+                sources=[*local_sources, *tracker_sources, *folder_sources],
                 trackerRead={
-                    "freshForMs": lifetime,
+                    "freshForMs": min(deadlines.values()),
                     "localGoals": projected["goals"],
                     "localLanes": projected["lanes"],
+                    "localSources": [
+                        *local_sources,
+                        *_expired_sources(tracker_sources, set(reads)),
+                    ],
+                    "updates": [
+                        {"freshForMs": deadlines[observed_at], **update}
+                        for observed_at, update in updates
+                    ],
                 },
             )
             if asks_enabled:
-                asks = _tracker_asks(
-                    loaded.settings.trackers, observations, tracker_sources, merged.lanes
-                )
+                asks = _tracker_asks(settings.trackers, observations, tracker_sources, merged.lanes)
                 if asks is not None:
-                    projected.update(trackerAsks=asks, trackerAsksFreshForMs=ask_lifetime)
-            tracker_sources.extend(
-                _source(source) for source in merged.sources[len(plan.sources) :]
-            )
-            break
-        data = still_fresh
-    projected["sources"].extend(tracker_sources)
+                    projected.update(trackerAsks=asks, trackerAsksFreshForMs=next_ask_lifetime)
+            return projected
+        tracker_sources, reads = next_sources, still_fresh
+    local_sources.extend(tracker_sources)
     return projected
 
 

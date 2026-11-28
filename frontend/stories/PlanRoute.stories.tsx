@@ -28,7 +28,7 @@ import { atPageWidth } from './PageFit';
 import { settledRect } from './settled-layout';
 
 /* How many plan reads this story's board has asked for, so a play can wait for the read it asserts about. */
-const planReads = { count: 0 };
+const planReads = { count: 0, clock: createFakeClock() };
 
 type PlanAnswer = PlanPayload | null | 'pending' | 'server-error';
 
@@ -38,12 +38,19 @@ function planResponse(plan: PlanAnswer): Promise<Response> {
   return Promise.resolve(plan ? Response.json(plan) : new Response(null, { status: 404 }));
 }
 
-function PlanBoard({ plan }: { readonly plan: PlanAnswer }) {
+function PlanBoard({
+  plan,
+  holdRefresh = false,
+}: {
+  readonly plan: PlanAnswer;
+  readonly holdRefresh?: boolean;
+}) {
   const [shell] = useState(() => {
     planReads.count = 0;
+    planReads.clock = createFakeClock();
     const history = fakeRouterEnvironment('#n=plan');
     return createShell({
-      env: createFakeEnvironment({ clock: createFakeClock() }),
+      env: createFakeEnvironment({ clock: planReads.clock }),
       router: createRouter(history.env),
       provider: () => fakeBackend(),
       events: { addEventListener: () => undefined, removeEventListener: () => undefined },
@@ -53,7 +60,7 @@ function PlanBoard({ plan }: { readonly plan: PlanAnswer }) {
       fetch: async (url) => {
         if (url === '/api/plan') {
           planReads.count += 1;
-          return planResponse(plan);
+          return planResponse(holdRefresh && planReads.count > 1 ? 'pending' : plan);
         }
         if (url.startsWith('/api/data')) return Response.json(planBoard);
         return new Response(null, { status: 404 });
@@ -427,11 +434,21 @@ export const LinearOnlyPlan: Story = {
       'Linear project milestoneRead',
     ]);
     const project = within(canvas.getByRole('article', { name: 'Survey the orchard' }));
+    await expect(project.getByText('1 of 1 lane is done')).toBeVisible();
     await expect(project.getByText(/^Target /)).toHaveAttribute('datetime', '2026-11-06');
+    await expect(project.getByText(/^Updated /)).toHaveAttribute(
+      'datetime',
+      '2026-11-05T12:00:00Z',
+    );
+    await expect(within(project.getByRole('listitem')).getByText(/^Due /)).toHaveAttribute(
+      'datetime',
+      '2026-11-03',
+    );
     await expect(
       project.getAllByText(/^Completed /).map((date) => date.getAttribute('datetime')),
     ).toEqual(['2026-11-05T16:00:00Z', '2026-11-03T16:00:00Z']);
     const milestone = within(canvas.getByRole('article', { name: 'Finish the north plot' }));
+    await expect(milestone.getByText(/^Target /)).toHaveAttribute('datetime', '2026-11-04');
     await expect(milestone.getByText('1 of 1 lane is done')).toBeVisible();
     await expect(milestone.getByText('Map the old apple trees')).toBeVisible();
     await expect(milestone.getByRole('link', { name: /Review the shelf layout/ })).toBeVisible();
@@ -441,7 +458,7 @@ export const LinearOnlyPlan: Story = {
 };
 
 export const MixedGitHubAndLinearPlan: Story = {
-  args: { plan: mixedTrackerPlan },
+  args: { plan: mixedTrackerPlan, holdRefresh: true },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const sources = within(await canvas.findByRole('region', { name: 'Sources' }));
@@ -457,6 +474,41 @@ export const MixedGitHubAndLinearPlan: Story = {
     const waiting = within(canvas.getByRole('region', { name: 'Waiting on you' }));
     await expect(waiting.getByRole('link', { name: 'Approve the sign lettering' })).toBeVisible();
     await expect(waiting.getByText('GitHub milestone · github.com')).toBeVisible();
+
+    planReads.clock.advance(20_000);
+    await waitFor(() =>
+      expect(canvas.queryByRole('article', { name: 'Survey the orchard' })).toBeNull(),
+    );
+    await expect(canvas.queryByRole('article', { name: 'Finish the north plot' })).toBeNull();
+    await expect(sources.getAllByText('The last read is out of date.')).toHaveLength(2);
+    await expect(sources.getByText('Read')).toBeVisible();
+    await expect(github.getByText('0 of 1 lane is done')).toBeVisible();
+    await expect(waiting.getByRole('link', { name: 'Approve the sign lettering' })).toBeVisible();
+  },
+};
+
+export const RefusedWorkspaceReads: Story = {
+  args: {
+    plan: {
+      ...linearPlan,
+      goals: [],
+      lanes: [],
+      trackerRead: null,
+      sources: [
+        { ...linearPlan.sources[0], state: 'refused', reason: 'unknown-workspace' },
+        { ...linearPlan.sources[1], state: 'refused', reason: 'missing-team-scope' },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const sources = within(await canvas.findByRole('region', { name: 'Sources' }));
+    await expect(
+      sources.getByText('Sign in to the declared workspace with your tracker CLI.'),
+    ).toBeVisible();
+    await expect(sources.getByText('Set a default team in your tracker CLI.')).toBeVisible();
+    await expect(canvas.getByText(progressUnavailable)).toBeVisible();
+    await expect(canvas.queryAllByRole('article')).toHaveLength(0);
   },
 };
 

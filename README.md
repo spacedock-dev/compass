@@ -198,10 +198,11 @@ exposes it to your network with no password, so read that section before you use
 what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a
 completed check on the board, choose See an example above the Sessions list or in Help.
 
-The Plan page puts goals and lanes from your files, GitHub and a second tracker beside the
-sessions doing the work. Each tracker uses its own CLI. Waiting on you can also show open GitHub
-issues assigned to you that have a label you chose. Plan shows only the host name of each link
-and opens only in a browser on the Compass computer.
+The Plan page puts goals and lanes from your files and configured trackers beside the sessions
+doing the work. Compass reads each tracker through its own CLI. A workspace tracker can supply
+projects and their milestones. Waiting on you can also show open GitHub issues assigned to you
+that have a label you chose. Plan shows only the host name of each link and opens only in a browser
+on the Compass computer.
 [Set up the plan board](docs/how-to/05-plan-board.md).
 
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.

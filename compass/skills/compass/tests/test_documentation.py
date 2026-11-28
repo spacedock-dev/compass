@@ -34,6 +34,7 @@ from compass_runtime import (
 from compass_runtime import config as runtime_config
 from compass_runtime import events as runtime_events
 from compass_runtime import transcripts as runtime_transcripts
+from compass_runtime.plan import settings as plan_settings
 from compass_runtime.plan import tracker_source
 
 from .decision_citations import citation_errors
@@ -50,6 +51,35 @@ from .test_first_layer_words import PUBLIC_TRACKER_TOKENS, _glossary_words
 
 
 class TrackerPlanGuideTest(unittest.TestCase):
+    def test_workspace_tracker_refusal_sentences_are_documented(self) -> None:
+        security = (SERVER_PATH.parents[3] / "SECURITY.md").read_text(encoding="utf-8")
+        reasons = " ".join(
+            security.split("### Published plan fields", 1)[1].split("### ", 1)[0].split()
+        )
+        for reason, explanation in (
+            ("unknown-workspace", "Sign in to the declared workspace with your tracker CLI."),
+            ("missing-team-scope", "Set a default team in your tracker CLI."),
+        ):
+            with self.subTest(reason=reason):
+                self.assertIn(f"`{reason}` shows “{explanation}”", reasons)
+
+    def test_public_setup_covers_workspace_sources_and_unsupported_ask_labels(self) -> None:
+        root = SERVER_PATH.parents[3]
+        readme = (root / "README.md").read_text(encoding="utf-8")
+        guide = (root / "docs/how-to/05-plan-board.md").read_text(encoding="utf-8")
+        prompt = guide.split("## Let your agent set it up", 1)[1].split("## ", 1)[0]
+        for document, passage, expected in (
+            ("README", readme, "your files and configured trackers"),
+            ("setup prompt", prompt, "ask for its workspace, project and any project milestone"),
+            (
+                "refusal table",
+                guide,
+                f"| {plan_settings.UNSUPPORTED_TRACKER_ASKS} | Remove `ask_labels` from that source. |",
+            ),
+        ):
+            with self.subTest(document=document):
+                self.assertIn(expected, " ".join(passage.split()))
+
     def test_a_person_can_copy_github_settings_and_find_the_off_switches(self) -> None:
         root = SERVER_PATH.parents[3]
         guide = (root / "docs/how-to/05-plan-board.md").read_text(encoding="utf-8")
