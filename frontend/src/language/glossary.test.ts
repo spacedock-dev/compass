@@ -78,10 +78,12 @@ describe('the first-layer glossary', () => {
       'Dropped',
       'In progress',
       'Lane',
+      'No lanes found',
       'Not decided yet',
       'Not measured',
       'Planned',
       'Product decisions',
+      'Reading GitHub…',
       'Status not recognised',
       'Waiting',
     ]);

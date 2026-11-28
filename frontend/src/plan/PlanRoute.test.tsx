@@ -4,6 +4,7 @@ import { describe, it, vi } from 'vitest';
 import {
   crowdedSourceRows,
   crowdedSources,
+  githubPlan,
   hostileDiagramBody,
   planBoard,
   planWaiting,
@@ -511,5 +512,192 @@ describe('the Plan destination follows the published plan', () => {
     await act(async () => page.clock.advance(FALLBACK_POLL_MS));
     expect(primary().queryByRole('link', { name: 'Plan' })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Plan' })).toBeNull();
+  });
+});
+
+describe('tracker plans on Plan', () => {
+  it('shows a refused lane folder without adding file sections to a tracker-only plan', async () => {
+    const tracker = githubPlan('ok');
+    const page = mountPlan({
+      ...tracker,
+      sources: [
+        ...tracker.sources,
+        {
+          kind: 'lane folder',
+          label: 'github-issue',
+          state: 'refused',
+          reason: 'missing',
+          fileLabel: null,
+          position: null,
+        },
+      ],
+    });
+    await page.settle();
+    const sources = within(screen.getByRole('region', { name: 'Sources' }));
+    expect(sources.getByText('github-issue')).toBeVisible();
+    expect(sources.getByText('Refused')).toBeVisible();
+    for (const name of ['Design', 'Tracker', 'Diagrams']) {
+      expect(screen.queryByRole('heading', { name, level: 2 })).toBeNull();
+    }
+  });
+
+  it('collects a tracker read before the safety poll and requests another at expiry', async () => {
+    const page = mountPlan(githubPlan('refreshing'));
+    await page.settle();
+    const remote = githubPlan('ok');
+    page.getResponses['/api/plan'] = {
+      ...remote,
+      trackerRead: { ...remote.trackerRead, freshForMs: 30_000 },
+    };
+    await act(async () => page.clock.advance(1_000));
+    expect(page.gets('/api/plan')).toBe(2);
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    page.getResponses['/api/plan'] = {
+      ...remote,
+      trackerRead: { ...remote.trackerRead, freshForMs: 11_000 },
+    };
+    await act(async () => page.clock.advance(FALLBACK_POLL_MS - 1_000));
+    expect(page.gets('/api/plan')).toBe(3);
+    page.getResponses['/api/plan'] = githubPlan('refreshing');
+    await act(async () => page.clock.advance(11_000));
+    expect(page.gets('/api/plan')).toBe(4);
+    expect(screen.queryByText('Put up the welcome sign')).toBeNull();
+  });
+
+  it('retries when a response runs out of freshness before reaching the page', async () => {
+    let respond: (response: Response) => void = () => undefined;
+    const page = mountPlan(() => new Promise<Response>((resolve) => (respond = resolve)));
+    await page.settle();
+    const remote = githubPlan('ok');
+    await act(async () => page.clock.advance(100));
+    await act(async () =>
+      respond(Response.json({ ...remote, trackerRead: { ...remote.trackerRead, freshForMs: 50 } })),
+    );
+    expect(screen.queryByText('Put up the welcome sign')).toBeNull();
+    expect(screen.getByText('The last read is out of date.')).toBeVisible();
+    page.getResponses['/api/plan'] = remote;
+    await act(async () => page.clock.advance(1_000));
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+  });
+
+  it('clears active reading when a tracker retry fails and keeps file rows visible', async () => {
+    const remote = githubPlan('refreshing');
+    const page = mountPlan({ ...readyPlan, sources: [...readyPlan.sources, ...remote.sources] });
+    await page.settle();
+    const sources = within(screen.getByRole('region', { name: 'Sources' }));
+    expect(sources.getByText('Reading GitHub…')).toBeVisible();
+    page.getResponses['/api/plan'] = () => Promise.reject(new Error('offline'));
+    await act(async () => page.clock.advance(1_000));
+    expect(sources.queryByText('Reading GitHub…')).toBeNull();
+    expect(sources.getByText('Compass could not refresh the plan.')).toBeVisible();
+    expect(screen.getByText(readyPlan.asks[0].text)).toBeVisible();
+  });
+
+  it('shows a due date, a complete lane count and its linked session', async () => {
+    const page = mountPlan(githubPlan('ok'));
+    await page.settle();
+    const goal = within(screen.getByRole('article', { name: 'Open the new library' }));
+    expect(goal.getByText(/Due /)).toHaveAttribute('datetime', '2026-12-08');
+    expect(goal.getByText('1 of 1 lane is done')).toBeVisible();
+    expect(goal.getByRole('link', { name: /Review the shelf layout/ })).toBeVisible();
+  });
+
+  it('distinguishes a complete empty read from missing measurements', async () => {
+    const page = mountPlan(githubPlan('empty'));
+    await page.settle();
+    expect(screen.getByText('No lanes serve this goal yet')).toBeVisible();
+    expect(screen.getByText('No lanes found')).toBeVisible();
+  });
+
+  it.each([false, true])(
+    'keeps the tracker-ask limit through goal reads (local asks: %s)',
+    async (withLocalAsks) => {
+      const reply = (state: 'refreshing' | 'ok' | 'empty') => ({
+        ...githubPlan(state),
+        asks: withLocalAsks ? readyPlan.asks : [],
+      });
+      const getResponses = { '/api/plan': reply('refreshing') };
+      const page = mountShell({ hash: '#n=plan', data: { sessions: [] }, getResponses });
+      await page.settle();
+      const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+      const expectDisclosure = () => {
+        expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+        if (withLocalAsks) expect(waiting.getByText(readyPlan.asks[0].text)).toBeVisible();
+      };
+      expectDisclosure();
+      getResponses['/api/plan'] = reply('ok');
+      await act(async () => page.clock.advance(1_000));
+      expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+      expectDisclosure();
+      getResponses['/api/plan'] = reply('empty');
+      await act(async () => page.clock.advance(FALLBACK_POLL_MS - 1_000));
+      expect(screen.getByText('No lanes serve this goal yet')).toBeVisible();
+      expectDisclosure();
+    },
+  );
+
+  it.each([
+    ['refused', 'Sign in to GitHub with your GitHub CLI.'],
+    ['refreshing', 'Reading GitHub…'],
+    ['expired', 'The last read is out of date.'],
+  ] as const)('says progress is not measured when the source is %s', async (state, reason) => {
+    const page = mountPlan(githubPlan(state));
+    await page.settle();
+    expect(screen.getByText(reason)).toBeVisible();
+    expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
+    expect(screen.queryByText('No goals are listed.')).toBeNull();
+  });
+
+  it('keeps measured rows visible without reporting a count during a partial read', async () => {
+    const remote = githubPlan('ok');
+    const page = mountPlan({
+      ...remote,
+      sources: [
+        ...remote.sources,
+        {
+          ...githubPlan('refused').sources[0],
+          kind: 'github project',
+          label: 'GitHub project',
+          reason: 'partial-result',
+        },
+      ],
+    });
+    await page.settle();
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    expect(screen.getByText('GitHub returned an incomplete read.')).toBeVisible();
+    expect(screen.getByText('Lane progress is not measured.')).toBeVisible();
+    expect(screen.queryByText('1 of 1 lane is done')).toBeNull();
+  });
+
+  it('withdraws tracker rows and counts after a failed refresh while keeping local rows', async () => {
+    const remote = githubPlan('ok');
+    const page = mountPlan({
+      ...remote,
+      goals: [...readyPlan.goals, ...remote.goals],
+      lanes: [...readyPlan.lanes, ...remote.lanes],
+      trackerRead: {
+        ...remote.trackerRead,
+        localGoals: readyPlan.goals,
+        localLanes: readyPlan.lanes,
+      },
+    });
+    await page.settle();
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    page.getResponses['/api/plan'] = new Response(null, { status: 503 });
+    await act(async () => page.clock.advance(FALLBACK_POLL_MS));
+    expect(screen.queryByText('Put up the welcome sign')).toBeNull();
+    expect(screen.getByText('Set up the pickup shelf')).toBeVisible();
+    expect(screen.queryAllByText(/ of .* lanes? (?:is|are) done/)).toHaveLength(0);
+  });
+
+  it('withdraws a tracker read when its freshness time runs out', async () => {
+    const remote = githubPlan('ok');
+    const page = mountPlan({ ...remote, trackerRead: { ...remote.trackerRead, freshForMs: 100 } });
+    await page.settle();
+    expect(screen.getByText('Put up the welcome sign')).toBeVisible();
+    page.getResponses['/api/plan'] = new Response(null, { status: 503 });
+    await act(async () => page.clock.advance(100));
+    expect(screen.queryByText('Put up the welcome sign')).toBeNull();
+    expect(screen.getByText('The last read is out of date.')).toBeVisible();
   });
 });

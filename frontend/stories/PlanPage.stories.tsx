@@ -187,6 +187,9 @@ const refusedSource = {
 } as const;
 
 const empty: PlanModel = {
+  trackerIncomplete: false,
+  trackerAsksUnmeasured: false,
+  trackerOnly: false,
   asks: [],
   waitingSessions: [],
   goals: [],

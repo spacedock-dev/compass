@@ -146,10 +146,12 @@ export const PLAN_WORDS = {
   dropped: 'Dropped',
   inProgress: 'In progress',
   lane: 'Lane',
+  noLanesFound: 'No lanes found',
   notDecidedYet: 'Not decided yet',
   notMeasured: 'Not measured',
   planned: 'Planned',
   productDecisions: 'Product decisions',
+  readingGitHub: 'Reading GitHub…',
   statusNotRecognised: 'Status not recognised',
   waiting: 'Waiting',
 } as const;
@@ -206,7 +208,7 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     plan: kept([
       SHOWN.plan,
       'New destination',
-      'The local plan: goals, lanes, design notes, tracker and diagrams',
+      'Goals, lanes and notes from declared files and trackers',
       "A project's plan on its Project page",
       'Shown only while a plan is configured; the plan slug',
     ]),
@@ -1111,6 +1113,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Working, a session state',
       'Plan goals and lane counts',
     ]),
+    planNoLanesFound: kept([
+      PLAN_WORDS.noLanesFound,
+      'New label',
+      'A complete tracker read with no issues to show',
+      'Not measured',
+      'Tracker source on Plan',
+    ]),
     planNotDecidedYet: kept([
       PLAN_WORDS.notDecidedYet,
       'New label',
@@ -1121,9 +1130,9 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
     planNotMeasured: kept([
       PLAN_WORDS.notMeasured,
       'New label',
-      'A lane with no tracker row, two rows, a draft-only row or an unread tracker',
+      'A lane with no usable state, or an incomplete tracker read',
       'Planned, a lane not started',
-      'Plan lane group, apart and not counted',
+      'Plan lane group and tracker source state',
     ]),
     planPlanned: kept([
       PLAN_WORDS.planned,
@@ -1138,6 +1147,13 @@ export const GLOSSARY = /* @__PURE__ */ (() =>
       'Decisions from the plan design notes',
       'Decisions, the Project tab',
       'Design section on Plan',
+    ]),
+    planReadingGitHub: kept([
+      PLAN_WORDS.readingGitHub,
+      'New label',
+      'A GitHub read is queued or running',
+      'A complete empty read',
+      'Tracker source on Plan',
     ]),
     planStatusNotRecognised: kept([
       PLAN_WORDS.statusNotRecognised,

@@ -180,9 +180,11 @@ You can also read a Codex session's project brief from your own terminal.
 Compass is a small Python server that runs on your machine. It reads the session records your agents
 already write, never changes them, and serves one dashboard at `http://127.0.0.1:4553/`.
 
-Five kinds of traffic can leave your machine, and you can switch off each one. The quota reading
+Six kinds of traffic can leave your machine, and you can switch off each one. The quota reading
 is on by default: it sends your login token to your vendor, and no session content. Model calls, CI
-check reads and counts-only reach nudges start from something you do. The daily release lookup
+check reads and counts-only reach nudges start from something you do. Declaring a GitHub plan
+source enables reads through your own GitHub CLI. Run with `--no-plan-trackers` to stop those reads.
+The daily release lookup
 is also on by default; turn off **Look for new versions once a day** in Settings or run with
 `--no-update-check` to stop it. It requests the plain release URL with no query string and sends only a
 `compass/<version> (<os>; <arch>[; ci][; internal])` User-Agent beyond urllib's standard headers,
@@ -190,16 +192,16 @@ with no identifier or session content. The route counts the lookup itself from i
 spacedock.md counts checks in PostHog without an IP and in Plausible
 with the caller's IP and user agent; CI-marked checks are not counted. Plausible stores neither and
 derives approximate location from the address. See
-[SECURITY.md](SECURITY.md#scope) for all five. The server listens only on `127.0.0.1`. `--host`
+[SECURITY.md](SECURITY.md#scope) for all six. The server listens only on `127.0.0.1`. `--host`
 exposes it to your network with no password, so read that section before you use it.
 
 [How Compass works](docs/how-it-works.md) walks through a progress check in the example, lists
 what can leave your machine and how to stop it, and explains the dashboard's tabs. To see a
 completed check on the board, choose See an example above the Sessions list or in Help.
 
-If you keep your plan in files (goals, a tracker, lane briefs and an event log), the Plan page shows
-it beside the sessions doing the work. It reads only the files you list, shows links as their host
-only, and opens only in a browser on the Compass computer. Open Plan from the dashboard's menu or
+The Plan page shows goals and lanes from declared GitHub sources and files beside the sessions
+doing the work. It shows only the host name of each link and opens only in a browser on the
+Compass computer. Open Plan from the dashboard's menu or
 page links after you [set up the plan board](docs/how-to/05-plan-board.md).
 
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import type { FetchLike } from '../api/client';
-import { readyPlan } from '../../test/plan-fixtures';
+import { githubPlan, readyPlan } from '../../test/plan-fixtures';
 import { createBoardRuntime } from './runtime';
 import { createFakeClock, createFakeEnvironment, createFakeStorageHub } from './testing';
 
@@ -44,6 +44,36 @@ const answer = (body: unknown, status = 200): PlanAnswer => {
 const ready = answer(readyPlan);
 
 describe('the plan read', () => {
+  it('leaves no tracker timers when teardown happens while a paint is pending', async () => {
+    const { clock, paint, runtime, plan } = planRuntime(answer(githubPlan('refreshing')));
+    paint.mockImplementation(({ followUp }) =>
+      followUp ? new Promise<void>(() => undefined) : Promise.resolve(),
+    );
+    runtime.start();
+    await flush();
+    expect(plan()).toMatchObject({ state: 'ready' });
+    runtime.dispose();
+    expect(clock.activeTimers()).toBe(0);
+  });
+
+  it.each(['refreshing', 'ok'] as const)(
+    'cancels a scheduled tracker read after %s on teardown',
+    async (status) => {
+      const fetchPlan = vi.fn(answer(githubPlan(status)));
+      const { clock, runtime } = planRuntime(fetchPlan);
+      runtime.start();
+      await flush();
+      expect(fetchPlan).toHaveBeenCalledTimes(1);
+      const scheduled = clock.activeTimers();
+      runtime.dispose();
+      expect(clock.activeTimers()).toBe(0);
+      expect(scheduled).toBeGreaterThan(2);
+      clock.advance(30_000);
+      await flush();
+      expect(fetchPlan).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('starts unread, so a plan bookmark has nothing to fall back from yet', () => {
     const { plan } = planRuntime(ready);
     expect(plan()).toEqual({ state: 'unread' });

@@ -80,7 +80,7 @@ function PlanSection({
 function RepoDate({ date }: { readonly date: PlanRepoDate }) {
   const parsed = date.at ? new Date(date.at) : null;
   const hasDate = parsed !== null && !Number.isNaN(parsed.getTime());
-  if (date.kind === 'changed' && !hasDate) return null;
+  if (date.kind !== 'proposed' && !hasDate) return null;
 
   return (
     <p className="m-0 flex flex-wrap gap-x-2 text-label text-muted-foreground">
@@ -88,6 +88,7 @@ function RepoDate({ date }: { readonly date: PlanRepoDate }) {
       {hasDate && (
         <time dateTime={date.at ?? undefined}>
           {date.kind === 'changed' && 'Changed '}
+          {date.kind === 'due' && 'Due '}
           {parsed.toLocaleDateString(undefined, {
             dateStyle: 'medium',
             ...(/^\d{4}-\d{2}-\d{2}$/.test(date.at ?? '') ? { timeZone: 'UTC' } : {}),
@@ -153,14 +154,23 @@ function SessionReferences({
   );
 }
 
-function WaitingOnYou({ asks, waitingSessions }: Pick<PlanModel, 'asks' | 'waitingSessions'>) {
+function WaitingOnYou({
+  asks,
+  waitingSessions,
+  trackerAsksUnmeasured,
+}: Pick<PlanModel, 'asks' | 'waitingSessions' | 'trackerAsksUnmeasured'>) {
   const waitingId = useId();
   return (
     <PlanSection title={SESSION_ROW_WORDS.waitingOnYou}>
+      {trackerAsksUnmeasured && (
+        <p className="m-0 text-muted-foreground">Tracker asks are not measured.</p>
+      )}
       {asks.length === 0 && waitingSessions.length === 0 ? (
-        <p className="m-0 text-muted-foreground">
-          No open asks or sessions waiting for a reply are listed.
-        </p>
+        !trackerAsksUnmeasured && (
+          <p className="m-0 text-muted-foreground">
+            No open asks or sessions waiting for a reply are listed.
+          </p>
+        )
       ) : (
         <Card className="grid gap-5 border-l-2 border-l-[var(--amber)] max-sm:p-4">
           {asks.length > 0 && (
@@ -286,7 +296,13 @@ function notCountedNote(dropped: boolean, unknown: boolean) {
     : 'Lanes without a known status are not counted.';
 }
 
-function GoalCard({ goal }: { readonly goal: PlanGoal }) {
+function GoalCard({
+  goal,
+  trackerIncomplete,
+}: {
+  readonly goal: PlanGoal;
+  readonly trackerIncomplete: boolean;
+}) {
   const headingId = useId();
   const groups = laneGroups
     .map(({ state, label }) => ({
@@ -309,6 +325,7 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
       <h3 id={headingId} className="m-0 text-value font-bold" data-authored>
         {goal.title}
       </h3>
+      {goal.date && <RepoDate date={goal.date} />}
       {goal.proposal && <p className="m-0 text-label text-muted-foreground">{goal.proposal}</p>}
       <dl className="m-0 grid gap-1">
         <dt className="text-label font-semibold text-muted-foreground">Done when</dt>
@@ -320,10 +337,12 @@ function GoalCard({ goal }: { readonly goal: PlanGoal }) {
         </dd>
       </dl>
       {groups.length === 0 ? (
-        <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
+        !trackerIncomplete && (
+          <p className="m-0 text-muted-foreground">No lanes serve this goal yet</p>
+        )
       ) : (
         <>
-          {total === 0 ? (
+          {trackerIncomplete ? null : total === 0 ? (
             <p className="m-0 text-muted-foreground">
               {unknown ? 'Lane progress is not measured.' : notCountedNote(dropped, false)}
             </p>
@@ -453,7 +472,19 @@ function PlanSources({ sources, limits }: Pick<PlanModel, 'sources' | 'limits'>)
                 <span className="font-semibold" data-authored>
                   {source.name}
                 </span>
-                {source.status === 'ok' ? (
+                {source.status === 'tracker' ? (
+                  <span className="min-w-0 text-label text-muted-foreground">
+                    {source.state === 'ok' ? (
+                      'Read'
+                    ) : source.state === 'empty' ? (
+                      PLAN_WORDS.noLanesFound
+                    ) : (
+                      <>
+                        {PLAN_WORDS.notMeasured}. <span>{SOURCE_REFUSALS[source.reason]}</span>
+                      </>
+                    )}
+                  </span>
+                ) : source.status === 'ok' ? (
                   <span className="text-label text-muted-foreground">
                     {source.read === undefined ? 'Read' : `${source.read} read`}
                   </span>
@@ -536,47 +567,64 @@ export function PlanPage({ model }: { readonly model: PlanModel }) {
         <h1 id={headingId} className="m-0 text-hero leading-tight font-extrabold">
           {SHOWN.plan}
         </h1>
-        <WaitingOnYou asks={model.asks} waitingSessions={model.waitingSessions} />
+        <WaitingOnYou
+          asks={model.asks}
+          waitingSessions={model.waitingSessions}
+          trackerAsksUnmeasured={model.trackerAsksUnmeasured}
+        />
         <PlanSection title="Goals">
-          {model.goals.length === 0 ? (
-            <p className="m-0 text-muted-foreground">No goals are listed.</p>
-          ) : (
-            // Goal ids come from headings in the plan files, and two files may share one.
-            model.goals.map((goal, index) => <GoalCard key={`${goal.id}:${index}`} goal={goal} />)
+          {model.trackerIncomplete && (
+            <p className="m-0 text-muted-foreground">Lane progress is not measured.</p>
           )}
+          {model.goals.length === 0
+            ? !model.trackerIncomplete && (
+                <p className="m-0 text-muted-foreground">No goals are listed.</p>
+              )
+            : // Goal ids come from headings in the plan files, and two files may share one.
+              model.goals.map((goal, index) => (
+                <GoalCard
+                  key={`${goal.id}:${index}`}
+                  goal={goal}
+                  trackerIncomplete={model.trackerIncomplete}
+                />
+              ))}
         </PlanSection>
-        <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>
-          {model.design.length === 0 ? (
-            <p className="m-0 text-muted-foreground">No product decisions are listed.</p>
-          ) : (
-            <Card className="grid gap-4 max-sm:p-4">
-              {[
-                { label: PLAN_WORDS.productDecisions, notes: decided },
-                { label: PLAN_WORDS.notDecidedYet, notes: undecided },
-              ]
-                .filter(({ notes }) => notes.length > 0)
-                .map(({ label, notes }) => (
-                  <div
-                    key={label}
-                    className="grid gap-3 border-0 border-solid border-[var(--rule)] not-first:border-t not-first:pt-4"
-                  >
-                    <h3 className="m-0 text-value font-bold">{label}</h3>
-                    <NotesList notes={notes} label={label} />
-                  </div>
-                ))}
-            </Card>
-          )}
-        </PlanSection>
-        <Tracker items={model.tracker} />
-        <PlanSection title="Diagrams" sourceLabels={model.diagrams.map((note) => note.source)}>
-          {model.diagrams.length === 0 ? (
-            <p className="m-0 text-muted-foreground">No diagrams are listed.</p>
-          ) : (
-            <Card className="max-sm:p-4">
-              <NotesList notes={model.diagrams} />
-            </Card>
-          )}
-        </PlanSection>
+        {(!model.trackerOnly || model.design.length > 0) && (
+          <PlanSection title="Design" sourceLabels={model.design.map((note) => note.source)}>
+            {model.design.length === 0 ? (
+              <p className="m-0 text-muted-foreground">No product decisions are listed.</p>
+            ) : (
+              <Card className="grid gap-4 max-sm:p-4">
+                {[
+                  { label: PLAN_WORDS.productDecisions, notes: decided },
+                  { label: PLAN_WORDS.notDecidedYet, notes: undecided },
+                ]
+                  .filter(({ notes }) => notes.length > 0)
+                  .map(({ label, notes }) => (
+                    <div
+                      key={label}
+                      className="grid gap-3 border-0 border-solid border-[var(--rule)] not-first:border-t not-first:pt-4"
+                    >
+                      <h3 className="m-0 text-value font-bold">{label}</h3>
+                      <NotesList notes={notes} label={label} />
+                    </div>
+                  ))}
+              </Card>
+            )}
+          </PlanSection>
+        )}
+        {(!model.trackerOnly || model.tracker.length > 0) && <Tracker items={model.tracker} />}
+        {(!model.trackerOnly || model.diagrams.length > 0) && (
+          <PlanSection title="Diagrams" sourceLabels={model.diagrams.map((note) => note.source)}>
+            {model.diagrams.length === 0 ? (
+              <p className="m-0 text-muted-foreground">No diagrams are listed.</p>
+            ) : (
+              <Card className="max-sm:p-4">
+                <NotesList notes={model.diagrams} />
+              </Card>
+            )}
+          </PlanSection>
+        )}
       </section>
       <PlanSources sources={model.sources} limits={model.limits} />
     </div>

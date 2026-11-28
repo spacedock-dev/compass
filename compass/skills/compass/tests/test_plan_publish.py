@@ -26,7 +26,16 @@ from compass_runtime import (
     state,
 )
 from compass_runtime import io as runtime_io
-from compass_runtime.plan import model, publish, readers, settings, sources
+from compass_runtime.plan import (
+    model,
+    publish,
+    readers,
+    settings,
+    sources,
+    tracker_cli,
+    tracker_github,
+    tracker_refresh,
+)
 
 from .support import make_config
 from .test_history import stub_application
@@ -45,6 +54,7 @@ READY_FIELDS = {
     "diagrams",
     "sources",
     "logRejected",
+    "trackerRead",
     "limits",
 }
 LIMITS = "Compass cannot detect health information or confidential text typed into these sources."
@@ -127,6 +137,226 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.assertIn(b"Content-Type: application/json", headers)
         return json.loads(body), body
 
+    def tracker_plan(self, *, mixed: bool = False, count: int = 1, **extra: Any) -> None:
+        file = self.home / settings.FILENAME
+        if mixed:
+            self.write_sources(STAND_IN)
+            self.configure()
+        doc = json.loads(file.read_bytes()) if mixed else {"version": 1}
+        doc["trackers"] = [
+            {"provider": "github", "kind": "milestone", "repo": "owner/repo", "number": n}
+            for n in range(1, count + 1)
+        ]
+        file.write_text(json.dumps({**doc, **extra}), encoding="utf-8")
+
+    def tracker_data(
+        self, goal_id: str = "remote", *, state: str = "done", empty: bool = False
+    ) -> model.TrackerData:
+        source = model.Source("github milestone", "GitHub milestone", "https://github.com")
+        date = model.ItemDate("Due", "2026-12-08")
+        goal = model.Goal(
+            goal_id,
+            "Finish the model",
+            None,
+            model.Origin(source, date=date),
+            () if empty else ("hull",),
+        )
+        lane = model.Lane("hull", "Build the hull", None, (goal_id,), source, state=state)
+        return model.TrackerData((goal,), () if empty else (lane,), frozenset({"hull"}))
+
+    def test_tracker_only_plan_publishes_due_dates_and_joins_declared_folders(self) -> None:
+        self.tracker_plan(lane_folders={"hull": str(self.hull)})
+        app = self.application()
+        tracker = tracker_refresh.Observation(self.tracker_data(), observed_at=time.monotonic())
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=(tracker,)):
+            self.assertIsNone(self.payload(app)[0]["lanes"][0]["sessions"])
+            app.snapshot.publish((app.config.window_hours, False), b"{}", folders=())
+            self.assertEqual(self.payload(app)[0]["lanes"][0]["sessions"], [])
+            app.snapshot.publish(
+                (app.config.window_hours, False),
+                b"{}",
+                folders=(("claude", "public", str(self.hull)),),
+            )
+            payload, body = self.payload(app)
+        self.assertEqual(payload["goals"][0]["date"], {"label": "Due", "at": "2026-12-08"})
+        self.assertEqual(payload["lanes"][0]["sessions"], ['session:["claude","public"]'])
+        self.assertEqual(payload["sources"][0]["label"], "GitHub milestone")
+        self.assertEqual(payload["sources"][0]["state"], "ok")
+        for key in ("goals", "lanes", "sources"):
+            self.assertEqual(set(payload[key][0]), publish.PLAN_ITEM_FIELDS[key])
+        self.assertEqual(set(payload["trackerRead"]), publish.PLAN_ITEM_FIELDS["trackerRead"])
+        self.assertNotIn(os.fsencode(self.hull), body)
+
+    def test_missing_tracker_lane_folder_is_reported_without_a_path_or_a_diagnostic_read(
+        self,
+    ) -> None:
+        missing = self.hull / "missing"
+        self.tracker_plan(lane_folders={"hull": str(missing)})
+        app = self.application()
+        tracker = tracker_refresh.Observation(self.tracker_data(), observed_at=time.monotonic())
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=(tracker,)) as read:
+            payload, body = self.payload(app)
+            read.reset_mock()
+            report = diagnostics._plan_report(app.state)
+            read.assert_not_called()
+        self.assertIsNone(payload["lanes"][0]["sessions"])
+        self.assertNotIn(os.fsencode(missing), body)
+        self.assertNotIn(str(missing), json.dumps(report))
+        self.assertIn(
+            {
+                "kind": "lane folder",
+                "label": "hull",
+                "fileLabel": None,
+                "position": None,
+                "state": "refused",
+                "reason": "missing",
+            },
+            payload["sources"],
+        )
+        self.assertIn({"kind": "lane folder", "reason": "missing"}, report["sources"])
+
+    def test_mixed_goals_share_one_lane_and_conflicting_explicit_states_are_unmeasured(
+        self,
+    ) -> None:
+        self.tracker_plan(mixed=True, count=2)
+        (self.briefs / "hull.md").write_text("## Goal\nLocal brief\n\n*Serves*: G1\n")
+        self.log.write_text("2026-01-02T03:04:05Z note hull:1 Started\n", encoding="utf-8")
+        app = self.application()
+        now = time.monotonic()
+        results = (
+            tracker_refresh.Observation(self.tracker_data("remote-a"), observed_at=now),
+            tracker_refresh.Observation(
+                self.tracker_data("remote-b", state="running"), observed_at=now
+            ),
+        )
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=results):
+            payload, _ = self.payload(app)
+        self.assertEqual(len([lane for lane in payload["lanes"] if lane["id"] == "hull"]), 1)
+        self.assertIsNone(next(lane for lane in payload["lanes"] if lane["id"] == "hull")["state"])
+        self.assertEqual([goal["lanes"] for goal in payload["goals"][-2:]], [["hull"], ["hull"]])
+        fallback = payload["trackerRead"]
+        self.assertEqual(fallback["localLanes"][0]["title"], "Local brief")
+        self.assertIsNotNone(fallback["localLanes"][0]["date"])
+        for key, rows in (("goals", fallback["localGoals"]), ("lanes", fallback["localLanes"])):
+            with self.subTest(fallback=key):
+                self.assertTrue(rows)
+                for row in rows:
+                    self.assertEqual(set(row), publish.PLAN_ITEM_FIELDS[key])
+                    if row["date"] is not None:
+                        self.assertEqual(set(row["date"]), publish.PLAN_ITEM_FIELDS["date"])
+
+    def test_file_and_project_conflict_is_unmeasured_with_or_without_a_brief(self) -> None:
+        from .test_plan_github import PROJECT, issue  # noqa: PLC0415
+
+        self.tracker_plan(mixed=True, trackers=[PROJECT])
+        config_file = self.home / settings.FILENAME
+        document = json.loads(config_file.read_bytes())
+        document["tracker"]["lane_column"] = "Lane"
+        config_file.write_text(json.dumps(document), encoding="utf-8")
+        goal = tracker_github._goal("project", "PVT_example_board", "Project goal")
+        project = tracker_github._rows(goal, [(issue(1), "done")])
+        slug = project.lanes[0].slug
+        table = f"| Item | Lane | Status |\n| --- | --- | --- |\n| Prepare | {slug} | driving |\n"
+        self.write_sources({"tracker": table})
+        app = self.application()
+        observation = tracker_refresh.Observation(project, observed_at=time.monotonic())
+        brief = self.briefs / f"{slug}.md"
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=(observation,)):
+            brief.write_text("## Goal\nLocal work\n", encoding="utf-8")
+            with self.subTest(brief=True):
+                self.assertIsNone(self.payload(app)[0]["lanes"][0]["state"])
+            brief.unlink()
+            with self.subTest(brief=False):
+                self.assertIsNone(self.payload(app)[0]["lanes"][0]["state"])
+
+    def test_ambiguous_file_rows_do_not_take_the_ordinary_tracker_state(self) -> None:
+        from .test_plan_github import MILESTONE, issue  # noqa: PLC0415
+
+        self.write_sources(STAND_IN)
+        self.configure(tracker={"lane_column": "Lane"})
+        config_file = self.home / settings.FILENAME
+        document = json.loads(config_file.read_bytes())
+        document["trackers"] = [MILESTONE]
+        config_file.write_text(json.dumps(document), encoding="utf-8")
+        goal = tracker_github._goal("milestone", "MI_example_7", "Milestone goal")
+        milestone = tracker_github._rows(
+            goal, [(issue(1, state="CLOSED", reason="COMPLETED"), None)]
+        )
+        slug = milestone.lanes[0].slug
+        table = f"| Item | Lane | Status |\n| --- | --- | --- |\n| Prepare | {slug} | driving |\n"
+        self.write_sources({"tracker": table})
+        (self.briefs / f"{slug}.md").write_text("## Goal\nLocal work\n", encoding="utf-8")
+        app = self.application()
+        observation = tracker_refresh.Observation(milestone, observed_at=time.monotonic())
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=(observation,)):
+            self.assertEqual(self.payload(app)[0]["lanes"][0]["state"], "running")
+            self.write_sources({"tracker": table + f"| Recheck | {slug} | open |\n"})
+            self.assertIsNone(self.payload(app)[0]["lanes"][0]["state"])
+
+    def test_ordinary_reads_that_disagree_leave_a_shared_lane_unmeasured(self) -> None:
+        from .test_plan_github import MILESTONE, PARENT, issue  # noqa: PLC0415
+
+        self.tracker_plan(trackers=[MILESTONE, PARENT])
+        app = self.application()
+        closed = tracker_github._rows(
+            tracker_github._goal("milestone", "MI_example_7", "Milestone goal"),
+            [(issue(1, state="CLOSED"), None)],
+        )
+        opened = tracker_github._rows(
+            tracker_github._goal("parent-issue", "I_example_parent", "Parent goal"),
+            [(issue(1), None)],
+        )
+        now = time.monotonic()
+        observations = tuple(
+            tracker_refresh.Observation(data, observed_at=now) for data in (closed, opened)
+        )
+        with mock.patch.object(app.state.plan_trackers, "observe", return_value=observations):
+            payload, _ = self.payload(app)
+        self.assertIsNone(payload["lanes"][0]["state"])
+
+    def test_incomplete_tracker_reads_withdraw_rows_and_complete_empty_reads_are_distinct(
+        self,
+    ) -> None:
+        self.tracker_plan()
+        app = self.application()
+        now = time.monotonic()
+        for result, status, reason in (
+            (
+                tracker_refresh.Observation(reason=tracker_cli.Reason.SIGNED_OUT),
+                "refused",
+                "signed-out",
+            ),
+            (
+                tracker_refresh.Observation(reason=tracker_cli.Reason.PARTIAL),
+                "refused",
+                "partial-result",
+            ),
+            (
+                tracker_refresh.Observation(reason=tracker_cli.Reason.REFRESHING),
+                "refreshing",
+                "refreshing",
+            ),
+            (
+                tracker_refresh.Observation(self.tracker_data(), observed_at=now - 31),
+                "expired",
+                "expired",
+            ),
+            (
+                tracker_refresh.Observation(self.tracker_data(empty=True), observed_at=now),
+                "empty",
+                None,
+            ),
+        ):
+            with (
+                self.subTest(status=status, reason=reason),
+                mock.patch.object(app.state.plan_trackers, "observe", return_value=(result,)),
+            ):
+                payload, _ = self.payload(app)
+                self.assertEqual(payload["sources"][0]["state"], status)
+                self.assertEqual(payload["sources"][0]["reason"], reason)
+                self.assertEqual(payload["lanes"], [])
+                self.assertEqual(len(payload["goals"]), int(status == "empty"))
+
     def test_missing_and_refused_settings_have_no_partial_data(self) -> None:
         self.assertEqual(self.payload()[0], {"state": "not-configured"})
         self.configure()
@@ -178,7 +408,7 @@ class PlanPublicationTest(PlanRepoTestCase):
 
     def test_every_published_row_has_exactly_its_documented_keys(self) -> None:
         expected = {
-            "goals": {"id", "title", "doneWhen", "lanes", "proposal"},
+            "goals": {"id", "title", "doneWhen", "lanes", "proposal", "date"},
             "lanes": {"id", "title", "doneWhen", "state", "date", "sessions"},
             "asks": {"id", "text", "at", "timeLabel", "source", "lane"},
             "asks.lane": {"id", "title"},
@@ -187,6 +417,7 @@ class PlanPublicationTest(PlanRepoTestCase):
             "inventory": {"title", "group", "source", "date"},
             "diagrams": {"title", "caption", "kind", "source", "date", "linkHosts", "body"},
             "date": {"label", "at"},
+            "trackerRead": {"freshForMs", "localGoals", "localLanes"},
             "sources": {"label", "kind", "fileLabel", "position", "state", "reason"},
         }
         self.assertEqual(publish.PLAN_ITEM_FIELDS, expected)
@@ -216,6 +447,9 @@ class PlanPublicationTest(PlanRepoTestCase):
                 ]
                 for name, fields in expected.items():
                     with self.subTest(row=name):
+                        if name == "trackerRead":
+                            self.assertIsNone(rows[name])
+                            continue
                         self.assertTrue(rows[name])
                         for row in rows[name]:
                             self.assertEqual(set(row), fields)
@@ -873,7 +1107,7 @@ class PlanPublicationTest(PlanRepoTestCase):
         self.only_goals()
         goals = self.payload()[0]["goals"]
         self.assertEqual([g["proposal"] for g in goals], [None, "Proposed, not merged"])
-        self.assertTrue(all("date" not in goal and "at" not in goal for goal in goals))
+        self.assertTrue(all(goal["date"] is None and "at" not in goal for goal in goals))
 
     def test_untimestamped_ask_has_no_time_label(self) -> None:
         self.configure()

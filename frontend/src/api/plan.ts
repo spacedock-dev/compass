@@ -3,7 +3,7 @@ export type PlanGroup = 'not_started' | 'running' | 'waiting' | 'blocked' | 'don
 export type PublishedLaneState = PlanGroup | 'Status not recognised' | null;
 
 export interface PublishedPlanDate {
-  readonly label: 'Changed' | 'Proposed, not merged' | 'from the log';
+  readonly label: 'Changed' | 'Proposed, not merged' | 'from the log' | 'Due' | 'Updated';
   readonly at: string | null;
 }
 
@@ -14,7 +14,7 @@ interface PublishedPlanSource {
   readonly fileLabel: string | null;
   /** The file's place among its repository's files of this kind, or null when it is the only one. */
   readonly position: number | null;
-  readonly state: 'ok' | 'refused';
+  readonly state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'expired';
   readonly reason: string | null;
 }
 
@@ -32,6 +32,7 @@ export interface ReadyPlan {
     readonly doneWhen: string | null;
     readonly lanes: readonly string[];
     readonly proposal: 'Proposed, not merged' | null;
+    readonly date: PublishedPlanDate | null;
   }[];
   readonly lanes: readonly {
     readonly id: string;
@@ -67,6 +68,11 @@ export interface ReadyPlan {
     readonly body: string;
   })[];
   readonly sources: readonly PublishedPlanSource[];
+  readonly trackerRead: {
+    readonly freshForMs: number;
+    readonly localGoals: ReadyPlan['goals'];
+    readonly localLanes: ReadyPlan['lanes'];
+  } | null;
   readonly logRejected: number | null;
   readonly limits: string;
 }
@@ -100,7 +106,13 @@ function isRecord(value: unknown): value is Fields {
 const text = (value: unknown): value is string => typeof value === 'string';
 const textOrNull = (value: unknown) => value === null || text(value);
 const texts = (value: unknown) => Array.isArray(value) && value.every(text);
-const dateLabels: readonly unknown[] = ['Changed', 'Proposed, not merged', 'from the log'];
+const dateLabels: readonly unknown[] = [
+  'Changed',
+  'Proposed, not merged',
+  'from the log',
+  'Due',
+  'Updated',
+];
 const planDate = (value: unknown) =>
   value === null ||
   (isRecord(value) && dateLabels.includes(value['label']) && textOrNull(value['at']));
@@ -118,6 +130,7 @@ const ITEM_CHECKS = {
     text(goal['title']) &&
     textOrNull(goal['doneWhen']) &&
     texts(goal['lanes']) &&
+    planDate(goal['date']) &&
     (goal['proposal'] === null || goal['proposal'] === 'Proposed, not merged'),
   lanes: (lane: Fields) =>
     text(lane['id']) &&
@@ -144,9 +157,46 @@ const ITEM_CHECKS = {
     text(source['kind']) &&
     textOrNull(source['fileLabel']) &&
     place(source['position']) &&
-    (source['state'] === 'ok' || source['state'] === 'refused') &&
+    text(source['state']) &&
+    ['ok', 'empty', 'refused', 'refreshing', 'expired'].includes(source['state']) &&
     textOrNull(source['reason']),
 } as const;
+
+export const isTrackerSource = (source: Pick<PublishedPlanSource, 'kind'>) =>
+  source.kind.startsWith('github ');
+
+const completeList = (value: unknown, check: (item: Fields) => boolean) =>
+  Array.isArray(value) && value.every((item) => isRecord(item) && check(item));
+
+export function expireTrackerRead(plan: ReadyPlan): ReadyPlan {
+  if (!plan.trackerRead) return plan;
+  return {
+    ...plan,
+    goals: plan.trackerRead.localGoals,
+    lanes: plan.trackerRead.localLanes,
+    sources: plan.sources.map((source) =>
+      isTrackerSource(source) && (source.state === 'ok' || source.state === 'empty')
+        ? { ...source, state: 'expired', reason: 'expired' }
+        : source,
+    ),
+    trackerRead: null,
+  };
+}
+
+export function failTrackerRead(plan: ReadyPlan): ReadyPlan {
+  const local = expireTrackerRead(plan);
+  if (!local.sources.some((source) => isTrackerSource(source) && source.state === 'refreshing')) {
+    return local;
+  }
+  return {
+    ...local,
+    sources: local.sources.map((source) =>
+      isTrackerSource(source) && source.state === 'refreshing'
+        ? { ...source, state: 'refused', reason: 'plan-read-unavailable' }
+        : source,
+    ),
+  };
+}
 
 /** The reply as the page may read it, or null when it is not a usable plan reply. */
 export function usablePlan(body: unknown): ConfiguredPlan | null {
@@ -155,6 +205,31 @@ export function usablePlan(body: unknown): ConfiguredPlan | null {
   if (body['state'] !== 'ready' || !text(body['limits'])) return null;
   const lists = Object.entries(ITEM_CHECKS);
   if (!lists.every(([list]) => Array.isArray(body[list]))) return null;
+  const trackerRead = body['trackerRead'];
+  if (trackerRead !== null) {
+    if (
+      !isRecord(trackerRead) ||
+      typeof trackerRead['freshForMs'] !== 'number' ||
+      !Number.isInteger(trackerRead['freshForMs']) ||
+      trackerRead['freshForMs'] < 0 ||
+      trackerRead['freshForMs'] > 30_000 ||
+      !completeList(trackerRead['localGoals'], ITEM_CHECKS.goals) ||
+      !completeList(trackerRead['localLanes'], ITEM_CHECKS.lanes) ||
+      !completeList(body['goals'], ITEM_CHECKS.goals) ||
+      !completeList(body['lanes'], ITEM_CHECKS.lanes) ||
+      !completeList(body['sources'], ITEM_CHECKS.sources)
+    )
+      return null;
+  } else if (
+    (body['sources'] as unknown[]).some(
+      (source) =>
+        isRecord(source) &&
+        typeof source['kind'] === 'string' &&
+        isTrackerSource({ kind: source['kind'] }) &&
+        (source['state'] === 'ok' || source['state'] === 'empty'),
+    )
+  )
+    return null;
   const kept = lists.map(([list, check]) => [
     list,
     (body[list] as readonly unknown[]).filter((item) => isRecord(item) && check(item)),

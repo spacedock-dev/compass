@@ -1,5 +1,12 @@
-import type { PlanGroup, PublishedLaneState, PublishedPlanDate, ReadyPlan } from '../api/plan';
+import {
+  isTrackerSource,
+  type PlanGroup,
+  type PublishedLaneState,
+  type PublishedPlanDate,
+  type ReadyPlan,
+} from '../api/plan';
 import type { PayloadData } from '../api/types';
+import { PLAN_WORDS } from '../language/glossary';
 import { SESSION_TEXT_ORIGIN, sessionKey, sessionState, sessionTile, type Row } from '../observed';
 import { observedFor } from '../observed/select';
 import { harnessLabels } from '../sessions/rows';
@@ -14,6 +21,9 @@ export interface PlanModel {
   readonly diagrams: readonly PlanNote[];
   readonly sources: readonly PlanSource[];
   readonly limits: string;
+  readonly trackerIncomplete: boolean;
+  readonly trackerAsksUnmeasured: boolean;
+  readonly trackerOnly: boolean;
 }
 
 /* The published tracker words, kept as published. A lane with no measured state is null. */
@@ -31,6 +41,7 @@ export interface PlanGoal {
   readonly title: string;
   readonly doneWhen: string | null;
   readonly proposal?: 'Proposed, not merged';
+  readonly date?: PlanRepoDate | undefined;
   readonly lanes: readonly {
     readonly id: string;
     readonly title: string;
@@ -59,7 +70,7 @@ interface PlanWaitingSession {
 }
 
 export type PlanRepoDate = {
-  readonly kind: 'changed' | 'proposed';
+  readonly kind: 'changed' | 'proposed' | 'due';
   readonly at: string | null;
 };
 
@@ -107,6 +118,19 @@ export const SOURCE_REFUSALS = {
   'branch missing': 'The branch is missing.',
   'not in branch': 'The file is not on the branch.',
   'not a regular file in branch': 'The file on the branch is not a regular file.',
+  disabled: 'Tracker reads are off.',
+  'cli-missing': 'The GitHub CLI is unavailable.',
+  'signed-out': 'Sign in to GitHub with your GitHub CLI.',
+  'rate-limited': 'GitHub is limiting reads.',
+  timeout: 'GitHub did not answer in time.',
+  'not-found-or-inaccessible': 'The source is missing or unavailable to your account.',
+  'partial-result': 'GitHub returned an incomplete read.',
+  'unreadable-output': 'The GitHub reply could not be read.',
+  'limit-exceeded': 'The source has more items than Compass reads.',
+  'cli-failed': 'The GitHub CLI could not read the source.',
+  expired: 'The last read is out of date.',
+  'plan-read-unavailable': 'Compass could not refresh the plan.',
+  refreshing: PLAN_WORDS.readingGitHub,
   'unsafe lane identifier': 'The lane name has characters Compass does not accept.',
 } as const;
 
@@ -122,6 +146,11 @@ export type PlanSource = {
       readonly read?: number;
     }
   | { readonly status: 'refused'; readonly reason: PlanRefusalReason }
+  | {
+      readonly status: 'tracker';
+      readonly state: ReadyPlan['sources'][number]['state'];
+      readonly reason: PlanRefusalReason;
+    }
 );
 
 const trackerStatuses: readonly PlanTrackerStatus[] = [
@@ -157,6 +186,7 @@ const sessionStates = {
 } as const;
 
 function repoDate(date: PublishedPlanDate | null): PlanRepoDate | undefined {
+  if (date?.label === 'Due') return { kind: 'due', at: date.at };
   if (date?.label === 'Changed') return { kind: 'changed', at: date.at };
   if (date?.label === 'Proposed, not merged') return { kind: 'proposed', at: date.at };
   return undefined;
@@ -212,6 +242,16 @@ function planSources(published: readonly PublishedSource[]): PlanSource[] {
   published.forEach((source, index) => {
     const id = String(index);
     const { label, kind } = source;
+    if (isTrackerSource(source)) {
+      rows.push({
+        id,
+        name: source.position === null ? label : `${label} ${source.position}`,
+        status: 'tracker',
+        state: source.state,
+        reason: sourceRefusal(source.reason),
+      });
+      return;
+    }
     const draft = kind.startsWith(draftPrefix);
     const fileKind = draft ? kind.slice(draftPrefix.length) : kind;
     if (kind === 'lane brief') {
@@ -306,12 +346,20 @@ export function planModel(plan: ReadyPlan, board: PayloadData | null): PlanModel
     });
   }
 
+  const trackerSources = plan.sources.filter(isTrackerSource);
   return {
+    trackerIncomplete: trackerSources.some(({ state }) => state !== 'ok' && state !== 'empty'),
+    // The tracker reads cover goals and lanes only.
+    trackerAsksUnmeasured: trackerSources.length > 0,
+    trackerOnly:
+      trackerSources.length > 0 &&
+      plan.sources.every((source) => isTrackerSource(source) || source.kind === 'lane folder'),
     waitingSessions,
     goals: plan.goals.map((goal) => ({
       id: goal.id,
       title: goal.title,
       doneWhen: goal.doneWhen,
+      date: goal.date?.label === 'Due' ? repoDate(goal.date) : undefined,
       ...(goal.proposal ? { proposal: goal.proposal } : {}),
       lanes: [...new Set(goal.lanes)].flatMap((id) => lanes.get(id) ?? []),
     })),

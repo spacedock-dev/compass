@@ -16,6 +16,7 @@ from unittest import mock
 
 from compass_runtime import annotations as annotation_store
 from compass_runtime import events, http_api, interaction_prototype, observation
+from compass_runtime.plan.tracker_refresh import TrackerRefresh
 
 from .support import RuntimeTestCase, build_app, make_server, poll_fast, saturated_server
 from .test_interaction_prototype import FakeTmuxAdapter
@@ -665,9 +666,12 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 encoding="utf-8",
             )
             config = dataclasses.replace(app.config, state_home=str(Path(home).resolve()))
+            # Exercise the real observation contract without finding a tracker CLI on the host.
+            trackers = TrackerRefresh(environ={"PATH": config.state_home})
             with (
                 mock.patch.object(app, "config", config),
-                mock.patch.object(app.state.plan_trackers, "observe") as observe,
+                mock.patch.object(app.state, "plan_trackers", trackers),
+                mock.patch.object(trackers, "observe", wraps=trackers.observe) as observe,
             ):
                 for kind in (
                     "lan",
@@ -684,11 +688,13 @@ class HttpAdmissionMatrixTest(RuntimeTestCase):
                 observe.assert_called_once()
                 self.assertTrue(observe.call_args.kwargs["enabled"])
                 self.assertEqual(1, len(observe.call_args.args[1]))
+                self.assertEqual("refreshing", json.loads(self.last_body)["sources"][0]["reason"])
                 observe.reset_mock()
                 app.config = dataclasses.replace(config, plan_trackers_enabled=False)
                 self.assertEqual(200, self.request("GET", "/api/plan", "direct"))
                 observe.assert_called_once()
                 self.assertFalse(observe.call_args.kwargs["enabled"])
+                self.assertEqual("disabled", json.loads(self.last_body)["sources"][0]["reason"])
                 observe.reset_mock()
                 app.config = dataclasses.replace(config, plan_enabled=False)
                 self.assertEqual(404, self.request("GET", "/api/plan", "direct"))

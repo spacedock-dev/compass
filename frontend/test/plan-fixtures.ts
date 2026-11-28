@@ -74,6 +74,7 @@ export const unconfiguredPlan = { state: 'not-configured' } as const;
 
 export const readyPlan = {
   state: 'ready',
+  trackerRead: null,
   goals: [
     {
       id: 'pickup',
@@ -81,6 +82,7 @@ export const readyPlan = {
       doneWhen: 'Readers can collect a reserved book without joining the main queue.',
       lanes: ['shelf', 'weekends', 'signs', 'unpublished', 'shelf'],
       proposal: null,
+      date: null,
     },
     {
       id: 'returns',
@@ -88,6 +90,7 @@ export const readyPlan = {
       doneWhen: 'Readers can return books whenever the library is closed.',
       lanes: [],
       proposal: 'Proposed, not merged',
+      date: null,
     },
   ],
   lanes: [
@@ -243,3 +246,52 @@ export const crowdedSourceRows = [
   'Lane brief · mastRefusedThe source did not have the expected format.',
   'CoordinationRead',
 ] as const;
+
+export function githubPlan(state: 'ok' | 'empty' | 'refused' | 'refreshing' | 'expired') {
+  const measured = state === 'ok' || state === 'empty';
+  return {
+    ...readyPlan,
+    goals: measured
+      ? [
+          {
+            id: 'github-milestone',
+            title: 'Open the new library',
+            doneWhen: null,
+            proposal: null,
+            lanes: state === 'ok' ? ['github-issue'] : [],
+            date: { label: 'Due', at: '2026-12-08' } as const,
+          },
+        ]
+      : [],
+    lanes:
+      state === 'ok'
+        ? [
+            {
+              id: 'github-issue',
+              title: 'Put up the welcome sign',
+              doneWhen: null,
+              state: 'done' as const,
+              date: { label: 'Updated', at: '2026-11-27' } as const,
+              sessions: ['session:["codex","shelf:review"]'],
+            },
+          ]
+        : [],
+    asks: [],
+    design: [],
+    tracker: [],
+    inventory: [],
+    diagrams: [],
+    sources: [
+      {
+        label: 'GitHub milestone',
+        kind: 'github milestone',
+        fileLabel: null,
+        position: null,
+        state,
+        reason: measured ? null : state === 'refused' ? 'signed-out' : state,
+      },
+    ],
+    trackerRead: measured ? { freshForMs: 30_000, localGoals: [], localLanes: [] } : null,
+    logRejected: null,
+  } as const;
+}

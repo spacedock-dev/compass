@@ -1,6 +1,12 @@
 import { readBootstrap } from '../api/bootstrap';
 import { createApiClient, type FetchLike } from '../api/client';
-import { usablePlan, type PlanReading } from '../api/plan';
+import {
+  expireTrackerRead,
+  failTrackerRead,
+  isTrackerSource,
+  usablePlan,
+  type PlanReading,
+} from '../api/plan';
 import { exactIdentity } from '../api/identity';
 import type { ApiResult, FocusOutcome, SessionIdentity } from '../api/types';
 import { createBoardStore, type BoardSnapshot } from '../store/board';
@@ -45,19 +51,23 @@ export interface RuntimeOptions {
    remount cannot replay one. */
 const NO_PLAN: PlanReading = Object.freeze({ state: 'none' });
 const PLAN_READ_FAILED: PlanReading = Object.freeze({ state: 'failed' });
+const PLAN_RETRY_MS = 1_000;
+// Allow the server's eight-second tracker worker to finish before returning to the safety poll.
+const PLAN_RETRIES = 10;
 
 /* Only the server's own answer clears a plan: not configured, 404 for --no-plan, or 403 for a reader
    off the Compass computer. A server error, a timeout, a dropped connection or a reply the page cannot
-   use keeps what is shown, and before any reply says the read failed. An identical reply keeps the
+   use keeps the file plan and withdraws tracker measurements. Before any reply it says the read failed. An identical reply keeps the
    shown object, so nothing repaints. */
 function nextPlan(result: ApiResult<unknown>, current: PlanReading): PlanReading {
   const usable = result.kind === 'ok' ? usablePlan(result.body) : null;
   if (usable) return JSON.stringify(usable) === JSON.stringify(current) ? current : usable;
   const absent =
     (result.kind === 'ok' &&
-      (result.body as { readonly state?: unknown }).state === 'not-configured') ||
+      (result.body as { readonly state?: unknown } | null)?.state === 'not-configured') ||
     (result.kind === 'http-error' && (result.status === 404 || result.status === 403));
   if (absent) return current.state === 'none' ? current : NO_PLAN;
+  if (current.state === 'ready') return failTrackerRead(current);
   return current.state === 'unread' ? PLAN_READ_FAILED : current;
 }
 
@@ -125,10 +135,22 @@ export function createBoardRuntime(options: RuntimeOptions) {
     const refresh = createRefreshController({ sink, revisions });
     let cancelPlan: (() => void) | null = null;
     let stopped = false;
+    let planExpiry: TimerHandle | null = null;
+    let planRetry: TimerHandle | null = null;
 
-    async function readPlan(manual: boolean): Promise<void> {
+    function expirePlan(): boolean {
+      const current = store.getSnapshot().plan;
+      if (current.state !== 'ready' || !current.trackerRead) return false;
+      store.setPlan(expireTrackerRead(current));
+      return true;
+    }
+
+    async function readPlan(manual: boolean, retries = PLAN_RETRIES): Promise<void> {
       if (stopped) return;
+      if (planRetry !== null) env.clock.clearTimeout(planRetry);
+      planRetry = null;
       cancelPlan?.();
+      const started = env.clock.now();
       const controller = new AbortController();
       const timeout = env.clock.setTimeout(() => controller.abort(), 15_000);
       const cancel = () => {
@@ -141,15 +163,42 @@ export function createBoardRuntime(options: RuntimeOptions) {
         // A newer read or a stop replaced this one; a timeout did not, and counts as a failed read.
         if (cancelPlan !== cancel) return;
         const current = store.getSnapshot().plan;
-        const next = nextPlan(result, current);
+        let next = nextPlan(result, current);
+        let expiredInTransit = false;
+        if (planExpiry !== null) env.clock.clearTimeout(planExpiry);
+        planExpiry = null;
+        if (next.state === 'ready' && next.trackerRead) {
+          // The response's remaining budget began before it could reach the browser.
+          const remaining = next.trackerRead.freshForMs - Math.max(0, env.clock.now() - started);
+          if (remaining <= 0) {
+            next = expireTrackerRead(next);
+            expiredInTransit = true;
+          } else {
+            planExpiry = env.clock.setTimeout(() => {
+              planExpiry = null;
+              if (expirePlan()) void sink.paint({ manual: false, accepted: true, followUp: true });
+              if (!cancelPlan) void readPlan(false);
+            }, remaining);
+          }
+        }
+        if (
+          retries > 0 &&
+          (expiredInTransit ||
+            (next.state === 'ready' &&
+              next.sources.some(
+                (source) => isTrackerSource(source) && source.state === 'refreshing',
+              )))
+        ) {
+          planRetry = env.clock.setTimeout(() => void readPlan(false, retries - 1), PLAN_RETRY_MS);
+        }
         if (next === current) return;
         store.setPlan(next);
-        // A follow-up to the poll's own paint: where that paint is still held, it carries this one.
-        await sink.paint({ manual, accepted: true, followUp: true });
       } finally {
         env.clock.clearTimeout(timeout);
         if (cancelPlan === cancel) cancelPlan = null;
       }
+      // A follow-up to the poll's own paint: where that paint is still held, it carries this one.
+      await sink.paint({ manual, accepted: true, followUp: true });
     }
     return {
       refresh,
@@ -158,6 +207,11 @@ export function createBoardRuntime(options: RuntimeOptions) {
         stopped = true;
         cancelPlan?.();
         cancelPlan = null;
+        if (planExpiry !== null) env.clock.clearTimeout(planExpiry);
+        planExpiry = null;
+        if (planRetry !== null) env.clock.clearTimeout(planRetry);
+        planRetry = null;
+        expirePlan();
       },
       context: createContextLoader({ client, store, storage }),
       record: createRecordLoader({ client, store }),
