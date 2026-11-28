@@ -379,6 +379,11 @@ def _add_local_store_options(parser: argparse.ArgumentParser) -> None:
         help="do not read plan settings or sources for this run",
     )
     parser.add_argument(
+        "--no-plan-trackers",
+        action="store_true",
+        help="do not run tracker CLIs for the plan board in this run",
+    )
+    parser.add_argument(
         "--no-dismiss",
         action="store_true",
         help=(
@@ -735,6 +740,7 @@ def build_runtime(
         quiet_hours=getattr(args, "quiet_hours", None),
         history_enabled=not args.no_history,
         plan_enabled=not args.no_plan,
+        plan_trackers_enabled=not args.no_plan_trackers,
         history_retention_sec=args.history_days * runtime_config.SECONDS_PER_DAY,
         history_max_bytes=args.history_max_bytes,
         update_check_disabled=args.no_update_check,

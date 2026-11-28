@@ -3016,6 +3016,7 @@ class HandOffRequestContractDocumentationTest(unittest.TestCase):
                 "--no-focus",
                 "--no-history",
                 "--no-plan",
+                "--no-plan-trackers",
                 "--no-dismiss",
                 "--no-annotations",
                 "--no-ask",

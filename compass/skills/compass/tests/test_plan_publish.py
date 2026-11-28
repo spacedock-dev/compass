@@ -23,6 +23,7 @@ from compass_runtime import (
     http_api,
     records,
     sessions,
+    state,
 )
 from compass_runtime import io as runtime_io
 from compass_runtime.plan import model, publish, readers, settings, sources
@@ -107,6 +108,7 @@ class PlanAdmissionTest(unittest.TestCase):
                 ):
                     self.assertEqual(request(application, **case)[0], 403)
                     load.assert_not_called()
+        application.state = state.build_runtime_state(application.config, started=0.0)
         with mock.patch.object(settings, "load") as load:
             self.assertEqual(request(application)[0], 404)
             load.assert_not_called()

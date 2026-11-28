@@ -13,6 +13,7 @@ from compass_runtime import project_context, project_scripts, reader_checks, rec
 from compass_runtime.plan import markdown as plan_markdown
 from compass_runtime.plan import readers as plan_readers
 from compass_runtime.plan import settings as plan_settings
+from compass_runtime.plan import tracker_cli
 from compass_runtime.terminal_sessions import printable_text
 
 if TYPE_CHECKING:
@@ -98,8 +99,23 @@ def _plan_report(state: RuntimeState) -> dict[str, Any]:
         config.state_home, enabled=config.plan_enabled, git_enabled=config.git_probe_enabled
     )
     report = plan_settings.report(loaded)
+    report["trackers"] = []
     if loaded.settings is None:
         return report
+    environment = tracker_cli.environment(os.environ)
+    for source in loaded.settings.trackers:
+        resolves = tracker_cli.resolve(source, environment) is not None
+        reason = None if resolves else tracker_cli.Reason.CLI_MISSING
+        report["trackers"].append(
+            {
+                "provider": source.provider,
+                "kind": source.kind,
+                "executable": source.executable,
+                "resolves": resolves,
+                "reason": reason if config.plan_trackers_enabled else tracker_cli.Reason.DISABLED,
+                "measurement": None,
+            }
+        )
     result = plan_readers.read_plan(
         loaded.settings, git_timeout_sec=config.git_probe_timeout_sec, state=state
     )
@@ -270,6 +286,14 @@ def _plan_lines(report: dict[str, Any] | None) -> list[str]:
     for index, source in enumerate(report["sources"], start=1):
         detail = source["reason"] or "read"
         lines.append(f"  {index}. {source['kind']}: {detail}")
+    for index, tracker in enumerate(report.get("trackers", ()), start=1):
+        detail = "resolves" if tracker["resolves"] else "missing"
+        if tracker["reason"] == tracker_cli.Reason.DISABLED:
+            detail += ", disabled"
+        lines.append(
+            f"  Tracker {index}. {tracker['provider']} {tracker['kind']} "
+            f"({tracker['executable']}): {detail}, not measured"
+        )
     if report.get("log_rejected") is not None:
         lines.append(f"  rejected event log lines: {report['log_rejected']}")
     if report.get("goal_lane_mismatches") is not None:
