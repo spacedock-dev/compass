@@ -8,6 +8,7 @@ import {
   githubPlan,
   githubPlanWithLog,
   hostileDiagramBody,
+  linearAsksPlan,
   linearPlan,
   mixedTrackerPlan,
   planBoard,
@@ -798,6 +799,18 @@ describe('tracker plans on Plan', () => {
     expect(link).toHaveAttribute('href', 'https://github.com');
     expect(asks.getByText('GitHub milestone · github.com')).toBeVisible();
     expect(waiting.queryByText('Tracker asks are not measured.')).toBeNull();
+  });
+
+  it('shows Linear asks with host-only links', async () => {
+    const page = mountPlan(linearAsksPlan);
+    await page.settle();
+    const waiting = within(screen.getByRole('region', { name: 'Waiting on you' }));
+    const asks = within(waiting.getByRole('list', { name: 'Tracker asks' }));
+    expect(asks.getByRole('link', { name: 'Map the old apple trees' })).toHaveAttribute(
+      'href',
+      'https://linear.app',
+    );
+    expect(asks.getByText('Linear project milestone · linear.app')).toBeVisible();
   });
 
   it('shows a measured absence when no issues match', async () => {

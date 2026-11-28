@@ -209,7 +209,7 @@ even on a project page.
 | Projects | `p` | Sessions grouped by project. Each project has a page with a briefing and the views Overview, Timeline, Decisions and Usage and alerts. |
 | Needs you | `n` | Waiting on you comes first, followed by Worth a look and Ready to wrap up. The badge counts the first two queues. Open What Compass can't see for coverage and its limits. |
 | Goal history | none | Search current and older goals by their text or by session title where available. Each goal shows its source and time. Open How long goals are kept for the limits. |
-| Plan | none | Goals and lanes from declared files and trackers. Waiting on you shows log asks, sessions waiting for a reply and any GitHub issues that match your ask settings. Declared files can also supply product decisions, tracker items and diagram captions. Available on the Compass computer after [plan setup](how-to/05-plan-board.md). |
+| Plan | none | Goals and lanes from declared files and trackers. Waiting on you shows log asks, sessions waiting for a reply and issues from configured tracker sources that match your ask settings. Declared files can also supply product decisions, tracker items and diagram captions. Available on the Compass computer after [plan setup](how-to/05-plan-board.md). |
 | Settings | none | AI use controls, browser notifications, progress check limits, and what Forget everything deletes and keeps. Changes save as you make them. |
 | Help | none | How Compass works, See an example, the icon legend, progress check terms and common questions. |
 

@@ -28,7 +28,7 @@ from . import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
 
     from compass_runtime.config import RuntimeConfig
     from compass_runtime.state import RuntimeState
@@ -299,7 +299,7 @@ def _issue_dates(
 
 def _merge_tracker_rows(
     local: model.PlanModel,
-    data: list[model.TrackerData],
+    data: Iterable[model.TrackerData],
     lane_folders: dict[str, str],
     lane_folder: Callable[[str], tuple[model.FolderIdentity | None, str | None]],
 ) -> model.PlanModel:
@@ -371,7 +371,7 @@ class _FreshTrackerRead:
     fresh_for_ms: int
 
 
-def _freshest_goals(reads: dict[int, _FreshTrackerRead]) -> list[model.TrackerData]:
+def _freshest_goals(reads: dict[int, _FreshTrackerRead]) -> dict[str, model.TrackerData]:
     by_goal: dict[str, _FreshTrackerRead] = {}
     for read in reads.values():
         (goal,) = read.data.goals
@@ -379,7 +379,7 @@ def _freshest_goals(reads: dict[int, _FreshTrackerRead]) -> list[model.TrackerDa
         if previous is None or read.observed_at > previous.observed_at:
             by_goal[goal.id] = read
     # An alias can report an empty goal. Its older membership must not enter the merge.
-    return [read.data for read in by_goal.values()]
+    return {goal_id: read.data for goal_id, read in by_goal.items()}
 
 
 def _tracker_projection(
@@ -402,7 +402,7 @@ def _tracker_projection(
         reason: str | None = observation.reason or tracker_cli.Reason.CLI_FAILED
         if observation.data is not None and observation.observed_at is not None and lifetime:
             data[index] = _FreshTrackerRead(observation.data, observation.observed_at, lifetime)
-            if declaration.provider == "github" and declaration.ask_labels:
+            if declaration.ask_labels:
                 ask_lifetimes.append(lifetime)
             status = "ok" if observation.data.lanes else "empty"
             reason = None
@@ -484,59 +484,82 @@ def _tracker_updates(
     return updates
 
 
-def _ask_revision(issue: model.TrackerAskIssue) -> tuple[datetime, str, str]:
-    lane = issue.lane
+def _ask_revision(lane: model.Lane, source_label: str) -> tuple[datetime, str, str]:
     timestamp = lane.date.value if lane.date else None
     revision = datetime.fromisoformat(timestamp) if timestamp else datetime.min.replace(tzinfo=UTC)
-    return revision, lane.goal or "", lane.source.label
+    return revision, lane.goal or "", source_label
+
+
+type _AskCandidate = tuple[model.TrackerAskIssue, tuple[str, ...], str]
 
 
 def _tracker_asks(
     declarations: tuple[Declaration, ...],
-    observations: tuple[Observation, ...],
+    reads: dict[int, _FreshTrackerRead],
     sources: list[dict[str, Any]],
     lanes: tuple[model.Lane, ...],
 ) -> list[dict[str, Any]] | None:
-    by_issue: dict[str, list[tuple[model.TrackerAskIssue, tuple[str, ...]]]] = defaultdict(list)
-    viewer = None
-    for declaration, observation, source in zip(declarations, observations, sources, strict=True):
-        if declaration.provider != "github" or not declaration.ask_labels:
+    freshest = _freshest_goals(reads)
+    copies: dict[str, list[model.TrackerAskIssue]] = defaultdict(list)
+    candidates: dict[str, list[_AskCandidate]] = defaultdict(list)
+    account = None
+    for index, declaration in enumerate(declarations):
+        if not declaration.ask_labels:
             continue
-        read = observation.data.ask_read if observation.data is not None else None
-        if (
-            source["state"] not in ("ok", "empty")
-            or read is None
-            or (viewer is not None and viewer != read.viewer)
-        ):
+        fresh = reads.get(index)
+        if fresh is None or (read := fresh.data.ask_read) is None:
             return None
-        viewer = read.viewer
+        (goal,) = fresh.data.goals
+        current = freshest[goal.id].ask_read
+        if current is None or current.viewer != read.viewer:
+            return None
+        if account is not None and account != (declaration.provider, read.viewer):
+            return None
+        account = declaration.provider, read.viewer
         for issue in read.issues:
-            by_issue[issue.lane.slug].append((issue, declaration.ask_labels))
+            copies[issue.lane.slug].append(issue)
+        source_label = sources[index]["label"]
+        for issue in current.issues:
+            candidates[issue.lane.slug].append((issue, declaration.ask_labels, source_label))
 
-    asks: dict[str, model.Lane] = {}
-    for slug, copies in by_issue.items():
+    link_host = "linear.app" if account is not None and account[0] == "linear" else "github.com"
+    return _publish_tracker_asks(candidates, copies, lanes, link_host)
+
+
+def _publish_tracker_asks(
+    candidates: dict[str, list[_AskCandidate]],
+    copies: dict[str, list[model.TrackerAskIssue]],
+    lanes: tuple[model.Lane, ...],
+    link_host: str,
+) -> list[dict[str, Any]] | None:
+    asks: dict[str, tuple[model.Lane, str]] = {}
+    for slug, rules in candidates.items():
         qualifying = []
-        for issue, rule in copies:
+        for issue, rule, source_label in rules:
             matches = issue.matches(rule)
-            # Apply each rule to every copy. Two declarations can legitimately ask
-            # different questions about the same issue.
-            if any(other.matches(rule) != matches for other, _ in copies):
+            # Only current membership supplies candidates. Enabled observations can still
+            # contradict a match, even when an alias no longer supplies the goal's lanes.
+            if any(other.matches(rule) != matches for other in copies[slug]):
                 return None
             if matches:
-                qualifying.append(issue)
+                qualifying.append((issue.lane, source_label))
         if qualifying:
-            asks[slug] = max(qualifying, key=_ask_revision).lane
-    return [
-        {
-            "title": _text(asks[lane.slug].goal),
-            "linkHost": "github.com",
-            "source": _text(asks[lane.slug].source.label),
-            "lane": lane.slug,
-            "goals": [_text(goal_id) for goal_id in lane.serves],
-        }
-        for lane in lanes
-        if lane.slug in asks
-    ]
+            asks[slug] = max(qualifying, key=lambda candidate: _ask_revision(*candidate))
+    published = []
+    for lane in lanes:
+        if (ask := asks.get(lane.slug)) is None:
+            continue
+        issue_lane, source_label = ask
+        published.append(
+            {
+                "title": _text(issue_lane.goal),
+                "linkHost": link_host,
+                "source": _text(source_label),
+                "lane": lane.slug,
+                "goals": [_text(goal_id) for goal_id in lane.serves],
+            }
+        )
+    return published
 
 
 def payload(config: RuntimeConfig, state: RuntimeState) -> dict[str, Any]:
@@ -601,7 +624,9 @@ def _with_tracker_reads(
     def render(
         reads: dict[int, _FreshTrackerRead],
     ) -> tuple[model.PlanModel, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-        merged = _merge_tracker_rows(plan, _freshest_goals(reads), lane_folders, admitted_folder)
+        merged = _merge_tracker_rows(
+            plan, _freshest_goals(reads).values(), lane_folders, admitted_folder
+        )
         matched = _lane_sessions(merged.lanes, published, ancestry)
         return (
             merged,
@@ -610,9 +635,7 @@ def _with_tracker_reads(
             [_source(source) for source in merged.sources[len(plan.sources) :]],
         )
 
-    asks_enabled = any(
-        source.provider == "github" and source.ask_labels for source in settings.trackers
-    )
+    asks_enabled = any(source.ask_labels for source in settings.trackers)
     projected["trackerAsksEnabled"] = asks_enabled
     tracker_sources, reads, _ = _tracker_projection(observations, settings, trackers)
     local_sources = projected["sources"]
@@ -645,7 +668,7 @@ def _with_tracker_reads(
                 },
             )
             if asks_enabled:
-                asks = _tracker_asks(settings.trackers, observations, tracker_sources, merged.lanes)
+                asks = _tracker_asks(settings.trackers, still_fresh, tracker_sources, merged.lanes)
                 if asks is not None:
                     projected.update(trackerAsks=asks, trackerAsksFreshForMs=next_ask_lifetime)
             return projected

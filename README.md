@@ -199,10 +199,10 @@ what can leave your machine and how to stop it, and explains the dashboard's tab
 completed check on the board, choose See an example above the Sessions list or in Help.
 
 The Plan page puts goals and lanes from your files and configured trackers beside the sessions
-doing the work. Compass reads each tracker through its own CLI. A workspace tracker can supply
-projects and their milestones. Waiting on you can also show open GitHub issues assigned to you
-that have a label you chose. Plan shows only the host name of each link and opens only in a browser
-on the Compass computer.
+doing the work. Compass reads GitHub and workspace trackers through their own CLIs. A workspace
+tracker can supply projects and their milestones. Waiting on you can also show open issues from
+configured tracker sources that are assigned to you and have a label you chose. Plan shows only
+the host name of each link and opens only in a browser on the Compass computer.
 [Set up the plan board](docs/how-to/05-plan-board.md).
 
 The [skill body](compass/skills/compass/SKILL.md) holds terminal actions and start, status and stop.

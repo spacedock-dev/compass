@@ -21,6 +21,10 @@ if TYPE_CHECKING:
 
 GITHUB_API = "https://api.github.com"
 GITHUB_GRAPHQL = f"{GITHUB_API}/graphql"
+LINEAR_VIEWER_QUERY = "query { viewer { id } }"
+_LINEAR_READ_COMMANDS = frozenset({("project", "view"), ("milestone", "list"), ("issue", "query")})
+# Leave time to clean up an optional viewer timeout and publish the completed membership.
+_LINEAR_VIEWER_RESERVE_SECONDS = 0.25
 
 STDOUT_LIMIT = 256 * 1024
 STDERR_LIMIT = 8 * 1024
@@ -163,8 +167,8 @@ class TrackerCLI:
         self._check_current = check_current
         self._on_spawn = on_spawn
         self._env = environment(os.environ if environ is None else environ)
-        self._linear = source.provider == "linear"
-        if self._linear:
+        self._linear_workspace = source.workspace if source.provider == "linear" else None
+        if self._linear_workspace is not None:
             # The empty override masks the CLI's global config key while allowing stored logins.
             self._env.update(LINEAR_API_KEY="", LINEAR_IGNORE_ENV_FILE="1")
         executable = resolve(source, self._env)
@@ -174,23 +178,23 @@ class TrackerCLI:
         self._calls = 0
         self._bytes = 0
 
-    def _remaining(self) -> float:
+    def _remaining(self, deadline: float) -> float:
         if self._check_current is not None:
             self._check_current()
-        remaining = self._deadline - self._clock()
+        remaining = deadline - self._clock()
         if remaining <= 0:
             raise TrackerError(Reason.TIMEOUT)
         return remaining
 
-    def _before_spawn(self) -> None:
-        self._remaining()
+    def _capture(self, arguments: tuple[str, ...], deadline: float) -> tuple[int, bytes, bytes]:
+        def before_spawn() -> None:
+            self._remaining(deadline)
 
-    def _capture(self, arguments: tuple[str, ...]) -> tuple[int, bytes, bytes]:
         with (
             tempfile.TemporaryDirectory(prefix="compass-tracker-cwd-") as cwd,
             tempfile.TemporaryDirectory(prefix="compass-tracker-out-") as output_dir,
         ):
-            if self._linear:
+            if self._linear_workspace is not None:
                 # Stop the CLI finding ancestor configuration when its temp root is in a repo.
                 (Path(cwd) / ".linear.toml").touch()
             with (
@@ -203,9 +207,9 @@ class TrackerCLI:
                     "stdout": stdout,
                     "stderr": stderr,
                     "env": self._env,
-                    "timeout": self._remaining(),
-                    "deadline": self._deadline,
-                    "before_spawn": self._before_spawn,
+                    "timeout": self._remaining(deadline),
+                    "deadline": deadline,
+                    "before_spawn": before_spawn,
                     "on_spawn": self._on_spawn,
                     "check": False,
                     "output_limits": ((stdout.name, STDOUT_LIMIT), (stderr.name, STDERR_LIMIT)),
@@ -214,19 +218,29 @@ class TrackerCLI:
                     result = supervise.run([self._executable, *arguments], **options)
                 else:
                     result = self._runner([self._executable, *arguments], **options)
-            self._remaining()
+            self._remaining(deadline)
             out = io.read_prefix_bytes(stdout.name, max_bytes=STDOUT_LIMIT + 1, root=output_dir)
             err = io.read_prefix_bytes(stderr.name, max_bytes=STDERR_LIMIT + 1, root=output_dir)
         return result.returncode, out, err
 
     def read_json(self, arguments: tuple[str, ...]) -> object:
         """Read a fixed adapter command with validated operands. Any refusal discards its output."""
-        self._remaining()
+        deadline = self._deadline
+        if self._linear_workspace is not None:
+            scope = ("--workspace", self._linear_workspace)
+            if arguments == (*scope, "api", LINEAR_VIEWER_QUERY):
+                deadline -= _LINEAR_VIEWER_RESERVE_SECONDS
+            elif (
+                arguments[:3] != (*scope, "--no-input")
+                or arguments[3:5] not in _LINEAR_READ_COMMANDS
+            ):
+                raise TrackerError(Reason.UNREADABLE_OUTPUT)
+        self._remaining(deadline)
         if self._calls >= REFRESH_CALLS or self._bytes >= REFRESH_BYTES:
             raise TrackerError(Reason.LIMIT_EXCEEDED)
         self._calls += 1
         try:
-            code, stdout, stderr = self._capture(arguments)
+            code, stdout, stderr = self._capture(arguments, deadline)
         except subprocess.TimeoutExpired:
             raise TrackerError(Reason.TIMEOUT) from None
         except supervise.OversizedError:
@@ -236,6 +250,6 @@ class TrackerCLI:
         self._bytes += len(stdout) + len(stderr)
         if len(stdout) > STDOUT_LIMIT or len(stderr) > STDERR_LIMIT or self._bytes > REFRESH_BYTES:
             raise TrackerError(Reason.LIMIT_EXCEEDED)
-        if self._linear:
+        if self._linear_workspace is not None:
             _check_linear_result(code, stdout, stderr)
         return _response(code, stdout, stderr, graphql=arguments[:2] == ("api", GITHUB_GRAPHQL))

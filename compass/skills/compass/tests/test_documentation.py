@@ -34,7 +34,6 @@ from compass_runtime import (
 from compass_runtime import config as runtime_config
 from compass_runtime import events as runtime_events
 from compass_runtime import transcripts as runtime_transcripts
-from compass_runtime.plan import settings as plan_settings
 from compass_runtime.plan import tracker_source
 
 from .decision_citations import citation_errors
@@ -63,19 +62,21 @@ class TrackerPlanGuideTest(unittest.TestCase):
             with self.subTest(reason=reason):
                 self.assertIn(f"`{reason}` shows “{explanation}”", reasons)
 
-    def test_public_setup_covers_workspace_sources_and_unsupported_ask_labels(self) -> None:
+    def test_public_setup_covers_workspace_sources_and_tracker_asks(self) -> None:
         root = SERVER_PATH.parents[3]
         readme = (root / "README.md").read_text(encoding="utf-8")
         guide = (root / "docs/how-to/05-plan-board.md").read_text(encoding="utf-8")
         prompt = guide.split("## Let your agent set it up", 1)[1].split("## ", 1)[0]
+        asks = guide.split("## Show tracker asks", 1)[1].split("## ", 1)[0]
         for document, passage, expected in (
             ("README", readme, "your files and configured trackers"),
             ("setup prompt", prompt, "ask for its workspace, project and any project milestone"),
             (
-                "refusal table",
-                guide,
-                f"| {plan_settings.UNSUPPORTED_TRACKER_ASKS} | Remove `ask_labels` from that source. |",
+                "tracker asks setup",
+                asks,
+                'Add `"ask_labels": ["needs-me"]` to a GitHub or workspace tracker source.',
             ),
+            ("label spelling", asks, "Use the exact spelling and case of each label."),
         ):
             with self.subTest(document=document):
                 self.assertIn(expected, " ".join(passage.split()))
@@ -102,7 +103,6 @@ class TrackerPlanGuideTest(unittest.TestCase):
         milestone = tracker_source.declarations(examples[0]["trackers"])[0]
         assert milestone.provider == "github"
         self.assertEqual(("needs-me",), milestone.ask_labels)
-        self.assertIn("Label matching is case-sensitive.", " ".join(tracker_setup.split()))
         security = (root / "SECURITY.md").read_text(encoding="utf-8")
         disclosure = next(
             line for line in security.splitlines() if line.startswith("| Plan tracker reads |")

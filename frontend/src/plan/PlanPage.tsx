@@ -553,8 +553,6 @@ const pageLayout =
 export function RefusedPlanPage({ reason }: { readonly reason: string }) {
   const detail: Readonly<Record<string, string>> = {
     'malformed settings': 'The Plan settings did not have the expected format.',
-    "Tracker asks aren't supported for this tracker yet.":
-      "Tracker asks aren't supported for this tracker yet.",
     'could not identify a private root':
       'Compass could not identify a private root in the Plan settings.',
     'settings are inside a repository': 'Keep the Plan settings outside a Git repository.',

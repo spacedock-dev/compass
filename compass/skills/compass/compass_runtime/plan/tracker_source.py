@@ -39,10 +39,6 @@ class InvalidAskLabels(grammar.SettingsError):
     """Report the refused field without exposing its values."""
 
 
-class UnsupportedTrackerAsks(grammar.SettingsError):
-    """The declaration names ask labels for a provider that cannot measure asks."""
-
-
 @dataclass(frozen=True)
 class RepositoryDeclaration:
     provider: Literal["github"]
@@ -112,8 +108,6 @@ def _ask_labels(raw: dict[str, object]) -> tuple[str, ...]:
 def declaration(value: object) -> Declaration:
     raw = grammar.dictionary(value)
     if raw.get("provider") == "linear":
-        if "ask_labels" in raw:
-            raise UnsupportedTrackerAsks
         return _linear_declaration(raw)
     if raw.get("provider") != "github":
         raise grammar.SettingsError
@@ -163,6 +157,7 @@ class LinearDeclaration:
     project: str
     milestone: str | None
     words: Mapping[str, str]
+    ask_labels: tuple[str, ...] = ()
 
     @property
     def key(self) -> SourceKey:
@@ -193,7 +188,9 @@ def _linear_selector(value: object) -> str:
 
 
 def _linear_declaration(value: object) -> LinearDeclaration:
-    raw = grammar.keys(value, "provider kind workspace project", optional="milestone words")
+    raw = grammar.keys(
+        value, "provider kind workspace project", optional="milestone words ask_labels"
+    )
     workspace = grammar.string(raw["workspace"], 63)
     if _WORKSPACE.fullmatch(workspace) is None:
         raise grammar.SettingsError
@@ -211,4 +208,5 @@ def _linear_declaration(value: object) -> LinearDeclaration:
         _linear_selector(raw["project"]),
         milestone,
         MappingProxyType(words),
+        _ask_labels(raw),
     )

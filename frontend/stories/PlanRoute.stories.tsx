@@ -14,6 +14,7 @@ import {
   githubPlan,
   githubPlanWithLog,
   hostileDiagramBody,
+  linearAsksPlan,
   linearPlan,
   mixedTrackerPlan,
   planBoard,
@@ -195,6 +196,38 @@ export const TrackerAsksPresent: Story = {
     await expect(
       within(goal.getByRole('list', { name: 'Planned' })).getByText('Approve the sign lettering'),
     ).toBeVisible();
+  },
+};
+
+export const LinearTrackerAsksPresent: Story = {
+  args: { plan: linearAsksPlan },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const waiting = within(await canvas.findByRole('region', { name: 'Waiting on you' }));
+    const asks = within(waiting.getByRole('list', { name: 'Tracker asks' }));
+    const link = asks.getByRole('link', { name: 'Map the old apple trees' });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('href', 'https://linear.app');
+    await expect(asks.getByText('Linear project milestone · linear.app')).toBeVisible();
+    await expect(waiting.queryByText('Tracker asks are not measured.')).toBeNull();
+    await expect(waiting.queryByText('No tracker asks.')).toBeNull();
+  },
+};
+
+export const MixedProviderTrackerAsksNotMeasured: Story = {
+  args: {
+    plan: { ...mixedTrackerPlan, trackerAsks: null, trackerAsksFreshForMs: null },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const waiting = within(await canvas.findByRole('region', { name: 'Waiting on you' }));
+    await expect(waiting.getByText('Tracker asks are not measured.')).toBeVisible();
+    await expect(waiting.queryByText('No tracker asks.')).toBeNull();
+    await expect(waiting.queryByRole('list', { name: 'Tracker asks' })).toBeNull();
+    await expect(waiting.getByText('Who can check the entrance signs?')).toBeVisible();
+    await expect(waiting.getByRole('link', { name: 'Review the shelf layout' })).toBeVisible();
+    await expect(canvas.getByRole('article', { name: 'Survey the orchard' })).toBeVisible();
+    await expect(canvas.getByRole('article', { name: 'Open the new library' })).toBeVisible();
   },
 };
 
